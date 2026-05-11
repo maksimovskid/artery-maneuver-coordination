@@ -36,6 +36,13 @@ Position position_cast(const traci::Boundary& boundary, const TraCIPosition& pos
     return Position(x, y);
 }
 
+Position position_cast_sumo(const TraCIPosition& pos)
+{
+    const double x = pos.x;
+    const double y = pos.y;
+    return Position(x, y);
+}
+
 TraCIPosition position_cast(const traci::Boundary& boundary, const Position& pos)
 {
     const double x = pos.x.value() + boundary.lowerLeftPosition().x;

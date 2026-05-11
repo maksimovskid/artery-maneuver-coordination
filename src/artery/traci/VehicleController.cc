@@ -1,4 +1,5 @@
 #include "artery/traci/VehicleController.h"
+#include "artery/traci/Cast.h"
 
 namespace si = boost::units::si;
 
@@ -55,5 +56,11 @@ void VehicleController::changeTarget(const std::string& edge)
 {
     m_traci->vehicle.changeTarget(getId(), edge);
 }
+
+artery::Position VehicleController::getPositionSumo() const
+{
+    return traci::position_cast_sumo(m_cache->get<libsumo::VAR_POSITION>());
+}
+
 
 } // namespace traci

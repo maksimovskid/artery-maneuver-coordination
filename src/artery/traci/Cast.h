@@ -13,6 +13,7 @@ Angle angle_cast(traci::TraCIAngle);
 traci::TraCIAngle angle_cast(Angle);
 
 Position position_cast(const traci::Boundary&, const traci::TraCIPosition&);
+Position position_cast_sumo(const traci::TraCIPosition&);
 traci::TraCIPosition position_cast(const traci::Boundary&, const artery::Position&);
 
 } // namespace artery
@@ -23,8 +24,8 @@ namespace traci
 
 using artery::angle_cast;
 using artery::position_cast;
+using artery::position_cast_sumo;
 
 } // namespace traci
 
 #endif /* ARTERY_TRACI_H_E0WJI6AS */
-

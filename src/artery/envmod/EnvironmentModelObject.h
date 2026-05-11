@@ -7,6 +7,7 @@
 #ifndef EVIRONMENTMODELOBJECT_H_
 #define EVIRONMENTMODELOBJECT_H_
 
+#include "artery/application/VehicleDataProvider.h"
 #include "artery/envmod/sensor/SensorPosition.h"
 #include "artery/utility/Geometry.h"
 #include <vanetza/units/length.hpp>
@@ -52,7 +53,7 @@ public:
      * @return sensor attachment point
      */
     virtual const Position& getAttachmentPoint(const SensorPosition& pos) const = 0;
-
+    
     /**
      * Return the centre point coord of object
      * @return centre point

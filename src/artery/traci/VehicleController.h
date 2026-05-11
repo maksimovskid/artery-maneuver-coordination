@@ -26,6 +26,8 @@ public:
 
     void changeTarget(const std::string& edge);
 
+    artery::Position getPositionSumo() const;
+
 private:
     VehicleType m_type;
 };

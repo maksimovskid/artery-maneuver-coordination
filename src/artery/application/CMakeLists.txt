@@ -42,4 +42,5 @@ target_sources(core PRIVATE
     den/TractionLoss.cc
     den/TrafficJamUseCase.cc
     den/UseCase.cc
+    mcm/TrajectoryPlanner.cc
 )
