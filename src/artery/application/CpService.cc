@@ -115,7 +115,7 @@ void setPOClassification(Vanetza_ITS2_PerceivedObject_t& po, vanetza::geonet::St
 
         case StationType::RSU:
             occ->objectClass.present = Vanetza_ITS2_ObjectClass_PR_vehicleSubClass;
-            occ->objectClass.choice.vehicleSubClass = Vanetza_ITS2_TrafficParticipantType_roadSideUnit;
+            occ->objectClass.choice.vehicleSubClass = Vanetza_ITS2_TrafficParticipantType_infrastructure;
             break;
 
         default:  // if unknown, drop classification entirely
