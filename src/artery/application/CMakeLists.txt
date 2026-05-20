@@ -45,6 +45,7 @@ target_sources(core PRIVATE
     mcm/TrajectoryConflict.cc
     mcm/TrajectoryCsv.cc
     mcm/TrajectoryEnvironment.cc
+    mcm/TrajectoryEnvironmentState.cc
     mcm/TrajectoryGeneration.cc
     mcm/TrajectoryPlanner.cc
 )
