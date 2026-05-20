@@ -803,7 +803,6 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}
 
 					// try if lane change is possible
-					// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
 						if (trajectory_found == false and isLaneChangePossible == true){					
 							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
@@ -2449,7 +2448,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateSecondReqTraj(
 		const int dind = static_cast<int>(std::round(travel / dl));
 		const int targetIndex = std::min(ind + dind, ncourse - 1);
 
-		// perform lane change after selected index
+		// Use shifted lane geometry once route samples reach indexToChangeLane + 2.
 		if (targetIndex < indexToChangeLane + 2) {
 			calculatedPoint.mX = cx[targetIndex];
 		}
