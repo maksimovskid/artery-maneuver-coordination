@@ -1136,11 +1136,11 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 				}
 			}
 		}
-		else {
-			trajectory_found = true;
-			finalTrajectory = currentTraj;  // Found suitable trajectory
-			possiblePriorityLevelForAccept = 0;
-			std::cout << mVehicleController->getVehicleId() << " there is no conflict with received Req Traj " << std::endl;
+			else if (!currentTraj.empty()) {
+				trajectory_found = true;
+				finalTrajectory = currentTraj;  // Found suitable trajectory
+				possiblePriorityLevelForAccept = 0;
+				std::cout << mVehicleController->getVehicleId() << " there is no conflict with received Req Traj " << std::endl;
 		}
 
 	}
@@ -1693,11 +1693,11 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 				}
 			}
 		}	
-		else {
-			trajectory_found = true;
-			finalTrajectory = currentTraj;  // Found suitable trajectory
-			possiblePriorityLevelForAccept = 0;
-			//std::cout << mVehicleController->getVehicleId() << " there is no conflict with received Req Traj " << std::endl;
+			else if (!currentTraj.empty()) {
+				trajectory_found = true;
+				finalTrajectory = currentTraj;  // Found suitable trajectory
+				possiblePriorityLevelForAccept = 0;
+				//std::cout << mVehicleController->getVehicleId() << " there is no conflict with received Req Traj " << std::endl;
 		}
 		
 	}
@@ -2099,6 +2099,28 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 		return !newTraj.empty() &&
 			!check_traj_conflict_lane_change(newTraj, estimatedOtherTraj, timeGap, receivedEteDelay);
 	};
+	// calculateSecondReqTraj may keep original geometry if samples never reach indexToChangeLane + 2.
+	auto candidateContainsShiftedLane = [&](const Trajectory& candidate, int indexToChangeLane) {
+		const int startIndex = std::max(0, indexToChangeLane + 2);
+		const int endIndex = static_cast<int>(std::min(cx.size(), cy.size()));
+
+		if (candidate.empty() || startIndex >= endIndex) {
+			return false;
+		}
+
+		constexpr double coordinateTolerance = 1e-4;
+
+		for (const auto& point : candidate) {
+			for (int i = startIndex; i < endIndex; ++i) {
+				if (std::abs(point.mX - (cx[i] + 3.0F)) <= coordinateTolerance &&
+						std::abs(point.mY - cy[i]) <= coordinateTolerance) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
 
 	PlannedTrajValues plannedTrajValues{0.0, 0.0, 0.0, false, 1.0, 3.0};
 	double foundTrajectoryCost = 0.0;
@@ -2134,13 +2156,14 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0, indexToChangeLane);
 
-				if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-					foundSpeedIncrease = speedIncrease;
-					foundAcceleration = acceleration;
-					acceleration_trajectory_found = true;
-					trajectory_found = true;
-					finalTrajectory = newTraj;
-					possiblePriorityLevelForAccept = 0;
+					if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+						foundSpeedIncrease = speedIncrease;
+						foundAcceleration = acceleration;
+						acceleration_trajectory_found = true;
+						lane_changed = candidateContainsShiftedLane(newTraj, indexToChangeLane);
+						trajectory_found = true;
+						finalTrajectory = newTraj;
+						possiblePriorityLevelForAccept = 0;
 					break;
 				}
 			}
@@ -2162,14 +2185,15 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 						newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0, indexToChangeLane);
 
-						if (newTrajLaneChangeConflictFree(timeGapReduction)) {
-							foundSpeedIncrease = speedIncrease;
-							foundAcceleration = acceleration;
-							foundTimeGap = timeGapReduction;
-							acceleration_trajectory_found = true;
-							trajectory_found = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 0;
+							if (newTrajLaneChangeConflictFree(timeGapReduction)) {
+								foundSpeedIncrease = speedIncrease;
+								foundAcceleration = acceleration;
+								foundTimeGap = timeGapReduction;
+								acceleration_trajectory_found = true;
+								lane_changed = candidateContainsShiftedLane(newTraj, indexToChangeLane);
+								trajectory_found = true;
+								finalTrajectory = newTraj;
+								possiblePriorityLevelForAccept = 0;
 							break;
 						}
 					}
@@ -2185,11 +2209,12 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, true, current_speed, 0.0, 0.0, indexToChangeLane);
 
-				if (newTrajLaneChangeConflictFree(timeGapReduction)) {
-					foundTimeGap = timeGapReduction;
-					trajectory_found = true;
-					finalTrajectory = newTraj;
-					accelerationRequired = false;
+					if (newTrajLaneChangeConflictFree(timeGapReduction)) {
+						foundTimeGap = timeGapReduction;
+						lane_changed = candidateContainsShiftedLane(newTraj, indexToChangeLane);
+						trajectory_found = true;
+						finalTrajectory = newTraj;
+						accelerationRequired = false;
 					possiblePriorityLevelForAccept = 2;
 					break;
 				}
@@ -2214,12 +2239,13 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration, indexToChangeLane);
 
-				if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-					foundSpeedReduction = speedReduction;
-					foundDeceleration = deceleration;
-					trajectory_found = true;
-					finalTrajectory = newTraj;
-					possiblePriorityLevelForAccept = 2;
+					if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+						foundSpeedReduction = speedReduction;
+						foundDeceleration = deceleration;
+						lane_changed = candidateContainsShiftedLane(newTraj, indexToChangeLane);
+						trajectory_found = true;
+						finalTrajectory = newTraj;
+						possiblePriorityLevelForAccept = 2;
 					break;
 				}
 			}
@@ -2241,13 +2267,14 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 						newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration, indexToChangeLane);
 
-						if (newTrajLaneChangeConflictFree(timeGapReduction)) {
-							foundSpeedReduction = speedReduction;
-							foundDeceleration = deceleration;
-							foundTimeGap = timeGapReduction;
-							trajectory_found = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 2;
+							if (newTrajLaneChangeConflictFree(timeGapReduction)) {
+								foundSpeedReduction = speedReduction;
+								foundDeceleration = deceleration;
+								foundTimeGap = timeGapReduction;
+								lane_changed = candidateContainsShiftedLane(newTraj, indexToChangeLane);
+								trajectory_found = true;
+								finalTrajectory = newTraj;
+								possiblePriorityLevelForAccept = 2;
 							break;
 						}
 					}
@@ -2364,7 +2391,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateSecondReqTraj(
 {
 	Trajectory trajectory;
 
-	if (steps <= 0 || cx.empty() || cy.empty()) {
+	if (steps <= 0 || dt <= 0.0 || cx.empty() || cy.empty()) {
 		return trajectory;
 	}
 
