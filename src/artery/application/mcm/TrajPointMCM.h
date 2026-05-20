@@ -3,17 +3,15 @@
 #include <omnetpp/simtime.h>
 namespace artery
 {
-using namespace omnetpp;
 namespace mcm
 {
 
     class TrajPointMCM
 {
 public:
-    double mX;   
-    double mY;
-    double mHeading;
-    //omnetpp::SimTime mTime;
+    double mX = 0.0;
+    double mY = 0.0;
+    double mHeading = 0.0;
     omnetpp::SimTime mTime;
 };
 
