@@ -24,6 +24,19 @@ using namespace omnetpp;
 namespace mcm
 {
 
+namespace
+{
+
+std::vector<float> makeShiftedLaneCx(const std::vector<float>& cx)
+{
+	std::vector<float> cx_new(cx.size());
+	// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
+	std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+	return cx_new;
+}
+
+} // namespace
+
 TrajectoryPlanner::TrajectoryPlanner()
 : mVehicleController(nullptr), mVehicleDataProvider(nullptr), mLocalEnvironmentModel(nullptr)
 {}
@@ -792,8 +805,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					// try if lane change is possible
 					// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
 						if (trajectory_found == false and isLaneChangePossible == true){					
-							std::vector<float> cx_new(cx.size());
-							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 							// Lane-change fallback remains a candidate only if the shifted trajectory is conflict-free.
 							if (newTrajMergingConflictFree(timeGapMerging)) {
@@ -845,8 +857,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
@@ -920,8 +931,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-							std::vector<float> cx_new(cx.size());
-							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 							if (newTrajMergingConflictFree(timeGapMerging)) {
 								trajectory_found  = true;
@@ -971,8 +981,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
@@ -1042,8 +1051,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-							std::vector<float> cx_new(cx.size());
-							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 							if (newTrajMergingConflictFree(timeGapMerging)) {
 								trajectory_found  = true;
@@ -1092,8 +1100,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
 						if (newTrajMergingConflictFree(timeGapMerging)) {
@@ -1235,8 +1242,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true){					
-							std::vector<float> cx_new(cx.size());
-							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 							if (newTrajLaneChangeConflictFree(timeGapMerging)) {
 								trajectory_found  = true;
@@ -1287,8 +1293,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
@@ -1427,8 +1432,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					// try if lane change is possible 
 					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
@@ -1477,8 +1481,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
@@ -1605,8 +1608,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}
 
 					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
 							trajectory_found  = true;
@@ -1651,8 +1653,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
 					newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
 					if (newTrajLaneChangeConflictFree(timeGapMerging)) {
@@ -1943,8 +1944,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::estimateOtherDecelerationTrajec
 	state.y = traj_other[0].mY + state.v * dt;
 	state.yaw = traj_other[0].mHeading;
 
-	Vec_f cx_new(cx.size());
-	std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+	Vec_f cx_new = makeShiftedLaneCx(cx);
 
 	const int ncourse = static_cast<int>(std::min(cx_new.size(), cy.size()));
 
@@ -2404,9 +2404,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateSecondReqTraj(
 	state.yaw = mVehicleDataProvider->heading() / boost::units::si::radians;
 	state.v = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
 
-	Vec_f cx_new(cx.size());
-	// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
-	std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
+	Vec_f cx_new = makeShiftedLaneCx(cx);
 
 	const int ncourse = std::min(cx.size(), cy.size());
 
