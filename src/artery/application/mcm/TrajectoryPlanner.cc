@@ -148,6 +148,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateRefTrajectory(
 
 int TrajectoryPlanner::calc_nearest_index(State state, const Vec_f& cx, const Vec_f& cy, int pind)
 {
+    // Work on the common prefix because route CSV columns can be loaded independently.
     const int ncourse = static_cast<int>(std::min(cx.size(), cy.size()));
 
     if (ncourse <= 0) {
@@ -713,6 +714,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 		Trajectory currentTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, true, 0.0, 0.0, 0.0);    // PT  
 		Trajectory finalTrajectory = currentTraj;
 		Trajectory newTraj; 
+		// Empty candidates mean planning failed; do not let conflict helpers classify them as acceptable.
 		auto newTrajMergingHasConflict = [&](float timeGap) {
 			return !newTraj.empty() &&
 				check_traj_conflict_merging(newTraj, receivedReqTraj, timeGap, receivedEteDelay, false);
@@ -818,16 +820,19 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}
 
 					// try if lane change is possible 
-					if (trajectory_found == false and isLaneChangePossible == true){					
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 0;
-					}
+						if (trajectory_found == false and isLaneChangePossible == true){					
+							std::vector<float> cx_new(cx.size());
+							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+							// Lane-change fallback remains a candidate only if the shifted trajectory is conflict-free.
+							if (newTrajMergingConflictFree(timeGapMerging)) {
+								trajectory_found  = true;
+								lane_changed = true;
+								finalTrajectory = newTraj;  // Found suitable trajectory
+								accelerationRequired = false;
+								possiblePriorityLevelForAccept = 0;
+							}
+						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -874,10 +879,12 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						possiblePriorityLevelForAccept = 0;
+						if (newTrajMergingConflictFree(timeGapMerging)) {
+							trajectory_found = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;
+							possiblePriorityLevelForAccept = 0;
+						}
 					}
 
 					else if (trajectory_found == false &&
@@ -941,16 +948,18 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}	
 
 					// try if lane change is possible 
-					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 1;
-					}
+						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
+							std::vector<float> cx_new(cx.size());
+							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+							if (newTrajMergingConflictFree(timeGapMerging)) {
+								trajectory_found  = true;
+								lane_changed = true;
+								finalTrajectory = newTraj;  // Found suitable trajectory
+								accelerationRequired = false;
+								possiblePriorityLevelForAccept = 1;
+							}
+						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -996,10 +1005,12 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						possiblePriorityLevelForAccept = 1;
+						if (newTrajMergingConflictFree(timeGapMerging)) {
+							trajectory_found = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;
+							possiblePriorityLevelForAccept = 1;
+						}
 					}
 
 					else if (trajectory_found == false &&
@@ -1059,16 +1070,18 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}	
 
 					// try if lane change is possible 
-					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 2;
-					}
+						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
+							std::vector<float> cx_new(cx.size());
+							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+							if (newTrajMergingConflictFree(timeGapMerging)) {
+								trajectory_found  = true;
+								lane_changed = true;
+								finalTrajectory = newTraj;  // Found suitable trajectory
+								accelerationRequired = false;
+								possiblePriorityLevelForAccept = 2;
+							}
+						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -1112,10 +1125,12 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						possiblePriorityLevelForAccept = 2;
+						if (newTrajMergingConflictFree(timeGapMerging)) {
+							trajectory_found  = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;  // Found suitable trajectory
+							possiblePriorityLevelForAccept = 2;
+						}
 					}
 
 					else if (trajectory_found == false &&
@@ -1248,16 +1263,18 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}
 
 					// try if lane change is possible 
-					if (trajectory_found == false and isLaneChangePossible == true){					
-						std::vector<float> cx_new(cx.size());
-						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 0;
-					}
+						if (trajectory_found == false and isLaneChangePossible == true){					
+							std::vector<float> cx_new(cx.size());
+							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
+							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+							if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+								trajectory_found  = true;
+								lane_changed = true;
+								finalTrajectory = newTraj;  // Found suitable trajectory
+								accelerationRequired = false;
+								possiblePriorityLevelForAccept = 0;
+							}
+						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -1304,10 +1321,12 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						possiblePriorityLevelForAccept = 0;
+						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+							trajectory_found = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;
+							possiblePriorityLevelForAccept = 0;
+						}
 					}
 
 					else if (trajectory_found == false &&
@@ -1442,11 +1461,13 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;  // Found suitable trajectory
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 1;
+						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+							trajectory_found  = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;  // Found suitable trajectory
+							accelerationRequired = false;
+							possiblePriorityLevelForAccept = 1;
+						}
 					}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -1490,10 +1511,12 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						possiblePriorityLevelForAccept = 1;
+						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+							trajectory_found  = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;
+							possiblePriorityLevelForAccept = 1;
+						}
 					}
 
 					else if (trajectory_found == false &&
@@ -1614,11 +1637,13 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						std::vector<float> cx_new(cx.size());
 						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
 						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						accelerationRequired = false;
-						possiblePriorityLevelForAccept = 2;
+						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
+							trajectory_found  = true;
+							lane_changed = true;
+							finalTrajectory = newTraj;
+							accelerationRequired = false;
+							possiblePriorityLevelForAccept = 2;
+						}
 					}
 
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -1657,13 +1682,15 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 						std::vector<float> cx_new(cx.size());
 						std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+					newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
 
+					if (newTrajLaneChangeConflictFree(timeGapMerging)) {
 						trajectory_found  = true;
 						lane_changed = true;
 						finalTrajectory = newTraj;
 						possiblePriorityLevelForAccept = 2;
 					}
+				}
 
 					else if (trajectory_found == false &&
 							 newTrajLaneChangeHasConflict(timeGapMerging) &&
@@ -2071,6 +2098,7 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 	Trajectory currentTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, true, 0.0, 0.0, 0.0);
 	Trajectory finalTrajectory = currentTraj;
 	Trajectory newTraj;
+	// Empty candidates mean planning failed; do not let conflict helpers classify them as acceptable.
 	auto newTrajLaneChangeHasConflict = [&](float timeGap) {
 		return !newTraj.empty() &&
 			check_traj_conflict_lane_change(newTraj, estimatedOtherTraj, timeGap, receivedEteDelay);
@@ -2446,6 +2474,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::newPlannedTrajRV(
 	Trajectory currentTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, true, 0.0, 0.0, 0.0);
 	Trajectory finalTrajectory = currentTraj;
 	Trajectory newTraj;
+	// Empty candidates mean planning failed; do not let conflict helpers classify them as acceptable.
 	auto newTrajLaneChangeHasConflict = [&](float timeGap) {
 		return !newTraj.empty() &&
 			check_traj_conflict_lane_change(newTraj, receivedConflictedTraj, timeGap, receivedEteDelay);

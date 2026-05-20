@@ -9,6 +9,7 @@ namespace mcm
     class TrajPointMCM
 {
 public:
+    // Default values avoid undefined data in partially constructed fallback trajectories.
     double mX = 0.0;
     double mY = 0.0;
     double mHeading = 0.0;
