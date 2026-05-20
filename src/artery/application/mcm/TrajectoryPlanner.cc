@@ -2010,6 +2010,30 @@ int TrajectoryPlanner::findIndexTrajsConflictFree(
 	const float min_distance = time_gap * current_speed;
 
 	const int trajSize = static_cast<int>(std::min(traj_ego.size(), traj_other.size()));
+	const int startIndex = std::max(0, pind);
+	const int endIndex = static_cast<int>(std::min(cx.size(), cy.size()));
+
+	const auto nearestRouteIndex = [&](const TrajPointMCM& point) {
+		if (startIndex >= endIndex) {
+			return endIndex - 1;
+		}
+
+		int nearestIndex = startIndex;
+		float minDistance = std::numeric_limits<float>::max();
+
+		for (int i = startIndex; i < endIndex; ++i) {
+			const float dx = cx[i] - point.mX;
+			const float dy = cy[i] - point.mY;
+			const float distance = dx * dx + dy * dy;
+
+			if (distance < minDistance) {
+				minDistance = distance;
+				nearestIndex = i;
+			}
+		}
+
+		return nearestIndex;
+	};
 
 	for (int t = 0; t < trajSize; ++t) {
 		const float dx = traj_ego[t].mX - traj_other[t].mX;
@@ -2017,14 +2041,12 @@ int TrajectoryPlanner::findIndexTrajsConflictFree(
 		const float dist = std::hypot(dx, dy);
 
 		if (dist >= min_distance) {
-			return t;
+			// calculateSecondReqTraj compares this value with route indices, not trajectory sample indices.
+			return nearestRouteIndex(traj_ego[t]);
 		}
 	}
 
 	const TrajPointMCM& lastEgoPoint = traj_ego[trajSize - 1];
-
-	const int startIndex = std::max(0, pind);
-	const int endIndex = static_cast<int>(std::min(cx.size(), cy.size()));
 
 	if (startIndex >= endIndex) {
 		return endIndex - 1;
