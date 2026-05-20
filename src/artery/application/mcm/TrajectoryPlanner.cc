@@ -1,4 +1,5 @@
 #include "artery/application/mcm/TrajectoryPlanner.h"
+#include "artery/application/mcm/TrajectoryCsv.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/traci/VehicleController.h"
 
@@ -2612,70 +2613,19 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::newPlannedTrajRV(
 }
 
 
-// Function to split a string based on a delimiter
-std::vector<std::string> TrajectoryPlanner::splitString(const std::string& line, char delimiter) {
-    std::vector<std::string> tokens;
-    std::string token;
-    std::istringstream tokenStream(line);
-    while (std::getline(tokenStream, token, delimiter)) {
-        tokens.push_back(token);
-    }
-    return tokens;
+std::vector<std::string> TrajectoryPlanner::splitString(const std::string& line, char delimiter)
+{
+	return artery::mcm::splitString(line, delimiter);
 }
 
-// Function to read data from a CSV file and return cx vector based on column name
-std::vector<float> TrajectoryPlanner::readCX(const std::string& filename, char delimiter, const std::string& column_name) {
-    std::vector<float> cx;
-    std::ifstream file(filename);
-    if (file.is_open()) {
-        std::string line;
-        if (std::getline(file, line)) { // Read the header line
-            std::vector<std::string> headers = splitString(line, delimiter);
-            auto it = std::find(headers.begin(), headers.end(), column_name);
-            if (it != headers.end()) { // Column name found
-                size_t columnIndex = std::distance(headers.begin(), it);
-                while (std::getline(file, line)) {
-                    std::vector<std::string> row = splitString(line, delimiter);
-                    if (row.size() > columnIndex) {
-                        float x = std::stof(row[columnIndex]);
-                        cx.push_back(x);
-                    }
-                }
-            } else {
-                std::cout << "Column name '" << column_name << "' not found in the CSV file." << std::endl;
-            }
-        }
-        file.close();
-    } else {
-        std::cout << "Failed to open the CSV file: " << filename << std::endl;
-    }
-    return cx;
+std::vector<float> TrajectoryPlanner::readCX(const std::string& filename, char delimiter, const std::string& column_name)
+{
+	return artery::mcm::readCX(filename, delimiter, column_name);
 }
 
-bool TrajectoryPlanner::checkColumnExists(const std::string &filename, const std::string &columnName, char delimiter) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        // File couldn't be opened
-        return false;
-    }
-
-    std::string line;
-    if (std::getline(file, line)) {
-        // Read the header line (assuming the first line contains headers)
-        std::stringstream ss(line);
-        std::string token;
-        while (std::getline(ss, token, delimiter)) {
-            if (token == columnName) {
-                // Column found
-                file.close();
-                return true;
-            }
-        }
-    }
-
-    // Column not found
-    file.close();
-    return false;
+bool TrajectoryPlanner::checkColumnExists(const std::string& filename, const std::string& columnName, char delimiter)
+{
+	return artery::mcm::checkColumnExists(filename, columnName, delimiter);
 }
 
 } // namespace mcm
