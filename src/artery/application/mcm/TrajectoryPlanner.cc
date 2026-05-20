@@ -1,5 +1,6 @@
 #include "artery/application/mcm/TrajectoryPlanner.h"
 #include "artery/application/mcm/TrajectoryCsv.h"
+#include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/traci/VehicleController.h"
 
@@ -446,7 +447,7 @@ bool TrajectoryPlanner::check_traj_conflict_merging(
 
 double TrajectoryPlanner::getDistance(double x1, double y1, double x2, double y2)
 {
-    return std::hypot(x2 - x1, y2 - y1);
+    return artery::mcm::getDistance(x1, y1, x2, y2);
 }
 
 double TrajectoryPlanner::getDesiredGap()
@@ -460,17 +461,7 @@ double TrajectoryPlanner::getDesiredGap()
 
 double TrajectoryPlanner::getMinGapPriority(int maneuverPriority)
 {
-    if (maneuverPriority == 0) {
-        return 0.8;
-    }
-    else if (maneuverPriority == 1) {
-        return 0.6;
-    }
-    else if (maneuverPriority == 2) {
-        return 0.3;
-    }
-
-    return 1.0;
+    return artery::mcm::getMinGapPriority(maneuverPriority);
 }
 
 double TrajectoryPlanner::getGap(double gap)
@@ -483,11 +474,7 @@ double TrajectoryPlanner::getGap(double gap)
 
 double TrajectoryPlanner::calculateTimeGap(double distance, double speed)
 {
-    if (speed <= 0.0) {
-        return std::numeric_limits<double>::infinity();
-    }
-
-    return distance / speed;
+    return artery::mcm::calculateTimeGap(distance, speed);
 }
 
 FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
@@ -559,11 +546,11 @@ bool TrajectoryPlanner::checkIfSameEdgeAndLane(
     const std::string& otherEdge,
     int otherLane)
 {
-    return egoEdge == otherEdge && egoLane == otherLane;
+    return artery::mcm::checkIfSameEdgeAndLane(egoEdge, egoLane, otherEdge, otherLane);
 } 
 
 bool TrajectoryPlanner::isWithinInterval (double value, double lowerBound, double upperBound){
-	return (value >= lowerBound && value <= upperBound);
+	return artery::mcm::isWithinInterval(value, lowerBound, upperBound);
 }
 
 double TrajectoryPlanner::calculateDecelerationTime(
@@ -571,15 +558,7 @@ double TrajectoryPlanner::calculateDecelerationTime(
     double finalVelocity,
     double deceleration)
 {
-    if (deceleration <= 0.0) {
-        return 0.0;
-    }
-
-    if (initialVelocity <= finalVelocity) {
-        return 0.0;
-    }
-
-    return (initialVelocity - finalVelocity) / deceleration;
+    return artery::mcm::calculateDecelerationTime(initialVelocity, finalVelocity, deceleration);
 }
 
 double TrajectoryPlanner::calculateTTC(
@@ -587,17 +566,7 @@ double TrajectoryPlanner::calculateTTC(
     double frontVehicleSpeed,
     double distance)
 {
-    const double relativeSpeed = mySpeed - frontVehicleSpeed;
-
-    if (relativeSpeed <= 0.0) {
-        return std::numeric_limits<double>::infinity();
-    }
-
-    if (distance <= 0.0) {
-        return 0.0;
-    }
-
-    return distance / relativeSpeed;
+    return artery::mcm::calculateTTC(mySpeed, frontVehicleSpeed, distance);
 }
 
 bool TrajectoryPlanner::check_traj_collision(

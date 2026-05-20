@@ -43,5 +43,6 @@ target_sources(core PRIVATE
     den/TrafficJamUseCase.cc
     den/UseCase.cc
     mcm/TrajectoryCsv.cc
+    mcm/TrajectoryEnvironment.cc
     mcm/TrajectoryPlanner.cc
 )
