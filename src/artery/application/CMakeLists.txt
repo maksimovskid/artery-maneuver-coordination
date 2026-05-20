@@ -42,6 +42,7 @@ target_sources(core PRIVATE
     den/TractionLoss.cc
     den/TrafficJamUseCase.cc
     den/UseCase.cc
+    mcm/TrajectoryConflict.cc
     mcm/TrajectoryCsv.cc
     mcm/TrajectoryEnvironment.cc
     mcm/TrajectoryPlanner.cc
