@@ -789,7 +789,8 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						}	
 					}
 
-					// try if lane change is possible 
+					// try if lane change is possible
+					// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
 						if (trajectory_found == false and isLaneChangePossible == true){					
 							std::vector<float> cx_new(cx.size());
 							std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });								
@@ -2404,6 +2405,7 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateSecondReqTraj(
 	state.v = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
 
 	Vec_f cx_new(cx.size());
+	// In the evaluated scenario, lanes are 3 m wide and the road geometry is aligned such that a +3 m x-offset represents the adjacent lane.
 	std::transform(cx.begin(), cx.end(), cx_new.begin(), [](float x) { return x + 3.0F; });
 
 	const int ncourse = std::min(cx.size(), cy.size());
