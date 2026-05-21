@@ -28,6 +28,30 @@ namespace mcm
 namespace
 {
 
+int classifyTrajectoryType(const PlannedTrajValues& plannedTrajValues, bool accelerationTrajectoryFound)
+{
+	if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change >= 1.0){
+		return 0;
+	}
+	else if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change < 1.0){
+		return 4;
+	}
+	else if (plannedTrajValues.deceleration_change > 0.0){
+		return 1;
+	}
+	else if (plannedTrajValues.lane_change == true){
+		return 2;
+	}
+	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change >= 1.0){
+		return 5;
+	}
+	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change < 1.0){
+		return 6;
+	}
+
+	return 0;
+}
+
 void finalizeSuitableTrajectoryCvResult(
 	TrajectoryPlanner& planner,
 	bool accelerationTrajectoryFound,
@@ -59,24 +83,7 @@ void finalizeSuitableTrajectoryCvResult(
 
 	foundTrajectoryCost = planner.calculateTrajectoryCost(plannedTrajValues, false);
 
-	if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change >= 1.0){
-		typeOfTrajectory = 0;
-	}
-	else if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change < 1.0){
-		typeOfTrajectory = 4;
-	}
-	else if (plannedTrajValues.deceleration_change > 0.0){
-		typeOfTrajectory = 1;
-	}
-	else if (plannedTrajValues.lane_change == true){
-		typeOfTrajectory = 2;
-	}
-	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change >= 1.0){
-		typeOfTrajectory = 5;
-	}
-	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change < 1.0){
-		typeOfTrajectory = 6;
-	}
+	typeOfTrajectory = classifyTrajectoryType(plannedTrajValues, accelerationTrajectoryFound);
 
 	std::cout << planner.mVehicleController->getVehicleId() << " ------------ CV trajectory possible to accept with cost values for priority level: " << possiblePriorityLevelForAccept << std::endl;
 
@@ -1327,24 +1334,7 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 
 		foundTrajectoryCost = calculateTrajectoryCost(plannedTrajValues, false);
 
-		if (plannedTrajValues.speed_change == 0.0 && plannedTrajValues.acc_change == 0.0 && plannedTrajValues.deceleration_change == 0.0 && plannedTrajValues.lane_change == false && plannedTrajValues.time_gap_change >= 1.0) {
-			typeOfTrajectory = 0;
-		}
-		else if (plannedTrajValues.speed_change == 0.0 && plannedTrajValues.acc_change == 0.0 && plannedTrajValues.deceleration_change == 0.0 && plannedTrajValues.lane_change == false && plannedTrajValues.time_gap_change < 1.0) {
-			typeOfTrajectory = 4;
-		}
-		else if (plannedTrajValues.deceleration_change > 0.0) {
-			typeOfTrajectory = 1;
-		}
-		else if (plannedTrajValues.lane_change == true) {
-			typeOfTrajectory = 2;
-		}
-		else if (acceleration_trajectory_found == true && plannedTrajValues.time_gap_change >= 1.0) {
-			typeOfTrajectory = 5;
-		}
-		else if (acceleration_trajectory_found == true && plannedTrajValues.time_gap_change < 1.0) {
-			typeOfTrajectory = 6;
-		}
+		typeOfTrajectory = classifyTrajectoryType(plannedTrajValues, acceleration_trajectory_found);
 
 		std::cout << mVehicleController->getVehicleId() << " RV trajectory found with following values: "
 			<< " speed change: " << plannedTrajValues.speed_change
