@@ -1,21 +1,14 @@
 #include "artery/application/mcm/TrajectoryPlanner.h"
-#include "artery/application/mcm/TrajectoryCsv.h"
-#include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/application/mcm/TrajectoryGeneration.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/traci/VehicleController.h"
 
-#include <boost/units/systems/si/prefixes.hpp>
-#include <boost/units/systems/angle/degrees.hpp>
 #include <boost/units/systems/si/length.hpp>
 #include <boost/units/systems/si/time.hpp>
 
-#include <fstream>
 #include <algorithm>
-#include <limits>
 #include <cmath>
 #include <iostream>
-#include <sstream>
 
 namespace artery
 {
@@ -167,18 +160,21 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
     std::vector<double> speedReductionPercentagesLowPriority = {0.05, 0.1, 0.15, 0.2};
     std::vector<double> decelerationValuesLowPriority = {0.5, 1.0, 1.5, 2.0};
     std::vector<double> timeGapReductionsLowPriority = {1.0, 0.9};
+    // Reserved for future TTC-based adaptation; currently not used in the trajectory search.
     std::vector<double> timeToCollisionReductionsLowPriority = {2.9, 2.8};
 
 	// Define parameters for iteration for medium priority up to 40% change of plan
     std::vector<double> speedReductionPercentagesMediumPriority = {0.25, 0.3, 0.35, 0.4};
     std::vector<double> decelerationValuesMediumPriority = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0};
     std::vector<double> timeGapReductionsMediumPriority = {1.0, 0.9, 0.7, 0.6};
+    // Reserved for future TTC-based adaptation; currently not used in the trajectory search.
     std::vector<double> timeToCollisionReductionsMediumPriority = {2.9, 2.8, 2.7, 2.6};
 	
 	// Define parameters for iteration for high priority up to 60% change of plan
     std::vector<double> speedReductionPercentagesHighPriority = {0.45, 0.5, 0.55, 0.6};
     std::vector<double> decelerationValuesHighPriority = {3.5, 4.0, 4.5, 5.0};
     std::vector<double> timeGapReductionsHighPriority = {1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3};
+    // Reserved for future TTC-based adaptation; currently not used in the trajectory search.
     std::vector<double> timeToCollisionReductionsHighPriority = {2.9, 2.8, 2.7, 2.6, 2.5, 2.4, 2.3, 2.2, 2.1, 2.0};
 
 	/// @note added for Acceleration up to 120 kmh - same for all priorities as it is only 20 percent
