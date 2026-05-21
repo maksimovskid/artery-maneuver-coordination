@@ -227,6 +227,20 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
     double foundDeceleration = 0.0;
 	bool lane_changed = false;
 	double foundTimeGap = 1.0;
+	auto tryShiftedLaneFallback = [&](auto conflictFree, int priorityLevel, bool clearAccelerationRequired) {
+		std::vector<float> cx_new = makeShiftedLaneCx(cx);
+		newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
+
+		if (conflictFree(timeGapMerging)) {
+			trajectory_found = true;
+			lane_changed = true;
+			finalTrajectory = newTraj;
+			if (clearAccelerationRequired) {
+				accelerationRequired = false;
+			}
+			possiblePriorityLevelForAccept = priorityLevel;
+		}
+	};
 	
 	if (priority == 1 or priority == 2){
 		secondCheckWithMediumPriority = true;
@@ -284,16 +298,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible
 						if (trajectory_found == false and isLaneChangePossible == true){					
-							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-							// Lane-change fallback remains a candidate only if the shifted trajectory is conflict-free.
-							if (newTrajMergingConflictFree(timeGapMerging)) {
-								trajectory_found  = true;
-								lane_changed = true;
-								finalTrajectory = newTraj;  // Found suitable trajectory
-								accelerationRequired = false;
-								possiblePriorityLevelForAccept = 0;
-							}
+							tryShiftedLaneFallback(newTrajMergingConflictFree, 0, true);
 						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -336,16 +341,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);
-
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajMergingConflictFree(timeGapMerging)) {
-							trajectory_found = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 0;
-						}
+						tryShiftedLaneFallback(newTrajMergingConflictFree, 0, false);
 					}
 
 					else if (trajectory_found == false &&
@@ -410,15 +406,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-							if (newTrajMergingConflictFree(timeGapMerging)) {
-								trajectory_found  = true;
-								lane_changed = true;
-								finalTrajectory = newTraj;  // Found suitable trajectory
-								accelerationRequired = false;
-								possiblePriorityLevelForAccept = 1;
-							}
+							tryShiftedLaneFallback(newTrajMergingConflictFree, 1, true);
 						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -460,16 +448,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);
-
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajMergingConflictFree(timeGapMerging)) {
-							trajectory_found = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 1;
-						}
+						tryShiftedLaneFallback(newTrajMergingConflictFree, 1, false);
 					}
 
 					else if (trajectory_found == false &&
@@ -530,15 +509,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-							if (newTrajMergingConflictFree(timeGapMerging)) {
-								trajectory_found  = true;
-								lane_changed = true;
-								finalTrajectory = newTraj;  // Found suitable trajectory
-								accelerationRequired = false;
-								possiblePriorityLevelForAccept = 2;
-							}
+							tryShiftedLaneFallback(newTrajMergingConflictFree, 2, true);
 						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -579,15 +550,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajMergingConflictFree(timeGapMerging)) {
-							trajectory_found  = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;  // Found suitable trajectory
-							possiblePriorityLevelForAccept = 2;
-						}
+						tryShiftedLaneFallback(newTrajMergingConflictFree, 2, false);
 					}
 
 					else if (trajectory_found == false &&
@@ -721,15 +684,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 						if (trajectory_found == false and isLaneChangePossible == true){					
-							std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-							newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-							if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-								trajectory_found  = true;
-								lane_changed = true;
-								finalTrajectory = newTraj;  // Found suitable trajectory
-								accelerationRequired = false;
-								possiblePriorityLevelForAccept = 0;
-							}
+							tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 0, true);
 						}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -772,16 +727,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);
-
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-							trajectory_found = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 0;
-						}
+						tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 0, false);
 					}
 
 					else if (trajectory_found == false &&
@@ -910,18 +856,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 
 					// try if lane change is possible 
 					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-							trajectory_found  = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;  // Found suitable trajectory
-							accelerationRequired = false;
-							possiblePriorityLevelForAccept = 1;
-						}
+						tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 1, true);
 					}
 
 					// if reduced time gap and lane change are not possible, then try with deceleration
@@ -960,16 +895,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);
-
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-							trajectory_found  = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;
-							possiblePriorityLevelForAccept = 1;
-						}
+						tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 1, false);
 					}
 
 					else if (trajectory_found == false &&
@@ -1087,15 +1013,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 					}
 
 					if (trajectory_found == false and isLaneChangePossible == true and isRouteAffected == true){					
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-						newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-						if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-							trajectory_found  = true;
-							lane_changed = true;
-							finalTrajectory = newTraj;
-							accelerationRequired = false;
-							possiblePriorityLevelForAccept = 2;
-						}
+						tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 2, true);
 					}
 
 					if (trajectory_found == false and isLaneChangePossible == false){
@@ -1132,15 +1050,7 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 						foundSpeedReduction = 0.0;
 						foundDeceleration = 0.0;
 
-						std::vector<float> cx_new = makeShiftedLaneCx(cx);								
-					newTraj = calculateRefTrajectory(steps, dt, cx_new, cy, mIndex, true, current_speed, 0.0, 0.0);
-
-					if (newTrajLaneChangeConflictFree(timeGapMerging)) {
-						trajectory_found  = true;
-						lane_changed = true;
-						finalTrajectory = newTraj;
-						possiblePriorityLevelForAccept = 2;
-					}
+						tryShiftedLaneFallback(newTrajLaneChangeConflictFree, 2, false);
 				}
 
 					else if (trajectory_found == false &&
