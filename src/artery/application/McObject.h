@@ -2,20 +2,14 @@
 #define ARTERY_MCOBJECT_H_
 
 #include <omnetpp/cobject.h>
-#include <vanetza/asn1/asn1c_wrapper.hpp>
-#include <vanetza/asn1/its/MCMextra/MCM.h>
+#include <vanetza/asn1/mcm.hpp>
 
 #include <memory>
 
 namespace artery
 {
 
-class Mcm : public vanetza::asn1::asn1c_per_wrapper<MCM_t>
-{
-public:
-    using wrapper = vanetza::asn1::asn1c_per_wrapper<MCM_t>;
-    Mcm() : wrapper(asn_DEF_MCM) {}
-};
+using Mcm = vanetza::asn1::Mcm;
 
 class McObject : public omnetpp::cObject
 {
