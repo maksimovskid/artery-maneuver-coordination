@@ -16,6 +16,8 @@ target_sources(core PRIVATE
     ItsG5Service.cc
     LocalDynamicMap.cc
     LocationTableLogger.cc
+    McObject.cc
+    McService.cc
     Middleware.cc
     MultiChannelPolicy.cc
     NetworkInterface.cc
@@ -48,4 +50,5 @@ target_sources(core PRIVATE
     mcm/TrajectoryEnvironmentState.cc
     mcm/TrajectoryGeneration.cc
     mcm/TrajectoryPlanner.cc
+    mcm/McApplication.cc
 )
