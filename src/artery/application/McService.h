@@ -5,6 +5,7 @@
 #include "artery/utility/Channel.h"
 
 #include <omnetpp/simtime.h>
+#include <vanetza/asn1/mcm.hpp>
 #include <vanetza/btp/data_interface.hpp>
 
 #include <memory>
@@ -17,6 +18,8 @@ namespace mcm
 class McApplication;
 }
 
+class VehicleDataProvider;
+
 class McService : public ItsG5BaseService
 {
 public:
@@ -27,6 +30,8 @@ public:
     void trigger() override;
 
 private:
+    vanetza::asn1::Mcm createMinimalIntentionSharingMessage(const VehicleDataProvider&, uint16_t generationDeltaTime) const;
+
     ChannelNumber mPrimaryChannel = channel::CCH;
     omnetpp::SimTime mLastMcmTimestamp;
     std::unique_ptr<mcm::McApplication> mApplication;

@@ -11,9 +11,9 @@ class McApplication
 public:
     McApplication() = default;
 
-    // TODO: add minimal MCM message creation and send/receive state handling.
-    // TODO: integrate VehicleController execution hooks without changing controller APIs first.
-    // TODO: integrate TrajectoryPlanner helpers and negotiation state after the service skeleton is stable.
+    // TODO: add negotiation strategy and maneuver state handling.
+    // TODO: add scenario-specific maneuver coordination behavior.
+    // TODO: integrate TrajectoryPlanner helpers after the service-level MCM plumbing is stable.
 };
 
 }  // namespace mcm
