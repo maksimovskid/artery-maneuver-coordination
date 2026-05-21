@@ -3,6 +3,10 @@
 Artery enables V2X simulations based on ETSI ITS-G5 protocols like GeoNetworking and BTP.
 Single vehicles can be equipped with multiple ITS-G5 services through Artery's middleware, which also provides common Facilities for these services.
 
+## Project Status
+
+This repository is an Artery-based implementation related to V2X maneuver coordination. It is currently being reorganized and restructured from earlier research code into a more maintainable open-source implementation. The work is based on maneuver coordination research by Daniel Maksimovski. Related publications and research background can be found on [ResearchGate](https://www.researchgate.net/profile/Daniel-Maksimovski) and [Google Scholar](https://scholar.google.com/citations?user=gCw5sAcAAAAJ&hl=en). The repository is under active development and does not yet represent a finished or fully validated implementation.
+
 Artery started as an extension of the [Veins framework](http://veins.car2x.org) but can be used independently nowadays.
 Please refer to its [documentation](http://veins.car2x.org/documentation) for details about Veins.
 
