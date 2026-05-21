@@ -9,6 +9,7 @@
 #include <vanetza/btp/data_interface.hpp>
 
 #include <memory>
+#include <cstdint>
 
 namespace artery
 {
@@ -19,6 +20,7 @@ class McApplication;
 }
 
 class VehicleDataProvider;
+class Timer;
 
 class McService : public ItsG5BaseService
 {
@@ -33,6 +35,8 @@ private:
     vanetza::asn1::Mcm createMinimalIntentionSharingMessage(const VehicleDataProvider&, uint16_t generationDeltaTime) const;
 
     ChannelNumber mPrimaryChannel = channel::CCH;
+    const VehicleDataProvider* mVehicleDataProvider = nullptr;
+    const Timer* mTimer = nullptr;
     omnetpp::SimTime mLastMcmTimestamp;
     std::unique_ptr<mcm::McApplication> mApplication;
 };

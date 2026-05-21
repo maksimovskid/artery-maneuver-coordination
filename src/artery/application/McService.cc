@@ -3,6 +3,7 @@
 #include "artery/application/Asn1PacketVisitor.h"
 #include "artery/application/McObject.h"
 #include "artery/application/MultiChannelPolicy.h"
+#include "artery/application/Timer.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
 #include "artery/utility/round.h"
@@ -60,6 +61,8 @@ void McService::initialize()
 {
     ItsG5BaseService::initialize();
 
+    mVehicleDataProvider = &getFacilities().get_const<VehicleDataProvider>();
+    mTimer = &getFacilities().get_const<Timer>();
     mLastMcmTimestamp = simTime();
     mApplication.reset(new mcm::McApplication());
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(vanetza::aid::MDM);
@@ -69,10 +72,15 @@ void McService::trigger()
 {
     Enter_Method("trigger");
 
-    // TODO: create and send minimal MCM messages after the ASN.1 content builder is introduced.
+    uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
+    auto mcm = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+    McObject obj(std::move(mcm));
+
+    EV_INFO << "Created valid minimal MCM for station " << obj.asn1()->header.stationID << " at " << simTime() << '\n';
+    mLastMcmTimestamp = simTime();
+
     // TODO: integrate trajectory planning and negotiation logic through McApplication, not here.
-    (void) mPrimaryChannel;
-    (void) mLastMcmTimestamp;
+    // TODO: emit McmSent only when this dry-run path is replaced by real BTP transmission.
     (void) scSignalMcmSent;
 }
 
