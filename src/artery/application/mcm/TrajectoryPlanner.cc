@@ -25,6 +25,74 @@ using namespace omnetpp;
 namespace mcm
 {
 
+namespace
+{
+
+void finalizeSuitableTrajectoryCvResult(
+	TrajectoryPlanner& planner,
+	bool accelerationTrajectoryFound,
+	double foundSpeedIncrease,
+	double foundSpeedReduction,
+	double foundAcceleration,
+	double foundDeceleration,
+	bool laneChanged,
+	double foundTimeGap,
+	int possiblePriorityLevelForAccept,
+	PlannedTrajValues& plannedTrajValues,
+	double& foundTrajectoryCost,
+	int& typeOfTrajectory)
+{
+	if (accelerationTrajectoryFound == true){
+		plannedTrajValues.speed_change = foundSpeedIncrease;
+		std::cout << planner.mVehicleController->getVehicleId() << " ------------ CV found speed increase is: " << foundSpeedIncrease << std::endl;
+	}
+	else {
+		plannedTrajValues.speed_change = foundSpeedReduction;
+		std::cout << planner.mVehicleController->getVehicleId() << " ------------ CV found speed reduction is: " << foundSpeedReduction << std::endl;
+	}
+
+	plannedTrajValues.acc_change = foundAcceleration;
+	plannedTrajValues.deceleration_change = foundDeceleration;
+	plannedTrajValues.lane_change = laneChanged;
+	plannedTrajValues.time_gap_change = foundTimeGap;
+	plannedTrajValues.TTC_change = 3.0;
+
+	foundTrajectoryCost = planner.calculateTrajectoryCost(plannedTrajValues, false);
+
+	if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change >= 1.0){
+		typeOfTrajectory = 0;
+	}
+	else if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change < 1.0){
+		typeOfTrajectory = 4;
+	}
+	else if (plannedTrajValues.deceleration_change > 0.0){
+		typeOfTrajectory = 1;
+	}
+	else if (plannedTrajValues.lane_change == true){
+		typeOfTrajectory = 2;
+	}
+	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change >= 1.0){
+		typeOfTrajectory = 5;
+	}
+	else if (accelerationTrajectoryFound == true and plannedTrajValues.time_gap_change < 1.0){
+		typeOfTrajectory = 6;
+	}
+
+	std::cout << planner.mVehicleController->getVehicleId() << " ------------ CV trajectory possible to accept with cost values for priority level: " << possiblePriorityLevelForAccept << std::endl;
+
+	std::cout << planner.mVehicleController->getVehicleId() << " ------------ CV trajectory found with following values: "
+		<< " speed change: " << plannedTrajValues.speed_change
+		<< " acceleration: " << plannedTrajValues.acc_change
+		<< " deceleration: " << plannedTrajValues.deceleration_change
+		<< " lane changed:" << plannedTrajValues.lane_change
+		<< " time gap: " << plannedTrajValues.time_gap_change
+		<< " TTC: " << plannedTrajValues.TTC_change
+		<< " ------- TOTAL TRAJECTORY COST: " << foundTrajectoryCost
+		<< std::endl;
+}
+
+} // namespace
+
 TrajectoryPlanner::TrajectoryPlanner()
 : mVehicleController(nullptr), mVehicleDataProvider(nullptr), mLocalEnvironmentModel(nullptr)
 {}
@@ -1113,57 +1181,23 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 				//std::cout << mVehicleController->getVehicleId() << " there is no conflict with received Req Traj " << std::endl;
 		}
 		
-	}
-	/// @note  -----------------------------------------------------------------------here ends for received lane change request ---------------------------------------------------------------------
-		if (trajectory_found == true){
-		if (acceleration_trajectory_found == true){
-			plannedTrajValues.speed_change = foundSpeedIncrease;
-			std::cout << mVehicleController->getVehicleId() << " ------------ CV found speed increase is: " << foundSpeedIncrease << std::endl; 
 		}
-		else {
-			plannedTrajValues.speed_change = foundSpeedReduction;
-			std::cout << mVehicleController->getVehicleId() << " ------------ CV found speed reduction is: " << foundSpeedReduction << std::endl; 
+		/// @note  -----------------------------------------------------------------------here ends for received lane change request ---------------------------------------------------------------------
+			if (trajectory_found == true){
+			finalizeSuitableTrajectoryCvResult(
+				*this,
+				acceleration_trajectory_found,
+				foundSpeedIncrease,
+				foundSpeedReduction,
+				foundAcceleration,
+				foundDeceleration,
+				lane_changed,
+				foundTimeGap,
+				possiblePriorityLevelForAccept,
+				plannedTrajValues,
+				foundTrajectoryCost,
+				typeOfTrajectory);
 		}
-
-		plannedTrajValues.acc_change = foundAcceleration;
-		plannedTrajValues.deceleration_change = foundDeceleration;
-		plannedTrajValues.lane_change = lane_changed;
-		plannedTrajValues.time_gap_change = foundTimeGap;
-		plannedTrajValues.TTC_change = 3.0; 
-
-		foundTrajectoryCost = calculateTrajectoryCost(plannedTrajValues, false);	
-		
-		if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change >= 1.0){
-			typeOfTrajectory = 0;
-		}
-		else if (plannedTrajValues.speed_change == 0.0 and plannedTrajValues.acc_change == 0.0 and plannedTrajValues.deceleration_change == 0.0 and plannedTrajValues.lane_change == false and plannedTrajValues.time_gap_change < 1.0){
-			typeOfTrajectory = 4;
-		}
-		else if (plannedTrajValues.deceleration_change > 0.0){
-			typeOfTrajectory = 1;
-		}
-		else if (plannedTrajValues.lane_change == true){
-			typeOfTrajectory = 2;
-		}	
-		else if (acceleration_trajectory_found == true and plannedTrajValues.time_gap_change >= 1.0){
-			typeOfTrajectory = 5;
-		}	
-		else if (acceleration_trajectory_found == true and plannedTrajValues.time_gap_change < 1.0){
-			typeOfTrajectory = 6;
-		}	
-
-		std::cout << mVehicleController->getVehicleId() << " ------------ CV trajectory possible to accept with cost values for priority level: " << possiblePriorityLevelForAccept << std::endl; 
-		
-		std::cout << mVehicleController->getVehicleId() << " ------------ CV trajectory found with following values: " 
-			<< " speed change: " << plannedTrajValues.speed_change
-			<< " acceleration: " << plannedTrajValues.acc_change
-			<< " deceleration: " << plannedTrajValues.deceleration_change
-			<< " lane changed:" << plannedTrajValues.lane_change
-			<< " time gap: " << plannedTrajValues.time_gap_change
-			<< " TTC: " << plannedTrajValues.TTC_change
-			<< " ------- TOTAL TRAJECTORY COST: " << foundTrajectoryCost
-			<< std::endl; 
-	}
 
  	return std::make_tuple(trajectory_found, finalTrajectory, plannedTrajValues, foundTrajectoryCost, typeOfTrajectory, possiblePriorityLevelForAccept);
 }		
