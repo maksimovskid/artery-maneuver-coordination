@@ -78,22 +78,10 @@ public:
 
 	void printTrajectory(const Trajectory& trajectory);
 
-	double getDistance(double x1, double y1, double x2, double y2);
 	double getDesiredGap();
 	double getGap(double gap);
-	double getMinGapPriority(int maneuverPriority);
-	double calculateTimeGap(double distance, double speed);
-	double calculateDecelerationTime(double initialVelocity, double finalVelocity, double deceleration);
-	double calculateTTC(double mySpeed, double frontVehicleSpeed, double distance);
-
-	bool checkIfSameEdgeAndLane(const std::string& egoEdge, int egoLane, const std::string& otherEdge, int otherLane);
-	bool isWithinInterval(double value, double lowerBound, double upperBound);
 
 	FrontVehicleInfo getFrontVehicleInfo();
-
-	std::vector<std::string> splitString(const std::string& line, char delimiter);
-	std::vector<float> readCX(const std::string& filename, char delimiter, const std::string& column_name);
-	bool checkColumnExists(const std::string& filename, const std::string& columnName, char delimiter);
 
 	TupleSuitableTrajectory findSuitableTrajectoryCV(Trajectory received_ReqTraj, int receivedPriority, bool mergingReqTraj, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired, bool isLaneChangePossible, bool isRouteAffected);
 

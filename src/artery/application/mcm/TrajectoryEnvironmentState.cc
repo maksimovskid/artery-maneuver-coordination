@@ -1,4 +1,5 @@
 #include "artery/application/mcm/TrajectoryPlanner.h"
+#include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/traci/VehicleController.h"
 
@@ -75,7 +76,7 @@ FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
         const std::string other_RoadID = vehicle_api.getRoadID(other_vehicle_id);
         const int other_LaneIndex = vehicle_api.getLaneIndex(other_vehicle_id);
 
-        if (!checkIfSameEdgeAndLane(
+        if (!artery::mcm::checkIfSameEdgeAndLane(
                 ego_RoadID,
                 ego_LaneIndex,
                 other_RoadID,
@@ -85,7 +86,7 @@ FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
 
         const auto& otherPosition = object->getCentrePoint();
 
-        const double distance = getDistance(
+        const double distance = artery::mcm::getDistance(
             myPosition.x / boost::units::si::meters,
             myPosition.y / boost::units::si::meters,
             otherPosition.x / boost::units::si::meters,

@@ -107,49 +107,6 @@ void TrajectoryPlanner::initialize(const traci::VehicleController* mvc, const Ve
 	mVehicleDataProvider = mvdp;
 	mLocalEnvironmentModel = lem;
 };
-double TrajectoryPlanner::getDistance(double x1, double y1, double x2, double y2)
-{
-    return artery::mcm::getDistance(x1, y1, x2, y2);
-}
-
-double TrajectoryPlanner::getMinGapPriority(int maneuverPriority)
-{
-    return artery::mcm::getMinGapPriority(maneuverPriority);
-}
-
-double TrajectoryPlanner::calculateTimeGap(double distance, double speed)
-{
-    return artery::mcm::calculateTimeGap(distance, speed);
-}
-
-bool TrajectoryPlanner::checkIfSameEdgeAndLane(
-    const std::string& egoEdge,
-    int egoLane,
-    const std::string& otherEdge,
-    int otherLane)
-{
-    return artery::mcm::checkIfSameEdgeAndLane(egoEdge, egoLane, otherEdge, otherLane);
-} 
-
-bool TrajectoryPlanner::isWithinInterval (double value, double lowerBound, double upperBound){
-	return artery::mcm::isWithinInterval(value, lowerBound, upperBound);
-}
-
-double TrajectoryPlanner::calculateDecelerationTime(
-    double initialVelocity,
-    double finalVelocity,
-    double deceleration)
-{
-    return artery::mcm::calculateDecelerationTime(initialVelocity, finalVelocity, deceleration);
-}
-
-double TrajectoryPlanner::calculateTTC(
-    double mySpeed,
-    double frontVehicleSpeed,
-    double distance)
-{
-    return artery::mcm::calculateTTC(mySpeed, frontVehicleSpeed, distance);
-}
 
 // Function to iterate over different parameters and find a suitable trajectory
 TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajectoryCV(
@@ -1604,21 +1561,6 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::newPlannedTrajRV(
 	return std::make_tuple(trajectory_found, finalTrajectory, plannedTrajValues, foundTrajectoryCost, typeOfTrajectory, possiblePriorityLevelForAccept);
 }
 
-
-std::vector<std::string> TrajectoryPlanner::splitString(const std::string& line, char delimiter)
-{
-	return artery::mcm::splitString(line, delimiter);
-}
-
-std::vector<float> TrajectoryPlanner::readCX(const std::string& filename, char delimiter, const std::string& column_name)
-{
-	return artery::mcm::readCX(filename, delimiter, column_name);
-}
-
-bool TrajectoryPlanner::checkColumnExists(const std::string& filename, const std::string& columnName, char delimiter)
-{
-	return artery::mcm::checkColumnExists(filename, columnName, delimiter);
-}
 
 } // namespace mcm
 } // namespace artery
