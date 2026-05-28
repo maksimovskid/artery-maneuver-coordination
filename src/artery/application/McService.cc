@@ -6,6 +6,7 @@
 #include "artery/application/Timer.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
+#include "artery/traci/VehicleController.h"
 #include "artery/utility/round.h"
 
 #include <boost/units/systems/si/prefixes.hpp>
@@ -65,6 +66,7 @@ void McService::initialize()
     mTimer = &getFacilities().get_const<Timer>();
     mLastMcmTimestamp = simTime();
     mApplication.reset(new mcm::McApplication());
+    mApplication->initialize(&getFacilities().get_mutable<traci::VehicleController>());
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(vanetza::aid::MDM);
 }
 
