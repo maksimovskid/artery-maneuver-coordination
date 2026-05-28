@@ -32,6 +32,7 @@ public:
     void trigger() override;
 
 private:
+    void sendMcm(const omnetpp::SimTime&);
     vanetza::asn1::Mcm createMinimalIntentionSharingMessage(const VehicleDataProvider&, uint16_t generationDeltaTime) const;
 
     ChannelNumber mPrimaryChannel = channel::CCH;

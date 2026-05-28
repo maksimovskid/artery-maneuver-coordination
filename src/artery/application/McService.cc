@@ -13,7 +13,9 @@
 #include <omnetpp/cexception.h>
 #include <omnetpp.h>
 #include <vanetza/asn1/asn1c_wrapper.hpp>
+#include <vanetza/btp/ports.hpp>
 #include <vanetza/common/its_aid.hpp>
+#include <vanetza/dcc/profile.hpp>
 #include <vanetza/units/angle.hpp>
 #include <vanetza/units/velocity.hpp>
 
@@ -31,6 +33,9 @@ namespace
 {
 
 constexpr long scMcmMessageId = 20;
+
+// Experimental MCM/MCS ITS-AID placeholder until an official or project-specific value is introduced.
+constexpr vanetza::ItsAid scExperimentalMcmAid = 650;
 
 auto microdegree = vanetza::units::degree * boost::units::si::micro;
 auto decidegree = vanetza::units::degree * boost::units::si::deci;
@@ -67,23 +72,39 @@ void McService::initialize()
     mLastMcmTimestamp = simTime();
     mApplication.reset(new mcm::McApplication());
     mApplication->initialize(&getFacilities().get_mutable<traci::VehicleController>());
-    mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(vanetza::aid::MDM);
+    mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
 }
 
 void McService::trigger()
 {
     Enter_Method("trigger");
+    sendMcm(simTime());
+}
 
+void McService::sendMcm(const SimTime& T_now)
+{
     uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
     auto mcm = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+
+    using namespace vanetza;
+    btp::DataRequestB request;
+    request.destination_port = btp::ports::MCM;
+    request.gn.its_aid = scExperimentalMcmAid;
+    request.gn.transport_type = geonet::TransportType::SHB;
+    request.gn.maximum_lifetime = geonet::Lifetime { geonet::Lifetime::Base::One_Second, 1 };
+    request.gn.traffic_class.tc_id(static_cast<unsigned>(dcc::Profile::DP2));
+    request.gn.communication_profile = geonet::CommunicationProfile::ITS_G5;
+
     McObject obj(std::move(mcm));
+    emit(scSignalMcmSent, &obj);
+    EV_INFO << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
+    mLastMcmTimestamp = T_now;
 
-    EV_INFO << "Created valid minimal MCM for station " << obj.asn1()->header.stationID << " at " << simTime() << '\n';
-    mLastMcmTimestamp = simTime();
-
-    // TODO: integrate trajectory planning and negotiation logic through McApplication, not here.
-    // TODO: emit McmSent only when this dry-run path is replaced by real BTP transmission.
-    (void) scSignalMcmSent;
+    using McmByteBuffer = convertible::byte_buffer_impl<asn1::Mcm>;
+    std::unique_ptr<geonet::DownPacket> payload { new geonet::DownPacket() };
+    std::unique_ptr<convertible::byte_buffer> buffer { new McmByteBuffer(obj.shared_ptr()) };
+    payload->layer(OsiLayer::Application) = std::move(buffer);
+    this->request(request, std::move(payload));
 }
 
 vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
