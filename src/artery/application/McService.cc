@@ -11,7 +11,6 @@
 #include <boost/units/systems/si/prefixes.hpp>
 #include <omnetpp.h>
 #include <vanetza/asn1/asn1c_wrapper.hpp>
-#include <vanetza/asn1/support/per_support.h>
 #include <vanetza/btp/ports.hpp>
 #include <vanetza/common/its_aid.hpp>
 #include <vanetza/dcc/profile.hpp>
@@ -19,6 +18,7 @@
 #include <vanetza/units/velocity.hpp>
 
 #include <exception>
+#include <string>
 
 namespace artery
 {
@@ -36,66 +36,9 @@ constexpr long scMcmMessageId = 20;
 // Experimental MCM/MCS ITS-AID placeholder until an official or project-specific value is introduced.
 constexpr vanetza::ItsAid scExperimentalMcmAid = 650;
 
-const asn_per_constraints_t scVehicleAutomationLevelConstraints = {
-    { asn_per_constraint_t::APC_CONSTRAINED, 3, 3, 0, 5 },
-    { asn_per_constraint_t::APC_UNCONSTRAINED, -1, -1, 0, 0 },
-    nullptr, nullptr
-};
-const asn_INTEGER_enum_map_t scVehicleAutomationLevelValueMap[] = {
-    { VehicleAutomationLevel_notAvailable, 12, "notAvailable" },
-    { VehicleAutomationLevel_saeLevel1, 9, "saeLevel1" },
-    { VehicleAutomationLevel_saeLevel2, 9, "saeLevel2" },
-    { VehicleAutomationLevel_saeLevel3, 9, "saeLevel3" },
-    { VehicleAutomationLevel_saeLevel4, 9, "saeLevel4" },
-    { VehicleAutomationLevel_saeLevel5, 9, "saeLevel5" }
-};
-const unsigned int scVehicleAutomationLevelNameMap[] = {
-    0, 1, 2, 3, 4, 5
-};
-const asn_INTEGER_specifics_t scVehicleAutomationLevelSpecifics = {
-    scVehicleAutomationLevelValueMap,
-    scVehicleAutomationLevelNameMap,
-    6,
-    0,
-    1,
-    0,
-    0
-};
-const asn_per_constraints_t scTrajectoryOffsetPointConstraints = {
-    { asn_per_constraint_t::APC_CONSTRAINED, 22, 22, -2000000, 2000000 },
-    { asn_per_constraint_t::APC_UNCONSTRAINED, -1, -1, 0, 0 },
-    nullptr, nullptr
-};
-const asn_per_constraints_t scTrajectoryOffsetHeadingConstraints = {
-    { asn_per_constraint_t::APC_CONSTRAINED, 12, 12, -1800, 1800 },
-    { asn_per_constraint_t::APC_UNCONSTRAINED, -1, -1, 0, 0 },
-    nullptr, nullptr
-};
-const asn_per_constraints_t scTrajectoryOffsetTimeConstraints = {
-    { asn_per_constraint_t::APC_CONSTRAINED, 15, 15, 0, 30000 },
-    { asn_per_constraint_t::APC_UNCONSTRAINED, -1, -1, 0, 0 },
-    nullptr, nullptr
-};
-const asn_per_constraints_t scTrajectoryMcmConstraints = {
-    { asn_per_constraint_t::APC_UNCONSTRAINED, -1, -1, 0, 0 },
-    { asn_per_constraint_t::APC_CONSTRAINED, 5, 5, 1, 20 },
-    nullptr, nullptr
-};
-
 auto microdegree = vanetza::units::degree * boost::units::si::micro;
 auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
-
-void configureExperimentalMcmPerConstraints()
-{
-    // MCMextra descriptors miss generated PER metadata for these mandatory minimal MCM fields.
-    asn_DEF_VehicleAutomationLevel.encoding_constraints.per_constraints = &scVehicleAutomationLevelConstraints;
-    asn_DEF_VehicleAutomationLevel.specifics = &scVehicleAutomationLevelSpecifics;
-    asn_DEF_TrajectoryOffsetPoint.encoding_constraints.per_constraints = &scTrajectoryOffsetPointConstraints;
-    asn_DEF_TrajectoryOffsetHeading.encoding_constraints.per_constraints = &scTrajectoryOffsetHeadingConstraints;
-    asn_DEF_TrajectoryOffsetTime.encoding_constraints.per_constraints = &scTrajectoryOffsetTimeConstraints;
-    asn_DEF_TrajectoryMCM.encoding_constraints.per_constraints = &scTrajectoryMcmConstraints;
-}
 
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
@@ -123,7 +66,6 @@ void McService::initialize()
 {
     ItsG5BaseService::initialize();
 
-    configureExperimentalMcmPerConstraints();
     mLastMcmTimestamp = simTime();
     mApplication.reset(new mcm::McApplication());
     // TODO: wire VehicleController later when execution logic needs it and facility initialization order is confirmed.
@@ -207,7 +149,10 @@ vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const Vehicle
     point->deltaTime = 0;
     ASN_SEQUENCE_ADD(&intent.plannedTrajectory, point);
 
-    // TODO: re-enable validation once MCM trajectory offset descriptors expose safe constraint hooks.
+    std::string error;
+    if (!message.validate(error)) {
+        throw cRuntimeError("Invalid minimal MCM: %s", error.c_str());
+    }
 
     return message;
 }
@@ -224,16 +169,13 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             return;
         }
 
-        // TODO: receive validation is temporarily skipped because current MCM ASN.1/PER descriptor
-        // metadata can crash during receive validation. Re-enable validation after missing descriptor
-        // constraints/metadata are fixed.
-        const bool valid = true;
-        if (!valid) {
-            EV_WARN << "McService receive: invalid MCM, dropping packet\n";
+        std::string error;
+        if (!mcm->validate(error)) {
+            EV_WARN << "McService receive: invalid MCM, dropping packet: " << error << '\n';
             return;
         }
 
-        EV_DETAIL << "McService receive: decoded MCM, validation skipped, emitting McmReceived\n";
+        EV_DETAIL << "McService receive: decoded and validated MCM, emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
         // TODO: pass decoded MCMs to McApplication for send/receive state handling.
