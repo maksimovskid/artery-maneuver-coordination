@@ -105,6 +105,52 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
     return metadata;
 }
 
+mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
+{
+    const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
+    const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
+    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+
+    mcm::McmSnapshot snapshot;
+    snapshot.stationId = static_cast<uint32_t>(message.header.stationID);
+    snapshot.generationDeltaTime = static_cast<uint16_t>(message.mcm.generationDeltaTime);
+    snapshot.longitude = basic.referencePosition.longitude;
+    snapshot.latitude = basic.referencePosition.latitude;
+    snapshot.speedValue = intent.speed.speedValue;
+    snapshot.headingValue = intent.heading.headingValue;
+    snapshot.plannedTrajectoryPointCount = static_cast<std::size_t>(intent.plannedTrajectory.list.count);
+    snapshot.operationMode = metadata.operationMode;
+    snapshot.hasNegotiationContainer = metadata.hasNegotiationContainer;
+    snapshot.hasExecutionContainer = metadata.hasExecutionContainer;
+    snapshot.mcmCategory = metadata.mcmCategory;
+    snapshot.priorityManeuver = metadata.priorityManeuver;
+    snapshot.cooperationTypeMcm = metadata.cooperationTypeMcm;
+    snapshot.requestId = metadata.requestId;
+    snapshot.numberOfVehicles = metadata.numberOfVehicles;
+    snapshot.negotiationVehicleId1 = metadata.negotiationVehicleId1;
+    snapshot.hasNegotiationVehicleId2 = metadata.hasNegotiationVehicleId2;
+    snapshot.negotiationVehicleId2 = metadata.negotiationVehicleId2;
+    snapshot.requestedTrajectoryPointCount = metadata.requestedTrajectoryPointCount;
+    snapshot.offeredTrajectoryPointCount = metadata.offeredTrajectoryPointCount;
+    snapshot.hasAlternativeTrajectory = metadata.hasAlternativeTrajectory;
+    snapshot.alternativeTrajectoryPointCount = metadata.alternativeTrajectoryPointCount;
+    snapshot.cooperationId = metadata.cooperationId;
+    snapshot.cooperationVehicleId1 = metadata.cooperationVehicleId1;
+    snapshot.hasCooperationVehicleId2 = metadata.hasCooperationVehicleId2;
+    snapshot.cooperationVehicleId2 = metadata.cooperationVehicleId2;
+    return snapshot;
+}
+
+mcm::SentMcm makeSentMcm(const MCM_t& message, omnetpp::SimTime sentAt)
+{
+    return { extractMcmSnapshot(message), sentAt };
+}
+
+mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime receivedAt)
+{
+    return { extractMcmSnapshot(message), receivedAt };
+}
+
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
     static const vanetza::units::Velocity lower { 0.0 * boost::units::si::meter_per_second };
@@ -164,40 +210,7 @@ void McService::sendMcm(const SimTime& T_now)
     McObject obj(std::move(mcm));
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
-    const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
-    const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
-    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
-    // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
-    const mcm::SentMcm snapshot {
-        static_cast<uint32_t>(message.header.stationID),
-        static_cast<uint16_t>(message.mcm.generationDeltaTime),
-        basic.referencePosition.longitude,
-        basic.referencePosition.latitude,
-        intent.speed.speedValue,
-        intent.heading.headingValue,
-        static_cast<std::size_t>(intent.plannedTrajectory.list.count),
-        metadata.operationMode,
-        metadata.hasNegotiationContainer,
-        metadata.hasExecutionContainer,
-        metadata.mcmCategory,
-        metadata.priorityManeuver,
-        metadata.cooperationTypeMcm,
-        metadata.requestId,
-        metadata.numberOfVehicles,
-        metadata.negotiationVehicleId1,
-        metadata.hasNegotiationVehicleId2,
-        metadata.negotiationVehicleId2,
-        metadata.requestedTrajectoryPointCount,
-        metadata.offeredTrajectoryPointCount,
-        metadata.hasAlternativeTrajectory,
-        metadata.alternativeTrajectoryPointCount,
-        metadata.cooperationId,
-        metadata.cooperationVehicleId1,
-        metadata.hasCooperationVehicleId2,
-        metadata.cooperationVehicleId2,
-        T_now
-    };
-    mApplication->handleSentMcm(snapshot);
+    mApplication->handleSentMcm(makeSentMcm(message, T_now));
     EV_DETAIL << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
     mLastMcmTimestamp = T_now;
 
@@ -280,40 +293,7 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         emit(scSignalMcmReceived, &obj);
 
         const MCM_t& message = *obj.asn1();
-        const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
-        const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
-        const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
-        // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
-        const mcm::ReceivedMcm snapshot {
-            static_cast<uint32_t>(message.header.stationID),
-            static_cast<uint16_t>(message.mcm.generationDeltaTime),
-            basic.referencePosition.longitude,
-            basic.referencePosition.latitude,
-            intent.speed.speedValue,
-            intent.heading.headingValue,
-            static_cast<std::size_t>(intent.plannedTrajectory.list.count),
-            metadata.operationMode,
-            metadata.hasNegotiationContainer,
-            metadata.hasExecutionContainer,
-            metadata.mcmCategory,
-            metadata.priorityManeuver,
-            metadata.cooperationTypeMcm,
-            metadata.requestId,
-            metadata.numberOfVehicles,
-            metadata.negotiationVehicleId1,
-            metadata.hasNegotiationVehicleId2,
-            metadata.negotiationVehicleId2,
-            metadata.requestedTrajectoryPointCount,
-            metadata.offeredTrajectoryPointCount,
-            metadata.hasAlternativeTrajectory,
-            metadata.alternativeTrajectoryPointCount,
-            metadata.cooperationId,
-            metadata.cooperationVehicleId1,
-            metadata.hasCooperationVehicleId2,
-            metadata.cooperationVehicleId2,
-            simTime()
-        };
-        mApplication->handleReceivedMcm(snapshot);
+        mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
     } catch (const std::exception& e) {
         EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';
     } catch (...) {

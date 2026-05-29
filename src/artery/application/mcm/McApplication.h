@@ -23,7 +23,7 @@ enum class McmOperationMode {
     ManeuverExecution
 };
 
-struct ReceivedMcm {
+struct McmSnapshot {
     uint32_t stationId = 0;
     uint16_t generationDeltaTime = 0;
     long longitude = 0;
@@ -50,36 +50,15 @@ struct ReceivedMcm {
     uint32_t cooperationVehicleId1 = 0;
     bool hasCooperationVehicleId2 = false;
     uint32_t cooperationVehicleId2 = 0;
+};
+
+struct ReceivedMcm {
+    McmSnapshot data;
     omnetpp::SimTime receivedAt;
 };
 
 struct SentMcm {
-    uint32_t stationId = 0;
-    uint16_t generationDeltaTime = 0;
-    long longitude = 0;
-    long latitude = 0;
-    long speedValue = 0;
-    long headingValue = 0;
-    std::size_t plannedTrajectoryPointCount = 0;
-    McmOperationMode operationMode = McmOperationMode::Unknown;
-    bool hasNegotiationContainer = false;
-    bool hasExecutionContainer = false;
-    long mcmCategory = -1;
-    long priorityManeuver = -1;
-    long cooperationTypeMcm = -1;
-    long requestId = -1;
-    long numberOfVehicles = -1;
-    uint32_t negotiationVehicleId1 = 0;
-    bool hasNegotiationVehicleId2 = false;
-    uint32_t negotiationVehicleId2 = 0;
-    std::size_t requestedTrajectoryPointCount = 0;
-    std::size_t offeredTrajectoryPointCount = 0;
-    bool hasAlternativeTrajectory = false;
-    std::size_t alternativeTrajectoryPointCount = 0;
-    long cooperationId = -1;
-    uint32_t cooperationVehicleId1 = 0;
-    bool hasCooperationVehicleId2 = false;
-    uint32_t cooperationVehicleId2 = 0;
+    McmSnapshot data;
     omnetpp::SimTime sentAt;
 };
 
