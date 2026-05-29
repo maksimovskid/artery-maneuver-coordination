@@ -46,6 +46,16 @@ struct McmOperationMetadata {
     bool hasExecutionContainer = false;
     long mcmCategory = -1;
     long priorityManeuver = -1;
+    long cooperationTypeMcm = -1;
+    long requestId = -1;
+    long numberOfVehicles = -1;
+    uint32_t negotiationVehicleId1 = 0;
+    bool hasNegotiationVehicleId2 = false;
+    uint32_t negotiationVehicleId2 = 0;
+    std::size_t requestedTrajectoryPointCount = 0;
+    std::size_t offeredTrajectoryPointCount = 0;
+    bool hasAlternativeTrajectory = false;
+    std::size_t alternativeTrajectoryPointCount = 0;
 };
 
 McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
@@ -59,9 +69,24 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
         metadata.mcmCategory = parameters.maneuverExecutionContainer->mcmCategory;
         metadata.priorityManeuver = parameters.maneuverExecutionContainer->priorityManeuver;
     } else if (parameters.maneuverNegotiationContainer) {
+        const ManeuverNegotiationContainer_t& negotiation = *parameters.maneuverNegotiationContainer;
         metadata.operationMode = mcm::McmOperationMode::ManeuverNegotiation;
-        metadata.mcmCategory = parameters.maneuverNegotiationContainer->mcmCategory;
-        metadata.priorityManeuver = parameters.maneuverNegotiationContainer->priorityManeuver;
+        metadata.mcmCategory = negotiation.mcmCategory;
+        metadata.priorityManeuver = negotiation.priorityManeuver;
+        metadata.cooperationTypeMcm = negotiation.cooperationTypeMCM;
+        metadata.requestId = negotiation.requestID;
+        metadata.numberOfVehicles = negotiation.numberOfVehicles;
+        metadata.negotiationVehicleId1 = static_cast<uint32_t>(negotiation.negotiationVehicleID1);
+        metadata.hasNegotiationVehicleId2 = negotiation.negotiationVehicleID2 != nullptr;
+        if (negotiation.negotiationVehicleID2) {
+            metadata.negotiationVehicleId2 = static_cast<uint32_t>(*negotiation.negotiationVehicleID2);
+        }
+        metadata.requestedTrajectoryPointCount = static_cast<std::size_t>(negotiation.requestedTrajectory.list.count);
+        metadata.offeredTrajectoryPointCount = static_cast<std::size_t>(negotiation.offeredTrajectory.list.count);
+        metadata.hasAlternativeTrajectory = negotiation.alternativeTrajectory != nullptr;
+        if (negotiation.alternativeTrajectory) {
+            metadata.alternativeTrajectoryPointCount = static_cast<std::size_t>(negotiation.alternativeTrajectory->list.count);
+        }
     } else {
         metadata.operationMode = mcm::McmOperationMode::IntentSharing;
     }
@@ -145,6 +170,16 @@ void McService::sendMcm(const SimTime& T_now)
         metadata.hasExecutionContainer,
         metadata.mcmCategory,
         metadata.priorityManeuver,
+        metadata.cooperationTypeMcm,
+        metadata.requestId,
+        metadata.numberOfVehicles,
+        metadata.negotiationVehicleId1,
+        metadata.hasNegotiationVehicleId2,
+        metadata.negotiationVehicleId2,
+        metadata.requestedTrajectoryPointCount,
+        metadata.offeredTrajectoryPointCount,
+        metadata.hasAlternativeTrajectory,
+        metadata.alternativeTrajectoryPointCount,
         T_now
     };
     mApplication->handleSentMcm(snapshot);
@@ -247,6 +282,16 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             metadata.hasExecutionContainer,
             metadata.mcmCategory,
             metadata.priorityManeuver,
+            metadata.cooperationTypeMcm,
+            metadata.requestId,
+            metadata.numberOfVehicles,
+            metadata.negotiationVehicleId1,
+            metadata.hasNegotiationVehicleId2,
+            metadata.negotiationVehicleId2,
+            metadata.requestedTrajectoryPointCount,
+            metadata.offeredTrajectoryPointCount,
+            metadata.hasAlternativeTrajectory,
+            metadata.alternativeTrajectoryPointCount,
             simTime()
         };
         mApplication->handleReceivedMcm(snapshot);

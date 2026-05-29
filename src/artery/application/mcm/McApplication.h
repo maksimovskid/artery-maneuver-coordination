@@ -36,6 +36,16 @@ struct ReceivedMcm {
     bool hasExecutionContainer = false;
     long mcmCategory = -1;
     long priorityManeuver = -1;
+    long cooperationTypeMcm = -1;
+    long requestId = -1;
+    long numberOfVehicles = -1;
+    uint32_t negotiationVehicleId1 = 0;
+    bool hasNegotiationVehicleId2 = false;
+    uint32_t negotiationVehicleId2 = 0;
+    std::size_t requestedTrajectoryPointCount = 0;
+    std::size_t offeredTrajectoryPointCount = 0;
+    bool hasAlternativeTrajectory = false;
+    std::size_t alternativeTrajectoryPointCount = 0;
     omnetpp::SimTime receivedAt;
 };
 
@@ -52,6 +62,16 @@ struct SentMcm {
     bool hasExecutionContainer = false;
     long mcmCategory = -1;
     long priorityManeuver = -1;
+    long cooperationTypeMcm = -1;
+    long requestId = -1;
+    long numberOfVehicles = -1;
+    uint32_t negotiationVehicleId1 = 0;
+    bool hasNegotiationVehicleId2 = false;
+    uint32_t negotiationVehicleId2 = 0;
+    std::size_t requestedTrajectoryPointCount = 0;
+    std::size_t offeredTrajectoryPointCount = 0;
+    bool hasAlternativeTrajectory = false;
+    std::size_t alternativeTrajectoryPointCount = 0;
     omnetpp::SimTime sentAt;
 };
 
