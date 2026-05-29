@@ -151,6 +151,16 @@ mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime received
     return { extractMcmSnapshot(message), receivedAt };
 }
 
+void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
+{
+    TrajectoryPointMCM_t* point = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
+    point->deltaLongitudinalPosition = 0;
+    point->deltaLateralPosition = 0;
+    point->deltaHeading = 0;
+    point->deltaTime = 0;
+    ASN_SEQUENCE_ADD(&trajectory, point);
+}
+
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
     static const vanetza::units::Velocity lower { 0.0 * boost::units::si::meter_per_second };
@@ -265,6 +275,29 @@ vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const Vehicle
     std::string error;
     if (!message.validate(error)) {
         throw cRuntimeError("Invalid minimal MCM: %s", error.c_str());
+    }
+
+    return message;
+}
+
+vanetza::asn1::Mcm McService::createMinimalNegotiationTestMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
+{
+    vanetza::asn1::Mcm message = createMinimalIntentionSharingMessage(vdp, generationDeltaTime);
+
+    ManeuverNegotiationContainer_t*& negotiation = (*message).mcm.mcmParameters.maneuverNegotiationContainer;
+    negotiation = vanetza::asn1::allocate<ManeuverNegotiationContainer_t>();
+    negotiation->mcmCategory = McmCategory_request;
+    negotiation->priorityManeuver = PriorityManeuver_low;
+    negotiation->cooperationTypeMCM = CooperationTypeMCM_agreementSeeking;
+    negotiation->requestID = 0;
+    negotiation->numberOfVehicles = 1;
+    negotiation->negotiationVehicleID1 = vdp.station_id();
+    appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
+    appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+
+    std::string error;
+    if (!message.validate(error)) {
+        throw cRuntimeError("Invalid minimal negotiation test MCM: %s", error.c_str());
     }
 
     return message;

@@ -34,6 +34,7 @@ public:
 private:
     void sendMcm(const omnetpp::SimTime&);
     vanetza::asn1::Mcm createMinimalIntentionSharingMessage(const VehicleDataProvider&, uint16_t generationDeltaTime) const;
+    vanetza::asn1::Mcm createMinimalNegotiationTestMessage(const VehicleDataProvider&, uint16_t generationDeltaTime) const;
 
     ChannelNumber mPrimaryChannel = channel::CCH;
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
