@@ -3,6 +3,8 @@ package artery.application;
 simple McService like ItsG5Service
 {
     parameters:
+        bool sendNegotiationTestMcm = default(false);
+
         @signal[McmReceived](type=McObject);
         @signal[McmSent](type=McObject);
 

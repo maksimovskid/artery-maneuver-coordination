@@ -40,6 +40,7 @@ private:
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
     const Timer* mTimer = nullptr;
     omnetpp::SimTime mLastMcmTimestamp;
+    bool mSendNegotiationTestMcm = false;
     std::unique_ptr<mcm::McApplication> mApplication;
 };
 

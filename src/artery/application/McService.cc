@@ -188,6 +188,7 @@ void McService::initialize()
     ItsG5BaseService::initialize();
 
     mLastMcmTimestamp = simTime();
+    mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
     mApplication.reset(new mcm::McApplication());
     // TODO: wire VehicleController later when execution logic needs it and facility initialization order is confirmed.
 }
@@ -206,7 +207,13 @@ void McService::trigger()
 void McService::sendMcm(const SimTime& T_now)
 {
     uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
-    auto mcm = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+    auto mcm = mSendNegotiationTestMcm ?
+        createMinimalNegotiationTestMessage(*mVehicleDataProvider, generationDeltaTime) :
+        createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+    if (mSendNegotiationTestMcm) {
+        EV_DETAIL << "Sending minimal negotiation test MCM for station "
+            << (*mcm).header.stationID << " at " << T_now << '\n';
+    }
 
     using namespace vanetza;
     btp::DataRequestB request;
