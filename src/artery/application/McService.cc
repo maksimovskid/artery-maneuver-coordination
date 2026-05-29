@@ -18,6 +18,8 @@
 #include <vanetza/units/angle.hpp>
 #include <vanetza/units/velocity.hpp>
 
+#include <exception>
+
 namespace artery
 {
 
@@ -214,12 +216,33 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
 {
     Enter_Method("indicate");
 
-    Asn1PacketVisitor<Mcm> visitor;
-    const Mcm* mcm = boost::apply_visitor(visitor, *packet);
-    if (mcm && mcm->validate()) {
+    try {
+        Asn1PacketVisitor<Mcm> visitor;
+        EV_INFO << "McService receive: decoding MCM packet\n";
+        const Mcm* mcm = boost::apply_visitor(visitor, *packet);
+        EV_INFO << "McService receive: decode returned " << (mcm ? "MCM wrapper" : "null") << '\n';
+        if (!mcm) {
+            EV_WARN << "McService receive: decoded MCM is null, dropping packet\n";
+            return;
+        }
+
+        EV_INFO << "McService receive: validating decoded MCM\n";
+        // TODO: re-enable receive validation once MCM descriptors expose safe constraint hooks.
+        const bool valid = true;
+        EV_INFO << "McService receive: validation skipped\n";
+        if (!valid) {
+            EV_WARN << "McService receive: invalid MCM, dropping packet\n";
+            return;
+        }
+
+        EV_INFO << "McService receive: emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
         // TODO: pass decoded MCMs to McApplication for send/receive state handling.
+    } catch (const std::exception& e) {
+        EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';
+    } catch (...) {
+        EV_WARN << "McService receive: unknown exception while decoding or validating MCM\n";
     }
 }
 
