@@ -218,24 +218,22 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
 
     try {
         Asn1PacketVisitor<Mcm> visitor;
-        EV_INFO << "McService receive: decoding MCM packet\n";
         const Mcm* mcm = boost::apply_visitor(visitor, *packet);
-        EV_INFO << "McService receive: decode returned " << (mcm ? "MCM wrapper" : "null") << '\n';
         if (!mcm) {
             EV_WARN << "McService receive: decoded MCM is null, dropping packet\n";
             return;
         }
 
-        EV_INFO << "McService receive: validating decoded MCM\n";
-        // TODO: re-enable receive validation once MCM descriptors expose safe constraint hooks.
+        // TODO: receive validation is temporarily skipped because current MCM ASN.1/PER descriptor
+        // metadata can crash during receive validation. Re-enable validation after missing descriptor
+        // constraints/metadata are fixed.
         const bool valid = true;
-        EV_INFO << "McService receive: validation skipped\n";
         if (!valid) {
             EV_WARN << "McService receive: invalid MCM, dropping packet\n";
             return;
         }
 
-        EV_INFO << "McService receive: emitting McmReceived\n";
+        EV_DETAIL << "McService receive: decoded MCM, validation skipped, emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
         // TODO: pass decoded MCMs to McApplication for send/receive state handling.
