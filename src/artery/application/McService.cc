@@ -56,6 +56,10 @@ struct McmOperationMetadata {
     std::size_t offeredTrajectoryPointCount = 0;
     bool hasAlternativeTrajectory = false;
     std::size_t alternativeTrajectoryPointCount = 0;
+    long cooperationId = -1;
+    uint32_t cooperationVehicleId1 = 0;
+    bool hasCooperationVehicleId2 = false;
+    uint32_t cooperationVehicleId2 = 0;
 };
 
 McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
@@ -65,9 +69,16 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
     metadata.hasExecutionContainer = parameters.maneuverExecutionContainer != nullptr;
 
     if (parameters.maneuverExecutionContainer) {
+        const ManeuverExecutionContainer_t& execution = *parameters.maneuverExecutionContainer;
         metadata.operationMode = mcm::McmOperationMode::ManeuverExecution;
-        metadata.mcmCategory = parameters.maneuverExecutionContainer->mcmCategory;
-        metadata.priorityManeuver = parameters.maneuverExecutionContainer->priorityManeuver;
+        metadata.mcmCategory = execution.mcmCategory;
+        metadata.priorityManeuver = execution.priorityManeuver;
+        metadata.cooperationId = execution.cooperationID;
+        metadata.cooperationVehicleId1 = static_cast<uint32_t>(execution.cooperationVehicleID1);
+        metadata.hasCooperationVehicleId2 = execution.cooperationVehicleID2 != nullptr;
+        if (execution.cooperationVehicleID2) {
+            metadata.cooperationVehicleId2 = static_cast<uint32_t>(*execution.cooperationVehicleID2);
+        }
     } else if (parameters.maneuverNegotiationContainer) {
         const ManeuverNegotiationContainer_t& negotiation = *parameters.maneuverNegotiationContainer;
         metadata.operationMode = mcm::McmOperationMode::ManeuverNegotiation;
@@ -180,6 +191,10 @@ void McService::sendMcm(const SimTime& T_now)
         metadata.offeredTrajectoryPointCount,
         metadata.hasAlternativeTrajectory,
         metadata.alternativeTrajectoryPointCount,
+        metadata.cooperationId,
+        metadata.cooperationVehicleId1,
+        metadata.hasCooperationVehicleId2,
+        metadata.cooperationVehicleId2,
         T_now
     };
     mApplication->handleSentMcm(snapshot);
@@ -292,6 +307,10 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             metadata.offeredTrajectoryPointCount,
             metadata.hasAlternativeTrajectory,
             metadata.alternativeTrajectoryPointCount,
+            metadata.cooperationId,
+            metadata.cooperationVehicleId1,
+            metadata.hasCooperationVehicleId2,
+            metadata.cooperationVehicleId2,
             simTime()
         };
         mApplication->handleReceivedMcm(snapshot);

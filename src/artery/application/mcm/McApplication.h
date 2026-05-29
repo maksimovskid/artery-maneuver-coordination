@@ -46,6 +46,10 @@ struct ReceivedMcm {
     std::size_t offeredTrajectoryPointCount = 0;
     bool hasAlternativeTrajectory = false;
     std::size_t alternativeTrajectoryPointCount = 0;
+    long cooperationId = -1;
+    uint32_t cooperationVehicleId1 = 0;
+    bool hasCooperationVehicleId2 = false;
+    uint32_t cooperationVehicleId2 = 0;
     omnetpp::SimTime receivedAt;
 };
 
@@ -72,6 +76,10 @@ struct SentMcm {
     std::size_t offeredTrajectoryPointCount = 0;
     bool hasAlternativeTrajectory = false;
     std::size_t alternativeTrajectoryPointCount = 0;
+    long cooperationId = -1;
+    uint32_t cooperationVehicleId1 = 0;
+    bool hasCooperationVehicleId2 = false;
+    uint32_t cooperationVehicleId2 = 0;
     omnetpp::SimTime sentAt;
 };
 
