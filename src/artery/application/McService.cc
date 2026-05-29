@@ -40,6 +40,35 @@ auto microdegree = vanetza::units::degree * boost::units::si::micro;
 auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
 
+struct McmOperationMetadata {
+    mcm::McmOperationMode operationMode = mcm::McmOperationMode::Unknown;
+    bool hasNegotiationContainer = false;
+    bool hasExecutionContainer = false;
+    long mcmCategory = -1;
+    long priorityManeuver = -1;
+};
+
+McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
+{
+    McmOperationMetadata metadata;
+    metadata.hasNegotiationContainer = parameters.maneuverNegotiationContainer != nullptr;
+    metadata.hasExecutionContainer = parameters.maneuverExecutionContainer != nullptr;
+
+    if (parameters.maneuverExecutionContainer) {
+        metadata.operationMode = mcm::McmOperationMode::ManeuverExecution;
+        metadata.mcmCategory = parameters.maneuverExecutionContainer->mcmCategory;
+        metadata.priorityManeuver = parameters.maneuverExecutionContainer->priorityManeuver;
+    } else if (parameters.maneuverNegotiationContainer) {
+        metadata.operationMode = mcm::McmOperationMode::ManeuverNegotiation;
+        metadata.mcmCategory = parameters.maneuverNegotiationContainer->mcmCategory;
+        metadata.priorityManeuver = parameters.maneuverNegotiationContainer->priorityManeuver;
+    } else {
+        metadata.operationMode = mcm::McmOperationMode::IntentSharing;
+    }
+
+    return metadata;
+}
+
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
     static const vanetza::units::Velocity lower { 0.0 * boost::units::si::meter_per_second };
@@ -101,6 +130,7 @@ void McService::sendMcm(const SimTime& T_now)
     const MCM_t& message = *obj.asn1();
     const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
     const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
+    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
     // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
     const mcm::SentMcm snapshot {
         static_cast<uint32_t>(message.header.stationID),
@@ -110,6 +140,11 @@ void McService::sendMcm(const SimTime& T_now)
         intent.speed.speedValue,
         intent.heading.headingValue,
         static_cast<std::size_t>(intent.plannedTrajectory.list.count),
+        metadata.operationMode,
+        metadata.hasNegotiationContainer,
+        metadata.hasExecutionContainer,
+        metadata.mcmCategory,
+        metadata.priorityManeuver,
         T_now
     };
     mApplication->handleSentMcm(snapshot);
@@ -197,6 +232,7 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         const MCM_t& message = *obj.asn1();
         const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
         const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
+        const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
         // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
         const mcm::ReceivedMcm snapshot {
             static_cast<uint32_t>(message.header.stationID),
@@ -206,6 +242,11 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             intent.speed.speedValue,
             intent.heading.headingValue,
             static_cast<std::size_t>(intent.plannedTrajectory.list.count),
+            metadata.operationMode,
+            metadata.hasNegotiationContainer,
+            metadata.hasExecutionContainer,
+            metadata.mcmCategory,
+            metadata.priorityManeuver,
             simTime()
         };
         mApplication->handleReceivedMcm(snapshot);

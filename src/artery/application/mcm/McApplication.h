@@ -16,6 +16,13 @@ namespace artery
 namespace mcm
 {
 
+enum class McmOperationMode {
+    Unknown,
+    IntentSharing,
+    ManeuverNegotiation,
+    ManeuverExecution
+};
+
 struct ReceivedMcm {
     uint32_t stationId = 0;
     uint16_t generationDeltaTime = 0;
@@ -24,6 +31,11 @@ struct ReceivedMcm {
     long speedValue = 0;
     long headingValue = 0;
     std::size_t plannedTrajectoryPointCount = 0;
+    McmOperationMode operationMode = McmOperationMode::Unknown;
+    bool hasNegotiationContainer = false;
+    bool hasExecutionContainer = false;
+    long mcmCategory = -1;
+    long priorityManeuver = -1;
     omnetpp::SimTime receivedAt;
 };
 
@@ -35,6 +47,11 @@ struct SentMcm {
     long speedValue = 0;
     long headingValue = 0;
     std::size_t plannedTrajectoryPointCount = 0;
+    McmOperationMode operationMode = McmOperationMode::Unknown;
+    bool hasNegotiationContainer = false;
+    bool hasExecutionContainer = false;
+    long mcmCategory = -1;
+    long priorityManeuver = -1;
     omnetpp::SimTime sentAt;
 };
 
