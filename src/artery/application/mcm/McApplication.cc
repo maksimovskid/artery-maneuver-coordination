@@ -22,6 +22,13 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     mHasLastReceivedMcm = true;
 }
 
+void McApplication::handleSentMcm(const SentMcm& mcm)
+{
+    ++mSentMcmCount;
+    mLastSentMcm = mcm;
+    mHasLastSentMcm = true;
+}
+
 void McApplication::clearCommand()
 {
     mPendingCommand = CommandKind::None;

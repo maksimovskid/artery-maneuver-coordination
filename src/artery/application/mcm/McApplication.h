@@ -27,6 +27,17 @@ struct ReceivedMcm {
     omnetpp::SimTime receivedAt;
 };
 
+struct SentMcm {
+    uint32_t stationId = 0;
+    uint16_t generationDeltaTime = 0;
+    long longitude = 0;
+    long latitude = 0;
+    long speedValue = 0;
+    long headingValue = 0;
+    std::size_t plannedTrajectoryPointCount = 0;
+    omnetpp::SimTime sentAt;
+};
+
 class McApplication
 {
 public:
@@ -35,6 +46,7 @@ public:
     void initialize(traci::VehicleController*);
     void tick(omnetpp::SimTime now);
     void handleReceivedMcm(const ReceivedMcm&);
+    void handleSentMcm(const SentMcm&);
     void clearCommand();
     bool hasActiveExecution() const;
 
@@ -73,6 +85,9 @@ private:
     unsigned mReceivedMcmCount = 0;
     bool mHasLastReceivedMcm = false;
     ReceivedMcm mLastReceivedMcm;
+    unsigned mSentMcmCount = 0;
+    bool mHasLastSentMcm = false;
+    SentMcm mLastSentMcm;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

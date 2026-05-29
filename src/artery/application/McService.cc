@@ -98,6 +98,21 @@ void McService::sendMcm(const SimTime& T_now)
 
     McObject obj(std::move(mcm));
     emit(scSignalMcmSent, &obj);
+    const MCM_t& message = *obj.asn1();
+    const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
+    const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
+    // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
+    const mcm::SentMcm snapshot {
+        static_cast<uint32_t>(message.header.stationID),
+        static_cast<uint16_t>(message.mcm.generationDeltaTime),
+        basic.referencePosition.longitude,
+        basic.referencePosition.latitude,
+        intent.speed.speedValue,
+        intent.heading.headingValue,
+        static_cast<std::size_t>(intent.plannedTrajectory.list.count),
+        T_now
+    };
+    mApplication->handleSentMcm(snapshot);
     EV_DETAIL << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
     mLastMcmTimestamp = T_now;
 
