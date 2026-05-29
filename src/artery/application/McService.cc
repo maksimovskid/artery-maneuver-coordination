@@ -163,14 +163,14 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
 
     try {
         Asn1PacketVisitor<Mcm> visitor;
-        const Mcm* mcm = boost::apply_visitor(visitor, *packet);
-        if (!mcm) {
+        const Mcm* decodedMcm = boost::apply_visitor(visitor, *packet);
+        if (!decodedMcm) {
             EV_WARN << "McService receive: decoded MCM is null, dropping packet\n";
             return;
         }
 
         std::string error;
-        if (!mcm->validate(error)) {
+        if (!decodedMcm->validate(error)) {
             EV_WARN << "McService receive: invalid MCM, dropping packet: " << error << '\n';
             return;
         }
@@ -178,7 +178,22 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         EV_DETAIL << "McService receive: decoded and validated MCM, emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
-        // TODO: pass decoded MCMs to McApplication for send/receive state handling.
+
+        const MCM_t& message = *obj.asn1();
+        const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
+        const IntentSharingContainer_t& intent = message.mcm.mcmParameters.intentionSharingContainer;
+        // Copy only value data across the service/application boundary; do not retain ASN.1 pointers.
+        const mcm::ReceivedMcm snapshot {
+            static_cast<uint32_t>(message.header.stationID),
+            static_cast<uint16_t>(message.mcm.generationDeltaTime),
+            basic.referencePosition.longitude,
+            basic.referencePosition.latitude,
+            intent.speed.speedValue,
+            intent.heading.headingValue,
+            static_cast<std::size_t>(intent.plannedTrajectory.list.count),
+            simTime()
+        };
+        mApplication->handleReceivedMcm(snapshot);
     } catch (const std::exception& e) {
         EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';
     } catch (...) {

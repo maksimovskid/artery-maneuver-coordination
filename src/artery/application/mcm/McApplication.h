@@ -3,6 +3,9 @@
 
 #include <omnetpp/simtime.h>
 
+#include <cstddef>
+#include <cstdint>
+
 namespace traci
 {
 class VehicleController;
@@ -13,6 +16,17 @@ namespace artery
 namespace mcm
 {
 
+struct ReceivedMcm {
+    uint32_t stationId = 0;
+    uint16_t generationDeltaTime = 0;
+    long longitude = 0;
+    long latitude = 0;
+    long speedValue = 0;
+    long headingValue = 0;
+    std::size_t plannedTrajectoryPointCount = 0;
+    omnetpp::SimTime receivedAt;
+};
+
 class McApplication
 {
 public:
@@ -20,6 +34,7 @@ public:
 
     void initialize(traci::VehicleController*);
     void tick(omnetpp::SimTime now);
+    void handleReceivedMcm(const ReceivedMcm&);
     void clearCommand();
     bool hasActiveExecution() const;
 
@@ -54,6 +69,10 @@ private:
     Role mRole = Role::None;
     ExecutionState mExecutionState = ExecutionState::Idle;
     CommandKind mPendingCommand = CommandKind::None;
+
+    unsigned mReceivedMcmCount = 0;
+    bool mHasLastReceivedMcm = false;
+    ReceivedMcm mLastReceivedMcm;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

@@ -15,6 +15,13 @@ void McApplication::tick(omnetpp::SimTime)
     // TODO: later apply execution commands from parsed MCM Execute/Cancel events.
 }
 
+void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
+{
+    ++mReceivedMcmCount;
+    mLastReceivedMcm = mcm;
+    mHasLastReceivedMcm = true;
+}
+
 void McApplication::clearCommand()
 {
     mPendingCommand = CommandKind::None;
