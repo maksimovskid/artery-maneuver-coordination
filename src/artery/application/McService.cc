@@ -98,7 +98,7 @@ void McService::sendMcm(const SimTime& T_now)
 
     McObject obj(std::move(mcm));
     emit(scSignalMcmSent, &obj);
-    EV_INFO << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
+    EV_DETAIL << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
     mLastMcmTimestamp = T_now;
 
     using McmByteBuffer = convertible::byte_buffer_impl<asn1::Mcm>;
