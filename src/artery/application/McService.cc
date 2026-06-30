@@ -165,7 +165,9 @@ void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
     point->deltaLateralPosition = 0;
     point->deltaHeading = 0;
     point->deltaTime = 0;
-    ASN_SEQUENCE_ADD(&trajectory, point);
+    if (ASN_SEQUENCE_ADD(&trajectory, point) != 0) {
+        throw cRuntimeError("Failed to append MCM trajectory point");
+    }
 }
 
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
