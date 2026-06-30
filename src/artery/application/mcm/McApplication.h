@@ -16,11 +16,87 @@ namespace artery
 namespace mcm
 {
 
-enum class McmOperationMode {
+enum class operationMode {
     Unknown,
-    IntentSharing,
-    ManeuverNegotiation,
-    ManeuverExecution
+    IntentionSharingMode,
+    ManeuverNegotiationMode,
+    ManeuverExecutionMode
+};
+
+enum class mcmSubtype {
+    Request,
+    Accept,
+    Reject,
+    Offer,
+    Confirm,
+    Execute,
+    Cancel,
+    Abort,
+    CascadingRequest,
+    CascadingAccept,
+    CascadingReject,
+    CascadingExecute,
+    Regular
+};
+
+enum class priorityMcmCategory {
+    LowPriority,
+    MediumPriority,
+    HighPriority,
+    EmergencyPriority,
+    NoPriority
+};
+
+enum class coordinationManeuver {
+    Merge,
+    LaneChange,
+    Overtake,
+    NoCoordManeuver
+};
+
+enum class coordinationProgressRV {
+    NoCoordination,
+    CheckForCoordination,
+    CoordinationRequired,
+    RequestSent,
+    SendConfirm,
+    ConfirmSent,
+    SendExecute,
+    SendComplete,
+    CompleteSent,
+    NoCoordinationRequired,
+    CancelCoordination,
+    SecondRequest
+};
+
+enum class coordinationProgressCV {
+    NoRequest,
+    ReceivedRequest,
+    SendOffer,
+    OfferSent,
+    SendAccept,
+    AcceptSent,
+    SendExecuteCV,
+    SendCompleteCV,
+    CompleteSentCV,
+    CancelNegotiation,
+    SendReject
+};
+
+enum class cooperatingVehicleType {
+    NCV,
+    RV,
+    CV,
+    EmergencyV
+};
+
+enum class controlManeuver {
+    DoNothing,
+    Decelerate,
+    Accelerate,
+    ChangeLane,
+    LaneChangeExecution,
+    EmergencyDeceleration
 };
 
 struct McmSnapshot {
@@ -31,7 +107,7 @@ struct McmSnapshot {
     long speedValue = 0;
     long headingValue = 0;
     std::size_t plannedTrajectoryPointCount = 0;
-    McmOperationMode operationMode = McmOperationMode::Unknown;
+    mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
     bool hasExecutionContainer = false;
     long mcmCategory = -1;
@@ -79,12 +155,6 @@ public:
     // TODO: integrate TrajectoryPlanner helpers after the service-level MCM plumbing is stable.
 
 private:
-    enum class Role {
-        None,
-        RequestingVehicle,
-        CooperatingVehicle
-    };
-
     enum class ExecutionState {
         Idle,
         Pending,
@@ -102,7 +172,14 @@ private:
     void applyCommand();
 
     traci::VehicleController* mVehicleController = nullptr;
-    Role mRole = Role::None;
+    operationMode mOperationMode = operationMode::IntentionSharingMode;
+    mcmSubtype mMcmSubtype = mcmSubtype::Regular;
+    priorityMcmCategory mPriorityMcmCategory = priorityMcmCategory::NoPriority;
+    coordinationManeuver mCoordinationManeuver = coordinationManeuver::NoCoordManeuver;
+    coordinationProgressRV mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
+    coordinationProgressCV mCoordinationProgressCV = coordinationProgressCV::NoRequest;
+    cooperatingVehicleType mCooperatingVehicleType = cooperatingVehicleType::NCV;
+    controlManeuver mControlManeuver = controlManeuver::DoNothing;
     ExecutionState mExecutionState = ExecutionState::Idle;
     CommandKind mPendingCommand = CommandKind::None;
 

@@ -4,6 +4,14 @@ simple McService like ItsG5Service
 {
     parameters:
         bool sendNegotiationTestMcm = default(false);
+        bool withDccRestriction = default(false);
+        double minInterval @unit(s) = default(0.1s);
+        double maxInterval @unit(s) = default(1.0s);
+        bool fixedRate = default(true);
+        double fixedRateInterval @unit(s) = default(0.1s);
+        double headingDelta = default(4.0);
+        double positionDelta @unit(m) = default(4.0m);
+        double speedDelta @unit(mps) = default(0.5mps);
 
         @signal[McmReceived](type=McObject);
         @signal[McmSent](type=McObject);

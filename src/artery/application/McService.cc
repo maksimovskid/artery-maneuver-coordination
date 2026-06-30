@@ -3,20 +3,27 @@
 #include "artery/application/Asn1PacketVisitor.h"
 #include "artery/application/McObject.h"
 #include "artery/application/MultiChannelPolicy.h"
+#include "artery/application/NetworkInterfaceTable.h"
 #include "artery/application/Timer.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
 #include "artery/utility/round.h"
 
+#include <boost/units/cmath.hpp>
 #include <boost/units/systems/si/prefixes.hpp>
 #include <omnetpp.h>
 #include <vanetza/asn1/asn1c_wrapper.hpp>
 #include <vanetza/btp/ports.hpp>
 #include <vanetza/common/its_aid.hpp>
 #include <vanetza/dcc/profile.hpp>
+#include <vanetza/dcc/transmission.hpp>
+#include <vanetza/dcc/transmit_rate_control.hpp>
+#include <vanetza/facilities/cam_functions.hpp>
 #include <vanetza/units/angle.hpp>
 #include <vanetza/units/velocity.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <exception>
 #include <string>
 
@@ -41,7 +48,7 @@ auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
 
 struct McmOperationMetadata {
-    mcm::McmOperationMode operationMode = mcm::McmOperationMode::Unknown;
+    mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
     bool hasExecutionContainer = false;
     long mcmCategory = -1;
@@ -70,7 +77,7 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
 
     if (parameters.maneuverExecutionContainer) {
         const ManeuverExecutionContainer_t& execution = *parameters.maneuverExecutionContainer;
-        metadata.operationMode = mcm::McmOperationMode::ManeuverExecution;
+        metadata.operationMode = mcm::operationMode::ManeuverExecutionMode;
         metadata.mcmCategory = execution.mcmCategory;
         metadata.priorityManeuver = execution.priorityManeuver;
         metadata.cooperationId = execution.cooperationID;
@@ -81,7 +88,7 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
         }
     } else if (parameters.maneuverNegotiationContainer) {
         const ManeuverNegotiationContainer_t& negotiation = *parameters.maneuverNegotiationContainer;
-        metadata.operationMode = mcm::McmOperationMode::ManeuverNegotiation;
+        metadata.operationMode = mcm::operationMode::ManeuverNegotiationMode;
         metadata.mcmCategory = negotiation.mcmCategory;
         metadata.priorityManeuver = negotiation.priorityManeuver;
         metadata.cooperationTypeMcm = negotiation.cooperationTypeMCM;
@@ -99,7 +106,7 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
             metadata.alternativeTrajectoryPointCount = static_cast<std::size_t>(negotiation.alternativeTrajectory->list.count);
         }
     } else {
-        metadata.operationMode = mcm::McmOperationMode::IntentSharing;
+        metadata.operationMode = mcm::operationMode::IntentionSharingMode;
     }
 
     return metadata;
@@ -179,7 +186,12 @@ SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 
 Define_Module(McService)
 
-McService::McService() = default;
+McService::McService() :
+    mGenMcmMin { 100, SIMTIME_MS },
+    mGenMcmMax { 1000, SIMTIME_MS },
+    mGenMcm(mGenMcmMax)
+{
+}
 
 McService::~McService() = default;
 
@@ -187,21 +199,74 @@ void McService::initialize()
 {
     ItsG5BaseService::initialize();
 
+    mNetworkInterfaceTable = &getFacilities().get_const<NetworkInterfaceTable>();
+    mVehicleDataProvider = &getFacilities().get_const<VehicleDataProvider>();
+    mTimer = &getFacilities().get_const<Timer>();
+    mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
+
     mLastMcmTimestamp = simTime();
+    mGenMcmMin = par("minInterval");
+    mGenMcmMax = par("maxInterval");
+    mGenMcm = mGenMcmMax;
+    mHeadingDelta = vanetza::units::Angle { par("headingDelta").doubleValue() * vanetza::units::degree };
+    mPositionDelta = par("positionDelta").doubleValue() * vanetza::units::si::meter;
+    mSpeedDelta = par("speedDelta").doubleValue() * vanetza::units::si::meter_per_second;
+    mDccRestriction = par("withDccRestriction");
+    mFixedRate = par("fixedRate");
+    mFixedRateInterval = par("fixedRateInterval");
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
     mApplication.reset(new mcm::McApplication());
+    mApplication->initialize(nullptr);
     // TODO: wire VehicleController later when execution logic needs it and facility initialization order is confirmed.
 }
 
 void McService::trigger()
 {
     Enter_Method("trigger");
-    if (!mVehicleDataProvider) {
-        mVehicleDataProvider = &getFacilities().get_const<VehicleDataProvider>();
-        mTimer = &getFacilities().get_const<Timer>();
-        mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
+    mApplication->tick(simTime());
+    checkTriggeringConditions(simTime());
+}
+
+void McService::checkTriggeringConditions(const SimTime& T_now)
+{
+    SimTime& T_GenMcm = mGenMcm;
+    const SimTime& T_GenMcmMin = mGenMcmMin;
+    const SimTime& T_GenMcmMax = mGenMcmMax;
+    const SimTime T_GenMcmDcc = mDccRestriction ? genMcmDcc() : T_GenMcmMin;
+    const SimTime T_elapsed = T_now - mLastMcmTimestamp;
+    const SimTime fixedInterval = mFixedRateInterval > SIMTIME_ZERO ? mFixedRateInterval : T_GenMcmMin;
+
+    if (T_elapsed >= T_GenMcmDcc) {
+        if (mFixedRate) {
+            if (T_elapsed >= fixedInterval) {
+                sendMcm(T_now);
+            }
+        } else if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
+            sendMcm(T_now);
+            T_GenMcm = std::min(T_elapsed, T_GenMcmMax);
+            mGenMcmLowDynamicsCounter = 0;
+        } else if (T_elapsed >= T_GenMcm) {
+            sendMcm(T_now);
+            if (++mGenMcmLowDynamicsCounter >= mGenMcmLowDynamicsLimit) {
+                T_GenMcm = T_GenMcmMax;
+            }
+        }
     }
-    sendMcm(simTime());
+}
+
+bool McService::checkHeadingDelta() const
+{
+    return !vanetza::facilities::similar_heading(mLastMcmHeading, mVehicleDataProvider->heading(), mHeadingDelta);
+}
+
+bool McService::checkPositionDelta() const
+{
+    return distance(mLastMcmPosition, mVehicleDataProvider->position()) > mPositionDelta;
+}
+
+bool McService::checkSpeedDelta() const
+{
+    return abs(mLastMcmSpeed - mVehicleDataProvider->speed()) > mSpeedDelta;
 }
 
 void McService::sendMcm(const SimTime& T_now)
@@ -229,6 +294,9 @@ void McService::sendMcm(const SimTime& T_now)
     const MCM_t& message = *obj.asn1();
     mApplication->handleSentMcm(makeSentMcm(message, T_now));
     EV_DETAIL << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
+    mLastMcmPosition = mVehicleDataProvider->position();
+    mLastMcmSpeed = mVehicleDataProvider->speed();
+    mLastMcmHeading = mVehicleDataProvider->heading();
     mLastMcmTimestamp = T_now;
 
     using McmByteBuffer = convertible::byte_buffer_impl<asn1::Mcm>;
@@ -238,19 +306,24 @@ void McService::sendMcm(const SimTime& T_now)
     this->request(request, std::move(payload));
 }
 
-vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
+void McService::fillHeader(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
 {
-    vanetza::asn1::Mcm message;
-
     ItsPduHeader_t& header = (*message).header;
     header.protocolVersion = 2;
     header.messageID = scMcmMessageId;
     header.stationID = vdp.station_id();
+}
 
+void McService::fillGenerationDeltaTime(vanetza::asn1::Mcm& message, uint16_t generationDeltaTime) const
+{
     ManeuverCoordinationMessage_t& mcm = (*message).mcm;
     mcm.generationDeltaTime = generationDeltaTime * GenerationDeltaTime_oneMilliSec;
+}
 
-    BasicContainerMCM_t& basic = mcm.mcmParameters.basicContainerMCM;
+void McService::fillBasicContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
+{
+    BasicContainerMCM_t& basic = (*message).mcm.mcmParameters.basicContainerMCM;
+
     basic.stationType = StationType_passengerCar;
     basic.referencePosition.altitude.altitudeValue = AltitudeValue_unavailable;
     basic.referencePosition.altitude.altitudeConfidence = AltitudeConfidence_unavailable;
@@ -259,8 +332,12 @@ vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const Vehicle
     basic.referencePosition.positionConfidenceEllipse.semiMajorOrientation = HeadingValue_unavailable;
     basic.referencePosition.positionConfidenceEllipse.semiMajorConfidence = SemiAxisLength_unavailable;
     basic.referencePosition.positionConfidenceEllipse.semiMinorConfidence = SemiAxisLength_unavailable;
+}
 
-    IntentSharingContainer_t& intent = mcm.mcmParameters.intentionSharingContainer;
+void McService::fillIntentionSharingContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
+{
+    IntentSharingContainer_t& intent = (*message).mcm.mcmParameters.intentionSharingContainer;
+
     intent.heading.headingValue = round(vdp.heading(), decidegree);
     intent.heading.headingConfidence = HeadingConfidence_equalOrWithinOneDegree;
     intent.speed.speedValue = buildSpeedValue(vdp.speed());
@@ -272,12 +349,44 @@ vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const Vehicle
     intent.vehicleAutomationLevel = VehicleAutomationLevel_notAvailable;
 
     // TODO: replace this placeholder with TrajectoryPlanner output when planned trajectories are integrated.
-    TrajectoryPointMCM_t* point = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
-    point->deltaLongitudinalPosition = 0;
-    point->deltaLateralPosition = 0;
-    point->deltaHeading = 0;
-    point->deltaTime = 0;
-    ASN_SEQUENCE_ADD(&intent.plannedTrajectory, point);
+    appendZeroTrajectoryPoint(intent.plannedTrajectory);
+}
+
+void McService::addManeuverNegotiationContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
+{
+    ManeuverNegotiationContainer_t*& negotiation = (*message).mcm.mcmParameters.maneuverNegotiationContainer;
+
+    negotiation = vanetza::asn1::allocate<ManeuverNegotiationContainer_t>();
+    negotiation->mcmCategory = McmCategory_request;
+    negotiation->priorityManeuver = PriorityManeuver_low;
+    negotiation->cooperationTypeMCM = CooperationTypeMCM_agreementSeeking;
+    negotiation->requestID = 0;
+    negotiation->numberOfVehicles = 1;
+    negotiation->negotiationVehicleID1 = vdp.station_id();
+
+    appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
+    appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+}
+
+void McService::addManeuverExecutionContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
+{
+    ManeuverExecutionContainer_t*& execution = (*message).mcm.mcmParameters.maneuverExecutionContainer;
+
+    execution = vanetza::asn1::allocate<ManeuverExecutionContainer_t>();
+    execution->mcmCategory = McmCategory_execute;
+    execution->priorityManeuver = PriorityManeuver_low;
+    execution->cooperationID = 0;
+    execution->cooperationVehicleID1 = vdp.station_id();
+}
+
+vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
+{
+    vanetza::asn1::Mcm message;
+
+    fillHeader(message, vdp);
+    fillGenerationDeltaTime(message, generationDeltaTime);
+    fillBasicContainer(message, vdp);
+    fillIntentionSharingContainer(message, vdp);
 
     std::string error;
     if (!message.validate(error)) {
@@ -291,16 +400,7 @@ vanetza::asn1::Mcm McService::createMinimalNegotiationTestMessage(const VehicleD
 {
     vanetza::asn1::Mcm message = createMinimalIntentionSharingMessage(vdp, generationDeltaTime);
 
-    ManeuverNegotiationContainer_t*& negotiation = (*message).mcm.mcmParameters.maneuverNegotiationContainer;
-    negotiation = vanetza::asn1::allocate<ManeuverNegotiationContainer_t>();
-    negotiation->mcmCategory = McmCategory_request;
-    negotiation->priorityManeuver = PriorityManeuver_low;
-    negotiation->cooperationTypeMCM = CooperationTypeMCM_agreementSeeking;
-    negotiation->requestID = 0;
-    negotiation->numberOfVehicles = 1;
-    negotiation->negotiationVehicleID1 = vdp.station_id();
-    appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
-    appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+    addManeuverNegotiationContainer(message, vdp);
 
     std::string error;
     if (!message.validate(error)) {
@@ -308,6 +408,34 @@ vanetza::asn1::Mcm McService::createMinimalNegotiationTestMessage(const VehicleD
     }
 
     return message;
+}
+
+vanetza::asn1::Mcm McService::createMinimalExecutionTestMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
+{
+    vanetza::asn1::Mcm message = createMinimalIntentionSharingMessage(vdp, generationDeltaTime);
+
+    addManeuverExecutionContainer(message, vdp);
+
+    std::string error;
+    if (!message.validate(error)) {
+        throw cRuntimeError("Invalid minimal execution test MCM: %s", error.c_str());
+    }
+
+    return message;
+}
+
+SimTime McService::genMcmDcc()
+{
+    auto netifc = mNetworkInterfaceTable->select(mPrimaryChannel);
+    vanetza::dcc::TransmitRateThrottle* trc = netifc ? netifc->getDccEntity().getTransmitRateThrottle() : nullptr;
+    if (!trc) {
+        throw cRuntimeError("No DCC TRC found for MC's primary channel %i", mPrimaryChannel);
+    }
+
+    static const vanetza::dcc::TransmissionLite mc_tx(vanetza::dcc::Profile::DP2, 0);
+    vanetza::Clock::duration interval = trc->interval(mc_tx);
+    SimTime dcc { std::chrono::duration_cast<std::chrono::milliseconds>(interval).count(), SIMTIME_MS };
+    return std::min(mGenMcmMax, std::max(mGenMcmMin, dcc));
 }
 
 void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<vanetza::UpPacket> packet)
