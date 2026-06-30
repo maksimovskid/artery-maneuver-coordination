@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<services>
+
+	<service type="artery.application.CaService">         
+		<listener port="2001" channel="180"/>
+
+	</service>  
+	   
+    	<service type="artery.application.McService" name="MC">
+
+        	<listener port="2027" />
+        	<filters>
+        		<!-- <name pattern="RV" />
+        		<name pattern="CV" />
+        		<name pattern="car_hl0_2" />       		
+        		<name pattern="car_hl1_1" />
+			<name pattern="car_hl1_2" /> -->
+    		</filters>
+    	</service>
+    
+    
+</services>
