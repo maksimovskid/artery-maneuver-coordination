@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-22 17:05:27 by Eclipse SUMO netedit Version 1.9.2-->
+
+<routes>
+   
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+   
+    <route edges="266507545 266507540 27392720 27392724 266507546" color="yellow" id="route_highway_1"/>
+
+   	<vehicle id="car_hl0_Emergency" type="car_hl" route="route_highway_1" depart="0.0" departLane="1" departSpeed="max" color="yellow"/>     	
+   	<vehicle id="car_hl1_1" type="car_hl" route="route_highway_1" depart="2.5" departLane="1" departSpeed="max" color="green"/>  
+   	<vehicle id="car_hl1_2" type="car_hl" route="route_highway_1" depart="6.5" departLane="1" departSpeed="max" color="green"/>  
+   	<vehicle id="car_hl1_3" type="car_hl" route="route_highway_1" depart="10.4" departLane="1" departSpeed="max" color="green"/>  
+   	<!-- <vehicle id="car_hl1_4" type="car_hl" route="route_highway_1" depart="14.4" departLane="1" departSpeed="max" color="green"/>   -->
+      	<!-- <vehicle id="car_hl1_5" type="car_hl" route="route_highway_1" depart="18.4" departLane="1" departSpeed="max" color="green"/>   -->
+   	<!--<vehicle id="car_hl1_5" type="car_hl" route="route_highway_1" depart="18.4" departLane="1" departSpeed="max" color="green"/>  -->
+
+</routes>

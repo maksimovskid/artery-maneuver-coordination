@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-22 17:05:27 by Eclipse SUMO netedit Version 1.9.2-->
+
+<routes>
+      
+
+   <!-- shortened routes -->  
+    <route edges="266507545 266507540 27392720  27392724 266507546 266507536" color="yellow" id="route_highway_0"/>
+
+   	<vehicle id="car_hl0_Emergency" type="car_hl" route="route_highway_0" depart="0.0" departLane="0" departSpeed="max" color="yellow"/>     	
+	   
+</routes>

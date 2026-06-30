@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-22 17:05:27 by Eclipse SUMO netedit Version 1.9.2-->
+
+<routes>
+   <vType id="car" vClass="passenger" length="5" maxSpeed="28.00" speed="22.00" accel="2.9" decel="4.0" speedDev="0.2" speedFactor="1.2" minGap="3.0" lcKeepRight="0" color="red" collision.minigap-factor="0"/> 
+   <vType id="car_ego" vClass="passenger" length="5" maxSpeed="28.00" speed="22.00" accel="2.9" decel="4.0" speedDev="0.2" speedFactor="1.2" minGap="3.0" lcKeepRight="0" color="green" collision.minigap-factor="0" /> 
+   
+   
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <route edges="39697943 266507545 266507540 27392720" color="yellow" id="route0"/>
+    <route edges="266507541 266507544 266507534" color="yellow" id="route1"/>
+  
+   <!-- shortened routes -->  
+    <route edges="39704924 39704922 266507540 27392720 27392724 23622443" color="green" id="route_merging_0"/>
+    <route edges="39704924 39704922 266507540 27392720 27392724 266507546" color="green" id="route_merging_1"/>
+    <route edges="266507545 266507540 27392720  27392724 266507546 266507536" color="yellow" id="route_highway_0"/>
+    <route edges="266507545 266507540 27392720 27392724 266507546" color="yellow" id="route_highway_1"/>
+    <route edges="266507545 266507540 27392720 27392724 266507546" color="yellow" id="route_highway_2"/>
+
+ <!--  full routes -->
+   <!--  <route edges="39704924 39704922 266507540 27392720 27392724 23622443" color="green" id="route_merging_0"/>  -->
+    <!-- <route edges="39704924 39704922 266507540 27392720 27392724 266507546 " color="green" id="route_merging_1"/>  -->
+    <!-- <route edges="266507545 266507540 27392720 27392724 266507546 266507536" color="yellow" id="route_highway_0"/>  -->
+    <!-- <route edges="266507545 266507540 27392720 27392724 266507546" color="yellow" id="route_highway_1"/> -->
+    <!-- <route edges="266507545 266507540 27392720 27392724 266507546" color="yellow" id="route_highway_2"/> -->
+    
+	<!--    the other scenarios need to be commented, only the used scenario with the vehicles and routes have to be used /> -->
+   	
+   	<!-- scenario 1  with merging vehicles    /> -->
+   <flow id="type0" color="1,1,0"  begin="1" end= "60" vehsPerHour="100" type="car" route="route_highway_0" departLane="0">
+   <flow id="type1" color="1,1,0"  begin="1" end= "60" vehsPerHour="100" type="car" route="route_highway_1" departLane="1">
+   <flow id="type2" color="1,1,0"  begin="1" end= "60" vehsPerHour="100" type="car" route="route_highway_2" departLane="2">
+   	
+
+</routes>

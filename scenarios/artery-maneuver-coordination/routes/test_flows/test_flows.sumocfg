@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.sf.net/xsd/sumoConfiguration.xsd">
+    <input>
+        <net-file value="new_map.net.xml"/>
+        <additional value="vehicle_types.xml"/>
+        <!-- add here additional route files  -->
+        <route-files value="test_flows/highway_lane_0.rou.xml, test_flows/highway_lane_0_flow.rou.xml "/>  
+	
+    </input>
+
+    <output>
+
+	<tripinfo-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.tripinfo.xml"/>
+	<statistic-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.statistic.xml"/>
+	<lanechange-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.lane_change.xml"/>
+
+    </output>
+	
+    <time>
+        <begin value="0"/>
+        <step-length value="0.1"/>
+        <end value="80.0"/>
+    </time>
+    
+    <device.ssm.deterministic value="true"/> 
+    <device.ssm.file value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.ssm_vehicles.xml"/> 
+
+    <device.fcd.deterministic value="true"/>  
+    <!-- <device.fcd.explicit value = "RV"/> 
+    <fcd-output.acceleration value="true"/> -->
+    <fcd-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.fcd_vehicles.xml"/>
+
+
+        
+</configuration>

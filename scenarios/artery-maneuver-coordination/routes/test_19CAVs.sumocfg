@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.sf.net/xsd/sumoConfiguration.xsd">
+    <input>
+        <net-file value="new_map.net.xml"/>
+        <additional value="vehicle_types.xml"/>
+        <!-- add here additional route files  -->
+
+        <route-files value="test/merging_lane_1.rou.xml, test/highway_lane_0.rou.xml,test/highway_lane_1.rou.xml, test/highway_lane_2.rou.xml"/>
+
+
+    </input>
+
+    <output>
+	<!-- <summary-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.summary.xml"/> --> 
+	<tripinfo-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.tripinfo.xml"/>
+	<statistic-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.statistic.xml"/>
+	<!-- <lanechange-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.lane_change.xml"/>--> 
+	<!-- <collision-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.collision.xml"/>--> 
+	<!-- <vehroute-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.vehroute.xml"/>--> 
+	<!-- <lanedata-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.lanedata.xml"/>--> 
+    <!--<edgedata-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.edgedata.xml"/> --> 
+    </output>
+	
+    <time>
+        <begin value="0"/>
+        <step-length value="0.1"/>
+        <end value="80.0"/>
+    </time>
+    
+    <!-- <device.ssm.deterministic value="true"/> --> 
+    <!-- <device.ssm.file value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.ssm_vehicles.xml"/> --> 
+
+    <!-- <device.fcd.deterministic value="true"/>  --> 
+    <!-- <fcd-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mcm-generation-rules/results_sumo/test/simulation.fcd_vehicles.xml"/>--> 
+
+
+        
+</configuration>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-22 17:05:27 by Eclipse SUMO netedit Version 1.9.2-->
+   
+<additional>
+  <vType id="car_hl" vClass="passenger" length="5" maxSpeed="27.77" speed="27.77" accel="3.0" decel="4.0" speedDev="0.3" speedFactor="1.2" minGap="2.0" lcKeepRight="0.8" color="red" collision.minigap-factor="0" carFollowModel="IDM" tau="0.5"  politeness="0.5" lcCooperative="0.5"/>   
+ <vType id="car_ml" vClass="passenger" length="5" maxSpeed="27.77" speed="22.00" accel="3.0" decel="4.0" speedDev="0.0" minGap="2.0" lcKeepRight="0.8" color="green" collision.minigap-factor="0" carFollowModel="IDM" tau="0.5"/> 
+</additional>
+
+<!-- Options for calFollowingModel are: Krauss, IDM, "ACC" also for IDM politeness="from 0.0 to 1.0"   politeness="1.0" -->

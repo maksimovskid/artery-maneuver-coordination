@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-22 17:05:27 by Eclipse SUMO netedit Version 1.9.2-->
+
+<routes>
+   
+   
+2   <!-- shortened routes -->  
+    <route edges="27550700 27454737 266507535" color="yellow" id="route_highway_1_2_2"/>
+
+   	<vehicle id="car_hl1_1_2_2" type="car_hl" route="route_highway_1_2_2" depart="0.0" departLane="1" departSpeed="max" color="red"/>  
+   	<vehicle id="car_hl1_2_2_2" type="car_hl" route="route_highway_1_2_2" depart="1.0" departLane="1" departSpeed="max" color="red"/>  
+ 	<vehicle id="car_hl1_3_2_2" type="car_hl" route="route_highway_1_2_2" depart="2.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_4_2_2" type="car_hl" route="route_highway_1_2_2" depart="3.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_5_2_2" type="car_hl" route="route_highway_1_2_2" depart="4.0" departLane="1" departSpeed="max" color="red"/>      
+ 	<vehicle id="car_hl1_6_2_2" type="car_hl" route="route_highway_1_2_2" depart="5.0" departLane="1" departSpeed="max" color="red"/>      
+   	<vehicle id="car_hl1_7_2_2" type="car_hl" route="route_highway_1_2_2" depart="6.0" departLane="1" departSpeed="max" color="red"/>  
+   	<vehicle id="car_hl1_8_2_2" type="car_hl" route="route_highway_1_2_2" depart="7.0" departLane="1" departSpeed="max" color="red"/>  
+ 	<vehicle id="car_hl1_9_2_2" type="car_hl" route="route_highway_1_2_2" depart="8.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_10_2_2" type="car_hl" route="route_highway_1_2_2" depart="9.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_11_2_2" type="car_hl" route="route_highway_1_2_2" depart="10.0" departLane="1" departSpeed="max" color="red"/>      
+ 	<vehicle id="car_hl1_12_2_2" type="car_hl" route="route_highway_1_2_2" depart="11.0" departLane="1" departSpeed="max" color="red"/>      
+   	<vehicle id="car_hl1_13_2_2" type="car_hl" route="route_highway_1_2_2" depart="12.0" departLane="1" departSpeed="max" color="red"/>  
+   	<vehicle id="car_hl1_14_2_2" type="car_hl" route="route_highway_1_2_2" depart="13.0" departLane="1" departSpeed="max" color="red"/>  
+ 	<vehicle id="car_hl1_15_2_2" type="car_hl" route="route_highway_1_2_2" depart="14.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_16_2_2" type="car_hl" route="route_highway_1_2_2" depart="15.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_17_2_2" type="car_hl" route="route_highway_1_2_2" depart="16.0" departLane="1" departSpeed="max" color="red"/>      
+ 	<vehicle id="car_hl1_18_2_2" type="car_hl" route="route_highway_1_2_2" depart="17.0" departLane="1" departSpeed="max" color="red"/>      
+   	<vehicle id="car_hl1_19_2_2" type="car_hl" route="route_highway_1_2_2" depart="18.0" departLane="1" departSpeed="max" color="red"/>  
+   	<vehicle id="car_hl1_20_2_2" type="car_hl" route="route_highway_1_2_2" depart="19.0" departLane="1" departSpeed="max" color="red"/>  
+ 	<vehicle id="car_hl1_21_2_2" type="car_hl" route="route_highway_1_2_2" depart="20.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_22_2_2" type="car_hl" route="route_highway_1_2_2" depart="21.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_23_2_2" type="car_hl" route="route_highway_1_2_2" depart="22.0" departLane="1" departSpeed="max" color="red"/>      
+ 	<vehicle id="car_hl1_24_2_2" type="car_hl" route="route_highway_1_2_2" depart="23.0" departLane="1" departSpeed="max" color="red"/>     
+   	<vehicle id="car_hl1_25_2_2" type="car_hl" route="route_highway_1_2_2" depart="24.0" departLane="1" departSpeed="max" color="red"/>  
+   	<vehicle id="car_hl1_26_2_2" type="car_hl" route="route_highway_1_2_2" depart="25.0" departLane="1" departSpeed="max" color="red"/>  
+ 	<vehicle id="car_hl1_27_2_2" type="car_hl" route="route_highway_1_2_2" depart="26.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_28_2_2" type="car_hl" route="route_highway_1_2_2" depart="27.0" departLane="1" departSpeed="max" color="red"/>     
+ 	<vehicle id="car_hl1_29_2_2" type="car_hl" route="route_highway_1_2_2" depart="28.0" departLane="1" departSpeed="max" color="red"/>      
+ 	<vehicle id="car_hl1_30_2_2" type="car_hl" route="route_highway_1_2_2" depart="29.0" departLane="1" departSpeed="max" color="red"/>     
+
+</routes>
