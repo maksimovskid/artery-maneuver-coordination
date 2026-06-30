@@ -241,6 +241,8 @@ void McService::checkTriggeringConditions(const SimTime& T_now)
             if (T_elapsed >= fixedInterval) {
                 sendMcm(T_now);
             }
+        } else if (!mHasLastMcmKinematics) {
+            sendMcm(T_now);
         } else if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
             sendMcm(T_now);
             T_GenMcm = std::min(T_elapsed, T_GenMcmMax);
@@ -297,6 +299,7 @@ void McService::sendMcm(const SimTime& T_now)
     mLastMcmPosition = mVehicleDataProvider->position();
     mLastMcmSpeed = mVehicleDataProvider->speed();
     mLastMcmHeading = mVehicleDataProvider->heading();
+    mHasLastMcmKinematics = true;
     mLastMcmTimestamp = T_now;
 
     using McmByteBuffer = convertible::byte_buffer_impl<asn1::Mcm>;

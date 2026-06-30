@@ -101,6 +101,7 @@ private:
     Position mLastMcmPosition;
     vanetza::units::Velocity mLastMcmSpeed;
     vanetza::units::Angle mLastMcmHeading;
+    bool mHasLastMcmKinematics = false;
     omnetpp::SimTime mLastMcmTimestamp;
 
     vanetza::units::Angle mHeadingDelta;
