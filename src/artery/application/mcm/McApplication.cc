@@ -74,6 +74,19 @@ void McApplication::tick(omnetpp::SimTime now)
     evaluateRvExecutionProgress();
 }
 
+void McApplication::prepareMcmGeneration(omnetpp::SimTime now)
+{
+    if (mHasEgoContext) {
+        mEgoContext.now = now;
+    }
+
+    if (mOperationMode == operationMode::ManeuverExecutionMode &&
+            mCooperatingVehicleType == cooperatingVehicleType::RV &&
+            mCoordinationProgressRV == coordinationProgressRV::SendExecute) {
+        queueRepeatedExecute();
+    }
+}
+
 void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
 {
     ++mReceivedMcmCount;
@@ -718,6 +731,11 @@ void McApplication::queueRepeatedExecute()
         << " target2=" << command.targetVehicle2
         << " plannedTrajectoryPoints=" << command.requestedTrajectory.size()
         << '\n';
+
+    // std::cout << "MCM_DEBUG RV station " << mEgoContext.stationId
+    //     << " queued repeated Execute for requestId "
+    //     << static_cast<int>(command.requestId)
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
 void McApplication::evaluateRvExecutionProgress()

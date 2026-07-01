@@ -438,6 +438,11 @@ bool McService::checkSpeedDelta() const
 void McService::sendMcm(const SimTime& T_now)
 {
     uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
+
+    if (mApplication) {
+        mApplication->prepareMcmGeneration(T_now);
+    }
+
     auto command = mApplication->consumePendingCommand();
     auto mcmMessage = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
     if (command && command->kind == mcm::PendingMcmCommand::Kind::Negotiation) {
@@ -696,7 +701,14 @@ void McService::addManeuverNegotiationContainer(
     if (command.requestedTrajectory.empty()) {
         appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
     }
-    appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+
+    if (command.hasOfferedTrajectory && !command.offeredTrajectory.empty()) {
+        for (const auto& point : command.offeredTrajectory) {
+            appendTrajectoryPoint(negotiation->offeredTrajectory, point, heading);
+        }
+    } else {
+        appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+    }
 
     EV_INFO << "McService serialized route_merging_1 " << mcmSubtypeName(command.subtype)
         << " container: requestId="
@@ -704,7 +716,10 @@ void McService::addManeuverNegotiationContainer(
         << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
-        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << " offeredTrajectoryPoints="
+        << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
+        << '\n';
 }
 
 void McService::addManeuverExecutionContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const

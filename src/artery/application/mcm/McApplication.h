@@ -193,6 +193,7 @@ public:
     void initialize(const traci::VehicleController*, const VehicleDataProvider*);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
+    void prepareMcmGeneration(omnetpp::SimTime now);
     void handleReceivedMcm(const ReceivedMcm&);
     void handleSentMcm(const SentMcm&);
     std::optional<PendingMcmCommand> consumePendingCommand();
