@@ -44,6 +44,10 @@ const char* subtypeName(mcmSubtype subtype)
         case mcmSubtype::Request: return "Request";
         case mcmSubtype::Accept: return "Accept";
         case mcmSubtype::Reject: return "Reject";
+        case mcmSubtype::Offer: return "Offer";
+        case mcmSubtype::Confirm: return "Confirm";
+        case mcmSubtype::Execute: return "Execute";
+        case mcmSubtype::Cancel: return "Cancel";
         default: return "Negotiation";
     }
 }
@@ -80,6 +84,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     }
 
     evaluateCvRequestResponse(mcm);
+    handleReceivedOfferAsRv(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -244,6 +249,18 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 
     mPendingMcmCommand = command;
     mMergingRequestQueuedOrSent = true;
+
+    // Store active RV-side negotiation state.
+    // This is needed later to match incoming Offer/Accept/Reject messages
+    // against the original Request and the selected CV targets.
+    mRvRequestId = command.requestId;
+    mRvNumberOfVehicles = command.numberOfVehicles;
+    mRvTargetVehicle1 = command.targetVehicle1;
+    mRvTargetVehicle2 = command.hasTargetVehicle2 ? command.targetVehicle2 : 0;
+    mRvOfferReceived1 = false;
+    mRvOfferReceived2 = false;
+    mRvConfirmQueuedOrSent = false;
+
     mCooperatingVehicleType = cooperatingVehicleType::RV;
     mMcmSubtype = mcmSubtype::Request;
     mPriorityMcmCategory = priorityMcmCategory::MediumPriority;
@@ -367,6 +384,90 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         << " offeredTrajectoryPoints="
         << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
         << '\n';
+}
+
+void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
+            mRvConfirmQueuedOrSent ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            (mCoordinationProgressRV != coordinationProgressRV::CoordinationRequired &&
+                mCoordinationProgressRV != coordinationProgressRV::RequestSent)) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Offer)) {
+        return;
+    }
+
+    if (snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mRvRequestId) {
+        return;
+    }
+
+    const uint32_t senderStationId = snapshot.stationId;
+
+    if (senderStationId == mRvTargetVehicle1 && !mRvOfferReceived1) {
+        mRvOfferReceived1 = true;
+        EV_INFO << "McApplication RV station " << mEgoContext.stationId
+            << " received Offer 1 from CV " << senderStationId
+            << " for requestId=" << static_cast<int>(mRvRequestId)
+            << " offeredTrajectoryPoints=" << snapshot.offeredTrajectoryPointCount << '\n';
+    } else if (mRvNumberOfVehicles > 1 &&
+            senderStationId == mRvTargetVehicle2 && !mRvOfferReceived2) {
+        mRvOfferReceived2 = true;
+        EV_INFO << "McApplication RV station " << mEgoContext.stationId
+            << " received Offer 2 from CV " << senderStationId
+            << " for requestId=" << static_cast<int>(mRvRequestId)
+            << " offeredTrajectoryPoints=" << snapshot.offeredTrajectoryPointCount << '\n';
+    } else {
+        return;
+    }
+
+    const bool allExpectedOffersReceived =
+        mRvNumberOfVehicles > 1 ?
+        (mRvOfferReceived1 && mRvOfferReceived2) :
+        mRvOfferReceived1;
+
+    if (!allExpectedOffersReceived) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Confirm;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+    mPendingMcmCommand = command;
+    mRvConfirmQueuedOrSent = true;
+    mMcmSubtype = mcmSubtype::Confirm;
+    mCoordinationProgressRV = coordinationProgressRV::SendConfirm;
+
+    EV_INFO << "McApplication RV station " << mEgoContext.stationId
+        << " queued Confirm after receiving all Offers"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
+
+    // std::cout << "MCM_DEBUG RV station " << mEgoContext.stationId
+    //     << " queued Confirm for requestId " << static_cast<int>(command.requestId)
+    //     << " after receiving Offers from " << mRvTargetVehicle1
+    //     << " and " << mRvTargetVehicle2
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const

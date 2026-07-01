@@ -221,6 +221,7 @@ private:
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateCvRequestResponse(const ReceivedMcm&);
+    void handleReceivedOfferAsRv(const ReceivedMcm&);
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
@@ -248,9 +249,20 @@ private:
     McEgoContext mEgoContext;
     std::optional<PendingMcmCommand> mPendingMcmCommand;
     bool mMergingRequestQueuedOrSent = false;
+
+    // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;
     uint32_t mCvRvStationId = 0;
     uint8_t mCvRequestId = 0;
+
+    // RV-side state for the active merging Request.
+    uint8_t mRvRequestId = 0;
+    uint8_t mRvNumberOfVehicles = 1;
+    uint32_t mRvTargetVehicle1 = 0;
+    uint32_t mRvTargetVehicle2 = 0;
+    bool mRvOfferReceived1 = false;
+    bool mRvOfferReceived2 = false;
+    bool mRvConfirmQueuedOrSent = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;
