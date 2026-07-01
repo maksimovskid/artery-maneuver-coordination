@@ -227,6 +227,7 @@ private:
     void applyRvExecutionControl();
     void applyCvDecelerationControl();
     void applyCvAccelerationControl();
+    void applyCvLaneChangeControl();
     void restoreCvSpeedControl();
     void classifyCvMergingControlManeuver(const ReceivedMcm&);
     void evaluateRvExecutionProgress();
@@ -300,6 +301,7 @@ private:
     bool mCvDecelerationControlApplied = false;
     bool mCvDecelerationControlSkippedLogged = false;
     bool mCvAccelerationControlApplied = false;
+    bool mCvLaneChangeControlLogged = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

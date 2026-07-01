@@ -96,6 +96,7 @@ void McApplication::tick(omnetpp::SimTime now)
     applyRvExecutionControl();
     applyCvDecelerationControl();
     applyCvAccelerationControl();
+    applyCvLaneChangeControl();
     evaluateRvExecutionProgress();
     evaluateCvExecutionProgress();
 }
@@ -195,6 +196,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mCvDecelerationControlApplied = false;
         mCvDecelerationControlSkippedLogged = false;
         mCvAccelerationControlApplied = false;
+        mCvLaneChangeControlLogged = false;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -222,6 +224,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCvDecelerationControlApplied = false;
             mCvDecelerationControlSkippedLogged = false;
             mCvAccelerationControlApplied = false;
+            mCvLaneChangeControlLogged = false;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -245,6 +248,7 @@ void McApplication::clearCommand()
     mCvDecelerationControlApplied = false;
     mCvDecelerationControlSkippedLogged = false;
     mCvAccelerationControlApplied = false;
+    mCvLaneChangeControlLogged = false;
     mPendingMcmCommand.reset();
 }
 
@@ -361,6 +365,34 @@ void McApplication::applyCvAccelerationControl()
         << " speedMode=31 targetSpeed=33.33 maxSpeed=33.33\n";
 }
 
+void McApplication::applyCvLaneChangeControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            mControlManeuver != controlManeuver::ChangeLane ||
+            mCvLaneChangeControlLogged) {
+        return;
+    }
+
+    // Legacy lateral control transitions ChangeLane to LaneChangeExecution and
+    // uses a 10-step moveToXY loop based on live TraCI lane/position/speed.
+    // Keep this milestone state-only until the lane target and step counter are
+    // represented explicitly in McApplication.
+    EV_INFO << "McApplication CV lane-change control not applied yet"
+        << ": station=" << mEgoContext.stationId
+        << " vehicleId=" << mVehicleController->getVehicleId()
+        << " route=" << mEgoContext.routeId
+        << " laneIndex=" << mEgoContext.laneIndex
+        << " selectedTrajectoryPoints="
+        << (mHasCvSelectedTrajectory ? mCvSelectedTrajectory.size() : 0)
+        << " missing=lateral-target-and-step-counter\n";
+    mCvLaneChangeControlLogged = true;
+}
+
 void McApplication::restoreCvSpeedControl()
 {
     EV_STATICCONTEXT;
@@ -404,6 +436,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     mCvDecelerationControlApplied = false;
     mCvDecelerationControlSkippedLogged = false;
     mCvAccelerationControlApplied = false;
+    mCvLaneChangeControlLogged = false;
 
     if (!mHasEgoContext || !mVehicleDataProvider) {
         EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
@@ -717,6 +750,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     mCvDecelerationControlApplied = false;
     mCvDecelerationControlSkippedLogged = false;
     mCvAccelerationControlApplied = false;
+    mCvLaneChangeControlLogged = false;
 
     PendingMcmCommand command;
     command.kind = PendingMcmCommand::Kind::Negotiation;
