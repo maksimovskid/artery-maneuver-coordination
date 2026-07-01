@@ -224,6 +224,7 @@ private:
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
+    void handleReceivedExecuteAsCv(const ReceivedMcm&);
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;

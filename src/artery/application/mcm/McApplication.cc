@@ -87,6 +87,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedOfferAsRv(mcm);
     handleReceivedConfirmAsCv(mcm);
     handleReceivedAcceptAsRv(mcm);
+    handleReceivedExecuteAsCv(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -616,6 +617,54 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     //     << " queued Execute for requestId " << static_cast<int>(command.requestId)
     //     << " after receiving Accepts from " << mRvTargetVehicle1
     //     << " and " << mRvTargetVehicle2
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mCoordinationProgressCV != coordinationProgressCV::AcceptSent) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Execute)) {
+        return;
+    }
+
+    if (snapshot.stationId != mCvRvStationId) {
+        return;
+    }
+
+    if (snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mCvRequestId) {
+        return;
+    }
+
+    const uint32_t egoStationId = mVehicleDataProvider->station_id();
+    const bool targetsEgo = snapshot.negotiationVehicleId1 == egoStationId ||
+        (snapshot.hasNegotiationVehicleId2 && snapshot.negotiationVehicleId2 == egoStationId);
+    if (!targetsEgo) {
+        return;
+    }
+
+    mMcmSubtype = mcmSubtype::Execute;
+    mCoordinationProgressCV = coordinationProgressCV::SendExecuteCV;
+
+    EV_INFO << "McApplication CV station " << egoStationId
+        << " received Execute from RV " << mCvRvStationId
+        << ": requestId=" << static_cast<int>(mCvRequestId)
+        << " numberOfVehicles=" << snapshot.numberOfVehicles
+        << " requestedTrajectoryPoints=" << snapshot.requestedTrajectoryPointCount
+        << '\n';
+    
+    // std::cout << "MCM_DEBUG CV station " << egoStationId
+    //     << " received Execute for requestId " << static_cast<int>(mCvRequestId)
+    //     << " from RV " << mCvRvStationId
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
