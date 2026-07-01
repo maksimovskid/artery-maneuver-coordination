@@ -1,10 +1,13 @@
 #ifndef ARTERY_MCM_MCAPPLICATION_H_
 #define ARTERY_MCM_MCAPPLICATION_H_
 
+#include "artery/application/mcm/TrajPointMCM.h"
+
 #include <omnetpp/simtime.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace traci
 {
@@ -106,7 +109,10 @@ struct McmSnapshot {
     long latitude = 0;
     long speedValue = 0;
     long headingValue = 0;
+    bool hasLaneId = false;
+    long laneId = -1;
     std::size_t plannedTrajectoryPointCount = 0;
+    std::vector<mcm::TrajPointMCM> plannedTrajectory;
     mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
     bool hasExecutionContainer = false;

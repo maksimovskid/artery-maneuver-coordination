@@ -13,6 +13,7 @@ target_sources(core PRIVATE
     ItsG5PromiscuousService.cc
     ItsG5Service.cc
     LocalDynamicMap.cc
+    LocalDynamicMapMCM.cc
     LocationTableLogger.cc
     McObject.cc
     McService.cc

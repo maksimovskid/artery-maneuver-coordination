@@ -7,6 +7,7 @@
 #include "artery/application/Middleware.h"
 #include "artery/application/ItsG5PromiscuousService.h"
 #include "artery/application/ItsG5Service.h"
+#include "artery/application/LocalDynamicMapMCM.h"
 #include "artery/application/XmlMultiChannelPolicy.h"
 #include "artery/networking/PositionProvider.h"
 #include "artery/networking/Router.h"
@@ -16,6 +17,8 @@
 #include "artery/utility/InitStages.h"
 #include "artery/utility/FilterRules.h"
 #include "inet/common/ModuleAccess.h"
+
+#include <map>
 
 using namespace omnetpp;
 
@@ -44,14 +47,22 @@ ChannelNumber getChannel(const omnetpp::cXMLElement* cfg)
     return channel;
 }
 
+std::map<Middleware*, std::unique_ptr<LocalDynamicMapMCM>>& localDynamicMapMcmRegistry()
+{
+    static std::map<Middleware*, std::unique_ptr<LocalDynamicMapMCM>> registry;
+    return registry;
+}
+
 } // namespace
 
-Middleware::Middleware() : mLocalDynamicMap(mTimer)
+Middleware::Middleware() :
+    mLocalDynamicMap(mTimer)
 {
 }
 
 Middleware::~Middleware()
 {
+    localDynamicMapMcmRegistry().erase(this);
     cancelAndDelete(mUpdateMessage);
 }
 
@@ -72,6 +83,11 @@ void Middleware::initialize(int stage)
     } else if (stage == InitStages::Self) {
         mFacilities.register_const(&mTimer);
         mFacilities.register_mutable(&mLocalDynamicMap);
+        auto& mcmMap = localDynamicMapMcmRegistry()[this];
+        if (!mcmMap) {
+            mcmMap.reset(new LocalDynamicMapMCM(mTimer));
+        }
+        mFacilities.register_mutable(mcmMap.get());
         mFacilities.register_const(&mIdentity);
         mFacilities.register_const(&mStationType);
         mFacilities.register_const(mMultiChannelPolicy.get());
@@ -211,6 +227,10 @@ void Middleware::registerNetworkInterface(std::shared_ptr<NetworkInterface> ifc)
 void Middleware::updateServices()
 {
     mLocalDynamicMap.dropExpired();
+    auto found = localDynamicMapMcmRegistry().find(this);
+    if (found != localDynamicMapMcmRegistry().end() && found->second) {
+        found->second->dropExpired();
+    }
     for (auto& service : mServices) {
         service->trigger();
     }
@@ -258,4 +278,3 @@ void Middleware::requestTransmission(const vanetza::btp::DataRequestB& request, 
 }
 
 } // namespace artery
-

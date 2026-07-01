@@ -1,6 +1,7 @@
 #include "artery/application/McService.h"
 
 #include "artery/application/Asn1PacketVisitor.h"
+#include "artery/application/LocalDynamicMapMCM.h"
 #include "artery/application/McObject.h"
 #include "artery/application/MultiChannelPolicy.h"
 #include "artery/application/NetworkInterfaceTable.h"
@@ -29,6 +30,7 @@
 #include <exception>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace artery
 {
@@ -116,6 +118,28 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
     return metadata;
 }
 
+mcm::TrajectoryPlanner::Trajectory extractTrajectory(const TrajectoryMCM_t& trajectory)
+{
+    mcm::TrajectoryPlanner::Trajectory points;
+    points.reserve(static_cast<std::size_t>(trajectory.list.count));
+
+    for (int i = 0; i < trajectory.list.count; ++i) {
+        const TrajectoryPointMCM_t* point = trajectory.list.array[i];
+        if (!point) {
+            continue;
+        }
+
+        mcm::TrajPointMCM parsed;
+        parsed.mX = point->deltaLongitudinalPosition;
+        parsed.mY = point->deltaLateralPosition;
+        parsed.mHeading = point->deltaHeading;
+        parsed.mTime = omnetpp::SimTime { static_cast<double>(point->deltaTime) / 100.0 };
+        points.push_back(parsed);
+    }
+
+    return points;
+}
+
 mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
 {
     const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
@@ -129,7 +153,12 @@ mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
     snapshot.latitude = basic.referencePosition.latitude;
     snapshot.speedValue = intent.speed.speedValue;
     snapshot.headingValue = intent.heading.headingValue;
+    snapshot.hasLaneId = intent.laneID != nullptr;
+    if (intent.laneID) {
+        snapshot.laneId = *intent.laneID;
+    }
     snapshot.plannedTrajectoryPointCount = static_cast<std::size_t>(intent.plannedTrajectory.list.count);
+    snapshot.plannedTrajectory = extractTrajectory(intent.plannedTrajectory);
     snapshot.operationMode = metadata.operationMode;
     snapshot.hasNegotiationContainer = metadata.hasNegotiationContainer;
     snapshot.hasExecutionContainer = metadata.hasExecutionContainer;
@@ -159,7 +188,10 @@ mcm::SentMcm makeSentMcm(const MCM_t& message, omnetpp::SimTime sentAt)
 
 mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime receivedAt)
 {
-    return { extractMcmSnapshot(message), receivedAt };
+    auto snapshot = extractMcmSnapshot(message);
+    EV_DETAIL << "McService received MCM snapshot for station " << snapshot.stationId
+        << " with plannedTrajectory points=" << snapshot.plannedTrajectoryPointCount << '\n';
+    return { snapshot, receivedAt };
 }
 
 void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
@@ -572,6 +604,14 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         EV_DETAIL << "McService receive: decoded and validated MCM, emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
+        if (!mLocalDynamicMapMCM) {
+            mLocalDynamicMapMCM = getFacilities().get_mutable_ptr<LocalDynamicMapMCM>();
+        }
+        if (mLocalDynamicMapMCM) {
+            mLocalDynamicMapMCM->updateAwarenessMCM(obj);
+        } else {
+            EV_WARN << "McService receive: LocalDynamicMapMCM unavailable; validated MCM awareness not stored\n";
+        }
 
         const MCM_t& message = *obj.asn1();
         mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
