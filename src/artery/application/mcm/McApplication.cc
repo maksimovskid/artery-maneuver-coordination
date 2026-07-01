@@ -175,6 +175,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCoordinationProgressCV == coordinationProgressCV::SendCompleteCV &&
             mcm.data.requestId == mCvRequestId &&
             mcm.data.negotiationVehicleId1 == mCvRvStationId) {
+        restoreCvSpeedControl();
+
         mCoordinationProgressCV = coordinationProgressCV::CompleteSentCV;
         mOperationMode = operationMode::IntentionSharingMode;
         mMcmSubtype = mcmSubtype::Regular;
@@ -357,6 +359,37 @@ void McApplication::applyCvAccelerationControl()
         << ": station=" << mEgoContext.stationId
         << " vehicleId=" << vehicleId
         << " speedMode=31 targetSpeed=33.33 maxSpeed=33.33\n";
+}
+
+void McApplication::restoreCvSpeedControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            (!mCvDecelerationControlApplied && !mCvAccelerationControlApplied)) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+    const bool restoredAfterAcceleration = mCvAccelerationControlApplied;
+    const bool restoredAfterDeceleration = mCvDecelerationControlApplied;
+
+    // Legacy highway restore uses 27.77 m/s as the normal mainline speed.
+    // Deceleration completion only restored maxSpeed; acceleration changed both
+    // speed and maxSpeed, so restore both in that case.
+    mVehicleController->setSpeedMode(vehicleId, 31);
+    if (restoredAfterAcceleration) {
+        mVehicleController->setSpeed(27.77 * boost::units::si::meter_per_second);
+    }
+    mVehicleController->setMaxSpeed(27.77 * boost::units::si::meter_per_second);
+
+    EV_INFO << "McApplication restored highway-merging CV speed control"
+        << ": station=" << mEgoContext.stationId
+        << " vehicleId=" << vehicleId
+        << " speedMode=31 normalSpeed=27.77"
+        << " restoredAfterDeceleration=" << restoredAfterDeceleration
+        << " restoredAfterAcceleration=" << restoredAfterAcceleration
+        << '\n';
 }
 
 void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)

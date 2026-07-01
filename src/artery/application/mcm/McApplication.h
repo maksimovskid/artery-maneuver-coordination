@@ -227,6 +227,7 @@ private:
     void applyRvExecutionControl();
     void applyCvDecelerationControl();
     void applyCvAccelerationControl();
+    void restoreCvSpeedControl();
     void classifyCvMergingControlManeuver(const ReceivedMcm&);
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
