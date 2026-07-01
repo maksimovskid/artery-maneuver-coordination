@@ -7,7 +7,9 @@
 #include "artery/application/Timer.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
+#include "artery/application/mcm/TrajectoryCsv.h"
 #include "artery/utility/round.h"
+#include "artery/traci/VehicleController.h"
 
 #include <boost/units/cmath.hpp>
 #include <boost/units/systems/si/prefixes.hpp>
@@ -25,6 +27,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <cmath>
 #include <string>
 
 namespace artery
@@ -39,6 +42,7 @@ namespace
 {
 
 constexpr long scMcmMessageId = 20;
+constexpr int scMaxTrajectoryMcmPoints = 20;
 
 // Experimental MCM/MCS ITS-AID placeholder until an official or project-specific value is introduced.
 constexpr vanetza::ItsAid scExperimentalMcmAid = 650;
@@ -170,6 +174,18 @@ void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
     }
 }
 
+void appendTrajectoryPoint(TrajectoryMCM_t& trajectory, const mcm::TrajPointMCM& point, long heading)
+{
+    TrajectoryPointMCM_t* trajectoryPoint = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
+    trajectoryPoint->deltaLongitudinalPosition = static_cast<long>(std::round(point.mX));
+    trajectoryPoint->deltaLateralPosition = static_cast<long>(std::round(point.mY));
+    trajectoryPoint->deltaHeading = heading;
+    trajectoryPoint->deltaTime = static_cast<long>(std::round(point.mTime.dbl() * 100.0));
+    if (ASN_SEQUENCE_ADD(&trajectory, trajectoryPoint) != 0) {
+        throw cRuntimeError("Failed to append MCM trajectory point");
+    }
+}
+
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
     static const vanetza::units::Velocity lower { 0.0 * boost::units::si::meter_per_second };
@@ -205,6 +221,7 @@ void McService::initialize()
     mVehicleDataProvider = &getFacilities().get_const<VehicleDataProvider>();
     mTimer = &getFacilities().get_const<Timer>();
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
+    mVehicleController = getFacilities().get_const_ptr<traci::VehicleController>();
 
     mLastMcmTimestamp = simTime();
     mGenMcmMin = par("minInterval");
@@ -217,9 +234,40 @@ void McService::initialize()
     mFixedRate = par("fixedRate");
     mFixedRateInterval = par("fixedRateInterval");
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
+    mUsePrerecordedIntentTrajectory = par("usePrerecordedIntentTrajectory").boolValue();
+    mPrerecordedTrajectoryCsv = par("prerecordedTrajectoryCsv").stdstringValue();
+    mPrerecordedTrajectorySteps = par("prerecordedTrajectorySteps").intValue();
+    mPrerecordedTrajectoryDt = par("prerecordedTrajectoryDt").doubleValue();
+    mPrerecordedTrajectorySteps = std::max(1, std::min(mPrerecordedTrajectorySteps, scMaxTrajectoryMcmPoints));
+    mTrajectoryPlanner.initialize(mVehicleController, mVehicleDataProvider, nullptr);
+
+    if (mUsePrerecordedIntentTrajectory) {
+        if (!mVehicleController) {
+            EV_WARN << "McService prerecorded plannedTrajectory enabled but VehicleController is unavailable; zero placeholder fallback will be used\n";
+        } else if (mPrerecordedTrajectoryCsv.empty()) {
+            EV_WARN << "McService prerecorded plannedTrajectory enabled but prerecordedTrajectoryCsv is empty; zero placeholder fallback will be used\n";
+        } else {
+            const std::string routeId = mVehicleController->getRouteID();
+            const auto columns = mcm::selectRouteTrajectoryColumns(mPrerecordedTrajectoryCsv, ',', routeId);
+            EV_INFO << "McService prerecorded plannedTrajectory route ID: " << routeId << '\n';
+            EV_INFO << "McService loading prerecorded trajectory CSV: " << mPrerecordedTrajectoryCsv << '\n';
+            if (columns.usingFallback) {
+                EV_WARN << "McService route columns " << routeId << "_x/" << routeId
+                    << "_y missing; using dummy/filler columns others_x/others_y for Intent Sharing only\n";
+                mPrerecordedTrajectoryFallbackUsed = true;
+            }
+            EV_INFO << "McService selected prerecorded trajectory columns: "
+                << columns.xColumn << ", " << columns.yColumn << '\n';
+
+            mPrerecordedCx = mcm::readCX(mPrerecordedTrajectoryCsv, ',', columns.xColumn);
+            mPrerecordedCy = mcm::readCX(mPrerecordedTrajectoryCsv, ',', columns.yColumn);
+            EV_INFO << "McService loaded prerecorded trajectory CSV with "
+                << std::min(mPrerecordedCx.size(), mPrerecordedCy.size())
+                << " usable coordinate rows for station " << mVehicleDataProvider->station_id() << '\n';
+        }
+    }
     mApplication.reset(new mcm::McApplication());
     mApplication->initialize(nullptr);
-    // TODO: wire VehicleController later when execution logic needs it and facility initialization order is confirmed.
 }
 
 void McService::trigger()
@@ -353,8 +401,68 @@ void McService::fillIntentionSharingContainer(vanetza::asn1::Mcm& message, const
     intent.vehicleWidth = VehicleWidth_unavailable;
     intent.vehicleAutomationLevel = VehicleAutomationLevel_notAvailable;
 
-    // TODO: replace this placeholder with TrajectoryPlanner output when planned trajectories are integrated.
-    appendZeroTrajectoryPoint(intent.plannedTrajectory);
+    if (!mUsePrerecordedIntentTrajectory) {
+        appendZeroTrajectoryPoint(intent.plannedTrajectory);
+    } else if (!appendPrerecordedIntentTrajectory(message)) {
+        EV_WARN << "McService using zero placeholder plannedTrajectory for station "
+            << vdp.station_id() << '\n';
+        appendZeroTrajectoryPoint(intent.plannedTrajectory);
+    }
+}
+
+bool McService::appendPrerecordedIntentTrajectory(vanetza::asn1::Mcm& message) const
+{
+    if (!mUsePrerecordedIntentTrajectory) {
+        return false;
+    }
+
+    if (!mVehicleController || mPrerecordedTrajectoryCsv.empty() ||
+            mPrerecordedCx.empty() || mPrerecordedCy.empty()) {
+        EV_WARN << "McService prerecorded plannedTrajectory generation unavailable; falling back to zero placeholder\n";
+        return false;
+    }
+
+    const auto trajectory = mTrajectoryPlanner.calculateRefTrajectory(
+        mPrerecordedTrajectorySteps,
+        mPrerecordedTrajectoryDt,
+        mPrerecordedCx,
+        mPrerecordedCy,
+        mPrerecordedTrajectoryIndex,
+        true,
+        0.0F,
+        0.0F,
+        0.0F);
+
+    if (trajectory.empty()) {
+        EV_WARN << "McService prerecorded plannedTrajectory generation returned no points; falling back to zero placeholder\n";
+        return false;
+    }
+
+    IntentSharingContainer_t& intent = (*message).mcm.mcmParameters.intentionSharingContainer;
+    const long heading = round(mVehicleDataProvider->heading(), decidegree);
+    for (const auto& point : trajectory) {
+        appendTrajectoryPoint(intent.plannedTrajectory, point, heading);
+    }
+
+    artery::State state;
+    state.x = mVehicleController->getPositionSumo().x / boost::units::si::meter;
+    state.y = mVehicleController->getPositionSumo().y / boost::units::si::meter;
+    state.yaw = mVehicleDataProvider->heading() / boost::units::si::radians;
+    state.v = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
+    mPrerecordedTrajectoryIndex = mTrajectoryPlanner.calc_nearest_index(
+        state,
+        mPrerecordedCx,
+        mPrerecordedCy,
+        mPrerecordedTrajectoryIndex);
+
+    EV_INFO << "McService generated prerecorded plannedTrajectory with "
+        << trajectory.size() << " points for station " << (*message).header.stationID;
+    if (mPrerecordedTrajectoryFallbackUsed) {
+        EV_INFO << " using dummy/filler others_x/others_y";
+    }
+    EV_INFO << '\n';
+
+    return true;
 }
 
 void McService::addManeuverNegotiationContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const

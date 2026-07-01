@@ -9,6 +9,10 @@ simple McService like ItsG5Service
         double maxInterval @unit(s) = default(1.0s);
         bool fixedRate = default(true);
         double fixedRateInterval @unit(s) = default(0.1s);
+        bool usePrerecordedIntentTrajectory = default(false);
+        string prerecordedTrajectoryCsv = default("");
+        int prerecordedTrajectorySteps = default(20);
+        double prerecordedTrajectoryDt @unit(s) = default(0.25s);
         double headingDelta = default(4.0);
         double positionDelta @unit(m) = default(4.0m);
         double speedDelta @unit(mps) = default(0.5mps);

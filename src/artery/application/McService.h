@@ -2,6 +2,7 @@
 #define ARTERY_MCSERVICE_H_
 
 #include "artery/application/ItsG5BaseService.h"
+#include "artery/application/mcm/TrajectoryPlanner.h"
 #include "artery/utility/Channel.h"
 #include "artery/utility/Geometry.h"
 
@@ -13,6 +14,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+
+namespace traci { class VehicleController; }
 
 namespace artery
 {
@@ -76,6 +80,7 @@ private:
     void fillIntentionSharingContainer(
         vanetza::asn1::Mcm&,
         const VehicleDataProvider&) const;
+    bool appendPrerecordedIntentTrajectory(vanetza::asn1::Mcm&) const;
 
     void addManeuverNegotiationContainer(
         vanetza::asn1::Mcm&,
@@ -114,6 +119,17 @@ private:
 
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;
+
+    bool mUsePrerecordedIntentTrajectory = false;
+    std::string mPrerecordedTrajectoryCsv;
+    int mPrerecordedTrajectorySteps = 20;
+    double mPrerecordedTrajectoryDt = 0.25;
+    mutable int mPrerecordedTrajectoryIndex = 0;
+    mutable bool mPrerecordedTrajectoryFallbackUsed = false;
+    mutable mcm::TrajectoryPlanner::Vec_f mPrerecordedCx;
+    mutable mcm::TrajectoryPlanner::Vec_f mPrerecordedCy;
+    mutable mcm::TrajectoryPlanner mTrajectoryPlanner;
+    const traci::VehicleController* mVehicleController = nullptr;
 
     // Application layer handoff
     std::unique_ptr<mcm::McApplication> mApplication;

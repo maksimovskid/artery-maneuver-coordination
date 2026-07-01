@@ -77,5 +77,22 @@ bool checkColumnExists(const std::string& filename, const std::string& columnNam
     return false;
 }
 
+RouteTrajectoryColumns selectRouteTrajectoryColumns(const std::string& filename, char delimiter, const std::string& routeId)
+{
+    RouteTrajectoryColumns columns;
+    columns.xColumn = routeId + "_x";
+    columns.yColumn = routeId + "_y";
+
+    if (checkColumnExists(filename, columns.xColumn, delimiter) &&
+            checkColumnExists(filename, columns.yColumn, delimiter)) {
+        return columns;
+    }
+
+    columns.xColumn = "others_x";
+    columns.yColumn = "others_y";
+    columns.usingFallback = true;
+    return columns;
+}
+
 } // namespace mcm
 } // namespace artery
