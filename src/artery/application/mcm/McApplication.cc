@@ -298,10 +298,16 @@ void McApplication::applyCvDecelerationControl()
 {
     EV_STATICCONTEXT;
 
+    const bool oldEquivalentAcceptPhase =
+        mOperationMode == operationMode::ManeuverNegotiationMode &&
+        mCoordinationProgressCV == coordinationProgressCV::SendAccept;
+    const bool executionPhase =
+        mOperationMode == operationMode::ManeuverExecutionMode &&
+        mCoordinationProgressCV == coordinationProgressCV::SendExecuteCV;
+
     if (!mVehicleController || !mHasEgoContext ||
             mCooperatingVehicleType != cooperatingVehicleType::CV ||
-            mOperationMode != operationMode::ManeuverExecutionMode ||
-            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            (!oldEquivalentAcceptPhase && !executionPhase) ||
             mControlManeuver != controlManeuver::Decelerate ||
             mCvDecelerationControlApplied) {
         return;
@@ -312,6 +318,7 @@ void McApplication::applyCvDecelerationControl()
         if (!mCvDecelerationControlSkippedLogged) {
             EV_WARN << "McApplication skipped CV deceleration control"
                 << ": station=" << mEgoContext.stationId
+                << " timing=" << (oldEquivalentAcceptPhase ? "SendAccept" : "SendExecuteCV")
                 << " targetSpeed=" << mTargetSpeed
                 << " decelerationTime=" << mCommandDuration
                 << '\n';
@@ -332,6 +339,7 @@ void McApplication::applyCvDecelerationControl()
     EV_INFO << "McApplication applied highway-merging CV deceleration control"
         << ": station=" << mEgoContext.stationId
         << " vehicleId=" << vehicleId
+        << " timing=" << (oldEquivalentAcceptPhase ? "SendAccept" : "SendExecuteCV")
         << " speedMode=31 targetSpeed=" << mTargetSpeed
         << " decelerationTime=" << mCommandDuration
         << '\n';
@@ -341,10 +349,16 @@ void McApplication::applyCvAccelerationControl()
 {
     EV_STATICCONTEXT;
 
+    const bool oldEquivalentAcceptPhase =
+        mOperationMode == operationMode::ManeuverNegotiationMode &&
+        mCoordinationProgressCV == coordinationProgressCV::SendAccept;
+    const bool executionPhase =
+        mOperationMode == operationMode::ManeuverExecutionMode &&
+        mCoordinationProgressCV == coordinationProgressCV::SendExecuteCV;
+
     if (!mVehicleController || !mHasEgoContext ||
             mCooperatingVehicleType != cooperatingVehicleType::CV ||
-            mOperationMode != operationMode::ManeuverExecutionMode ||
-            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            (!oldEquivalentAcceptPhase && !executionPhase) ||
             mControlManeuver != controlManeuver::Accelerate ||
             mCvAccelerationControlApplied) {
         return;
@@ -362,6 +376,7 @@ void McApplication::applyCvAccelerationControl()
     EV_INFO << "McApplication applied highway-merging CV acceleration control"
         << ": station=" << mEgoContext.stationId
         << " vehicleId=" << vehicleId
+        << " timing=" << (oldEquivalentAcceptPhase ? "SendAccept" : "SendExecuteCV")
         << " speedMode=31 targetSpeed=33.33 maxSpeed=33.33\n";
 }
 
