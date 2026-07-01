@@ -176,7 +176,13 @@ struct PendingMcmCommand {
     uint32_t targetVehicle1 = 0;
     bool hasTargetVehicle2 = false;
     uint32_t targetVehicle2 = 0;
+
     TrajectoryPlanner::Trajectory requestedTrajectory;
+
+    // Used by Offer messages.
+    // For Request/Accept/Reject this can stay empty and McService can use a valid placeholder.
+    TrajectoryPlanner::Trajectory offeredTrajectory;
+    bool hasOfferedTrajectory = false;
 };
 
 class McApplication

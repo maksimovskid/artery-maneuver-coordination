@@ -5,6 +5,7 @@
 #include "artery/traci/VehicleController.h"
 
 #include <algorithm>
+// #include <iostream> // temporary MCM_DEBUG prints
 
 namespace artery
 {
@@ -294,25 +295,65 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     command.numberOfVehicles = 1;
     command.targetVehicle1 = mCvRvStationId;
     command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
 
     if (snapshot.requestedTrajectory.empty()) {
         command.subtype = mcmSubtype::Reject;
         command.requestedTrajectory = mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
         mCoordinationProgressCV = coordinationProgressCV::SendReject;
+
         EV_WARN << "McApplication CV station " << egoStationId
             << " rejecting Request " << static_cast<int>(command.requestId)
             << " from RV " << mCvRvStationId
             << " because requestedTrajectory is missing\n";
+
+        // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
+        // std::cout << "MCM_DEBUG CV station " << egoStationId
+        //     << " queued Reject for requestId " << static_cast<int>(command.requestId)
+        //     << " to RV " << mCvRvStationId
+        //     << " at " << omnetpp::simTime() << " s" << std::endl;
+    } else if (snapshot.numberOfVehicles > 1) {
+        command.subtype = mcmSubtype::Offer;
+        command.requestedTrajectory = snapshot.requestedTrajectory;
+        command.offeredTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
+            mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
+        command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+        mCoordinationProgressCV = coordinationProgressCV::SendOffer;
+
+        EV_INFO << "McApplication CV station " << egoStationId
+            << " offering for targeted route_merging_1 Request "
+            << static_cast<int>(command.requestId)
+            << " from RV " << mCvRvStationId
+            << " because numberOfVehicles=" << snapshot.numberOfVehicles
+            << " matches old two-CV Offer path"
+            << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size()
+            << " offeredTrajectoryPoints=" << command.offeredTrajectory.size() << '\n';
+
+        // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
+        // std::cout << "MCM_DEBUG CV station " << egoStationId
+        //     << " queued Offer for requestId " << static_cast<int>(command.requestId)
+        //     << " to RV " << mCvRvStationId
+        //     << " offeredTrajectoryPoints=" << command.offeredTrajectory.size()
+        //     << " at " << omnetpp::simTime() << " s" << std::endl;
     } else {
         command.subtype = mcmSubtype::Accept;
         command.requestedTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
             mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
         mCoordinationProgressCV = coordinationProgressCV::SendAccept;
+
         EV_INFO << "McApplication CV station " << egoStationId
-            << " accepted targeted route_merging_1 Request " << static_cast<int>(command.requestId)
+            << " accepted targeted route_merging_1 Request "
+            << static_cast<int>(command.requestId)
             << " from RV " << mCvRvStationId
-            << " using default Accept path after old suitability check was deferred"
+            << " because numberOfVehicles=" << snapshot.numberOfVehicles
+            << " matches old one-CV Accept path"
             << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size() << '\n';
+
+        // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
+        // std::cout << "MCM_DEBUG CV station " << egoStationId
+        //     << " queued Accept for requestId " << static_cast<int>(command.requestId)
+        //     << " to RV " << mCvRvStationId
+        //     << " at " << omnetpp::simTime() << " s" << std::endl;
     }
 
     mMcmSubtype = command.subtype;
@@ -322,7 +363,10 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     EV_INFO << "McApplication queued CV " << subtypeName(command.subtype)
         << ": requestId=" << static_cast<int>(command.requestId)
         << " rvStation=" << command.targetVehicle1
-        << " responseTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << " offeredTrajectoryPoints="
+        << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
+        << '\n';
 }
 
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const
