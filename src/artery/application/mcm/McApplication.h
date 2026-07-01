@@ -190,7 +190,7 @@ class McApplication
 public:
     McApplication() = default;
 
-    void initialize(const traci::VehicleController*, const VehicleDataProvider*);
+    void initialize(traci::VehicleController*, const VehicleDataProvider*);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -221,6 +221,7 @@ private:
 
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    void applyRvExecutionControl();
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
@@ -232,7 +233,7 @@ private:
     void queueRepeatedExecute();
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
-    const traci::VehicleController* mVehicleController = nullptr;
+    traci::VehicleController* mVehicleController = nullptr;
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
     TrajectoryPlanner mTrajectoryPlanner;
     operationMode mOperationMode = operationMode::IntentionSharingMode;
@@ -286,6 +287,7 @@ private:
     // RV-side repeated Execute signaling during maneuver execution.
     omnetpp::SimTime mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     bool mHasLastExecuteQueuedAt = false;
+    bool mRvMergingExecutionControlLogged = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

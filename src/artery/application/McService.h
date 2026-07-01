@@ -138,7 +138,7 @@ private:
     mutable mcm::TrajectoryPlanner::Vec_f mPrerecordedCx;
     mutable mcm::TrajectoryPlanner::Vec_f mPrerecordedCy;
     mutable mcm::TrajectoryPlanner mTrajectoryPlanner;
-    const traci::VehicleController* mVehicleController = nullptr;
+    traci::VehicleController* mVehicleController = nullptr;
 
     // Application layer handoff
     std::unique_ptr<mcm::McApplication> mApplication;

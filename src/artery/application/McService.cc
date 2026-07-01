@@ -334,7 +334,7 @@ void McService::initialize()
     mVehicleDataProvider = &getFacilities().get_const<VehicleDataProvider>();
     mTimer = &getFacilities().get_const<Timer>();
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
-    mVehicleController = getFacilities().get_const_ptr<traci::VehicleController>();
+    mVehicleController = getFacilities().get_mutable_ptr<traci::VehicleController>();
 
     mLastMcmTimestamp = simTime();
     mGenMcmMin = par("minInterval");

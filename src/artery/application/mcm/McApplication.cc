@@ -54,7 +54,7 @@ const char* subtypeName(mcmSubtype subtype)
 }
 
 void McApplication::initialize(
-    const traci::VehicleController* controller,
+    traci::VehicleController* controller,
     const VehicleDataProvider* vehicleDataProvider)
 {
     mVehicleController = controller;
@@ -71,6 +71,7 @@ void McApplication::updateEgoContext(const McEgoContext& context)
 void McApplication::tick(omnetpp::SimTime now)
 {
     evaluateMergingRequestTrigger(now);
+    applyRvExecutionControl();
     evaluateRvExecutionProgress();
     evaluateCvExecutionProgress();
 }
@@ -139,6 +140,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mHasActiveNegotiatedTrajectory = false;
         mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
         mHasLastExecuteQueuedAt = false;
+        mRvMergingExecutionControlLogged = false;
 
         EV_INFO << "McApplication RV station completed coordination workaround"
             << ": requestId=" << static_cast<int>(mRvRequestId)
@@ -209,6 +211,38 @@ bool McApplication::hasActiveExecution() const
 void McApplication::applyCommand()
 {
     // TODO: later use VehicleController hooks for DecelerateTo and RestoreNormalSpeed commands.
+}
+
+void McApplication::applyRvExecutionControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
+            mEgoContext.routeId != scMergingRouteId) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+
+    // Old route_merging_1 RV behavior uses speedMode 0 only for the merging RV.
+    // This prevents SUMO right-of-way logic from stopping/decelerating the RV at
+    // the merge. Later ordinary speed-control maneuvers, such as CV
+    // acceleration/deceleration, should use speedMode 31 so SUMO safety checks
+    // remain active and speed changes stay realistic.
+    mVehicleController->setSpeedMode(vehicleId, 0);
+    mVehicleController->setMaxSpeed(22.22 * boost::units::si::meter_per_second);
+    mVehicleController->setSpeed(22.22 * boost::units::si::meter_per_second);
+
+    if (!mRvMergingExecutionControlLogged) {
+        EV_INFO << "McApplication applied route_merging_1 RV execution control"
+            << ": station=" << mEgoContext.stationId
+            << " vehicleId=" << vehicleId
+            << " speedMode=0 targetSpeed=22.22 maxSpeed=22.22\n";
+        mRvMergingExecutionControlLogged = true;
+    }
 }
 
 void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
