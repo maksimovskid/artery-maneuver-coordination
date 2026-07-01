@@ -261,6 +261,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvNumberOfVehicles = command.numberOfVehicles;
     mRvTargetVehicle1 = command.targetVehicle1;
     mRvTargetVehicle2 = command.hasTargetVehicle2 ? command.targetVehicle2 : 0;
+    
     mRvOfferReceived1 = false;
     mRvOfferReceived2 = false;
     mRvConfirmQueuedOrSent = false;
@@ -269,6 +270,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvExecuteQueuedOrSent = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
+    mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
+    mHasLastExecuteQueuedAt = false;
 
     mCooperatingVehicleType = cooperatingVehicleType::RV;
     mMcmSubtype = mcmSubtype::Request;
@@ -607,7 +610,10 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
 
     mPendingMcmCommand = command;
     mRvExecuteQueuedOrSent = true;
+    mLastExecuteQueuedAt = mEgoContext.now;
+    mHasLastExecuteQueuedAt = true;
     mMcmSubtype = mcmSubtype::Execute;
+    mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressRV = coordinationProgressRV::SendExecute;
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
@@ -659,6 +665,7 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     }
 
     mMcmSubtype = mcmSubtype::Execute;
+    mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressCV = coordinationProgressCV::SendExecuteCV;
 
     EV_INFO << "McApplication CV station " << egoStationId
@@ -672,6 +679,45 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     //     << " received Execute for requestId " << static_cast<int>(mCvRequestId)
     //     << " from RV " << mCvRvStationId
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::queueRepeatedExecute()
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || mPendingMcmCommand ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
+            !mHasActiveNegotiatedTrajectory) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Execute;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+
+    // During execution, the negotiated trajectory is no longer sent as a separate
+    // fixed trajectory. The live plannedTrajectory/intent is updated and sent.
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+    mPendingMcmCommand = command;
+    mLastExecuteQueuedAt = mEgoContext.now;
+    mHasLastExecuteQueuedAt = true;
+
+    EV_INFO << "McApplication RV station " << mEgoContext.stationId
+        << " queued repeated Execute"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " plannedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
 }
 
 void McApplication::evaluateRvExecutionProgress()

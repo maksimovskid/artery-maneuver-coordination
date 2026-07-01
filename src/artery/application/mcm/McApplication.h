@@ -227,6 +227,7 @@ private:
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
     bool hasReachedActiveNegotiatedTrajectoryEnd() const;
+    void queueRepeatedExecute();
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
@@ -279,6 +280,10 @@ private:
     // the live plannedTrajectory/intent may continue updating beyond this horizon.
     TrajectoryPlanner::Trajectory mActiveNegotiatedTrajectory;
     bool mHasActiveNegotiatedTrajectory = false;
+
+    // RV-side repeated Execute signaling during maneuver execution.
+    omnetpp::SimTime mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasLastExecuteQueuedAt = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;
