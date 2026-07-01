@@ -125,6 +125,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     }
 
     evaluateCvRequestResponse(mcm);
+    handleReceivedCancelAsCv(mcm);
     handleReceivedOfferAsRv(mcm);
     handleReceivedConfirmAsCv(mcm);
     handleReceivedAcceptAsRv(mcm);
@@ -850,6 +851,75 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
         << " offeredTrajectoryPoints="
         << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
+        << '\n';
+}
+
+void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mCoordinationProgressCV == coordinationProgressCV::NoRequest ||
+            mCoordinationProgressCV == coordinationProgressCV::CompleteSentCV) {
+        return;
+    }
+
+    // This rollback path is only for early CV speed control that was applied
+    // before Execute. During execution the legacy ASN.1 uses Cancel as the
+    // normal Complete workaround too, so execution-phase Cancel needs a later
+    // explicit abort-vs-complete distinction before it can be consumed here.
+    if (mOperationMode != operationMode::ManeuverNegotiationMode) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Cancel)) {
+        return;
+    }
+
+    if (snapshot.stationId != mCvRvStationId) {
+        return;
+    }
+
+    if (snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mCvRequestId) {
+        return;
+    }
+
+    const auto previousProgress = mCoordinationProgressCV;
+    const bool hadDecelerationControl = mCvDecelerationControlApplied;
+    const bool hadAccelerationControl = mCvAccelerationControlApplied;
+
+    restoreCvSpeedControl();
+
+    mPendingMcmCommand.reset();
+    mCoordinationProgressCV = coordinationProgressCV::NoRequest;
+    mOperationMode = operationMode::IntentionSharingMode;
+    mMcmSubtype = mcmSubtype::Regular;
+    mCooperatingVehicleType = cooperatingVehicleType::NCV;
+    mCvResponseQueuedOrSent = false;
+    mCvRvStationId = 0;
+    mCvRequestId = 0;
+    mActiveNegotiatedTrajectory.clear();
+    mHasActiveNegotiatedTrajectory = false;
+    mControlManeuver = controlManeuver::DoNothing;
+    mCvSelectedTrajectory.clear();
+    mHasCvSelectedTrajectory = false;
+    mTargetSpeed = 0.0;
+    mCommandDuration = 0.0;
+    mCvDecelerationControlApplied = false;
+    mCvDecelerationControlSkippedLogged = false;
+    mCvAccelerationControlApplied = false;
+    mCvLaneChangeControlLogged = false;
+
+    EV_INFO << "McApplication CV station " << mEgoContext.stationId
+        << " rolled back coordination after receiving Cancel from RV"
+        << ": requestId=" << snapshot.requestId
+        << " rvStation=" << snapshot.stationId
+        << " previousProgress=" << static_cast<int>(previousProgress)
+        << " restoredAfterDeceleration=" << hadDecelerationControl
+        << " restoredAfterAcceleration=" << hadAccelerationControl
         << '\n';
 }
 

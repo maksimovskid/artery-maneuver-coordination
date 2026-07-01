@@ -233,6 +233,7 @@ private:
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
+    void handleReceivedCancelAsCv(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
