@@ -95,6 +95,7 @@ void McApplication::tick(omnetpp::SimTime now)
     evaluateMergingRequestTrigger(now);
     applyRvExecutionControl();
     applyCvDecelerationControl();
+    applyCvAccelerationControl();
     evaluateRvExecutionProgress();
     evaluateCvExecutionProgress();
 }
@@ -191,6 +192,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mCommandDuration = 0.0;
         mCvDecelerationControlApplied = false;
         mCvDecelerationControlSkippedLogged = false;
+        mCvAccelerationControlApplied = false;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -217,6 +219,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCommandDuration = 0.0;
             mCvDecelerationControlApplied = false;
             mCvDecelerationControlSkippedLogged = false;
+            mCvAccelerationControlApplied = false;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -239,6 +242,7 @@ void McApplication::clearCommand()
     mRestoreMaxSpeed = 0.0;
     mCvDecelerationControlApplied = false;
     mCvDecelerationControlSkippedLogged = false;
+    mCvAccelerationControlApplied = false;
     mPendingMcmCommand.reset();
 }
 
@@ -327,6 +331,34 @@ void McApplication::applyCvDecelerationControl()
         << '\n';
 }
 
+void McApplication::applyCvAccelerationControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            mControlManeuver != controlManeuver::Accelerate ||
+            mCvAccelerationControlApplied) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+
+    // Old highway CV acceleration uses speedMode 31 so SUMO safety checks stay
+    // active while raising the speed toward 120 km/h.
+    mVehicleController->setSpeedMode(vehicleId, 31);
+    mVehicleController->setSpeed(33.33 * boost::units::si::meter_per_second);
+    mVehicleController->setMaxSpeed(33.33 * boost::units::si::meter_per_second);
+    mCvAccelerationControlApplied = true;
+
+    EV_INFO << "McApplication applied highway-merging CV acceleration control"
+        << ": station=" << mEgoContext.stationId
+        << " vehicleId=" << vehicleId
+        << " speedMode=31 targetSpeed=33.33 maxSpeed=33.33\n";
+}
+
 void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -338,6 +370,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     mCommandDuration = 0.0;
     mCvDecelerationControlApplied = false;
     mCvDecelerationControlSkippedLogged = false;
+    mCvAccelerationControlApplied = false;
 
     if (!mHasEgoContext || !mVehicleDataProvider) {
         EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
@@ -646,6 +679,11 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     mCoordinationProgressCV = coordinationProgressCV::ReceivedRequest;
     mPriorityMcmCategory = priorityFromMcm(snapshot.priorityManeuver);
     mControlManeuver = controlManeuver::DoNothing;
+    mTargetSpeed = 0.0;
+    mCommandDuration = 0.0;
+    mCvDecelerationControlApplied = false;
+    mCvDecelerationControlSkippedLogged = false;
+    mCvAccelerationControlApplied = false;
 
     PendingMcmCommand command;
     command.kind = PendingMcmCommand::Kind::Negotiation;
