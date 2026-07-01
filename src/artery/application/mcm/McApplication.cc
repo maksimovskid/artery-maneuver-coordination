@@ -106,6 +106,8 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
 {
+    EV_STATICCONTEXT;
+
     ++mSentMcmCount;
     mLastSentMcm = mcm;
     mHasLastSentMcm = true;
@@ -115,6 +117,31 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired) {
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
         mMergingRequestQueuedOrSent = true;
+    } else if (mcm.data.hasNegotiationContainer &&
+            mCooperatingVehicleType == cooperatingVehicleType::RV &&
+            mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
+            mCoordinationProgressRV == coordinationProgressRV::SendComplete &&
+            mcm.data.requestId == mRvRequestId) {
+        mCoordinationProgressRV = coordinationProgressRV::CompleteSent;
+        mOperationMode = operationMode::IntentionSharingMode;
+        mMcmSubtype = mcmSubtype::Regular;
+        mCooperatingVehicleType = cooperatingVehicleType::NCV;
+
+        mMergingRequestQueuedOrSent = false;
+        mRvOfferReceived1 = false;
+        mRvOfferReceived2 = false;
+        mRvConfirmQueuedOrSent = false;
+        mRvAcceptReceived1 = false;
+        mRvAcceptReceived2 = false;
+        mRvExecuteQueuedOrSent = false;
+        mActiveNegotiatedTrajectory.clear();
+        mHasActiveNegotiatedTrajectory = false;
+        mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
+        mHasLastExecuteQueuedAt = false;
+
+        EV_INFO << "McApplication RV station completed coordination workaround"
+            << ": requestId=" << static_cast<int>(mRvRequestId)
+            << " returned to IntentionSharingMode\n";
     } else if (mcm.data.hasNegotiationContainer &&
             mCooperatingVehicleType == cooperatingVehicleType::CV &&
             mcm.data.requestId == mCvRequestId &&
