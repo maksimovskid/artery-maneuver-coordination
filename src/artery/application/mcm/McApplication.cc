@@ -85,6 +85,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
 
     evaluateCvRequestResponse(mcm);
     handleReceivedOfferAsRv(mcm);
+    handleReceivedConfirmAsCv(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -467,6 +468,69 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     //     << " queued Confirm for requestId " << static_cast<int>(command.requestId)
     //     << " after receiving Offers from " << mRvTargetVehicle1
     //     << " and " << mRvTargetVehicle2
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mCoordinationProgressCV != coordinationProgressCV::SendOffer) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Confirm)) {
+        return;
+    }
+
+    if (snapshot.stationId != mCvRvStationId) {
+        return;
+    }
+
+    if (snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mCvRequestId) {
+        return;
+    }
+
+    const uint32_t egoStationId = mVehicleDataProvider->station_id();
+    const bool targetsEgo = snapshot.negotiationVehicleId1 == egoStationId ||
+        (snapshot.hasNegotiationVehicleId2 && snapshot.negotiationVehicleId2 == egoStationId);
+    if (!targetsEgo) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Accept;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = snapshot.cooperationTypeMcm >= 0 ? snapshot.cooperationTypeMcm : 0;
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = snapshot.numberOfVehicles > 0 ?
+        static_cast<uint8_t>(snapshot.numberOfVehicles) : 1;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
+    command.requestedTrajectory = mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
+
+    mPendingMcmCommand = command;
+    mMcmSubtype = mcmSubtype::Accept;
+    mCoordinationProgressCV = coordinationProgressCV::SendAccept;
+
+    EV_INFO << "McApplication CV station " << egoStationId
+        << " queued Accept after receiving Confirm"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " rvStation=" << command.targetVehicle1
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
+
+    // std::cout << "MCM_DEBUG CV station " << egoStationId
+    //     << " queued Accept for requestId " << static_cast<int>(command.requestId)
+    //     << " after receiving Confirm from RV " << mCvRvStationId
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 

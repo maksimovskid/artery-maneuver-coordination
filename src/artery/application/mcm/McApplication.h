@@ -222,6 +222,7 @@ private:
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateCvRequestResponse(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
+    void handleReceivedConfirmAsCv(const ReceivedMcm&);
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
