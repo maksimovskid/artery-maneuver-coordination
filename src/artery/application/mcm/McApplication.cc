@@ -183,6 +183,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mActiveNegotiatedTrajectory.clear();
         mHasActiveNegotiatedTrajectory = false;
         mControlManeuver = controlManeuver::DoNothing;
+        mCvSelectedTrajectory.clear();
+        mHasCvSelectedTrajectory = false;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -203,6 +205,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCoordinationProgressCV = coordinationProgressCV::NoRequest;
             mOperationMode = operationMode::IntentionSharingMode;
             mControlManeuver = controlManeuver::DoNothing;
+            mCvSelectedTrajectory.clear();
+            mHasCvSelectedTrajectory = false;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -273,6 +277,10 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     EV_STATICCONTEXT;
 
     mControlManeuver = controlManeuver::DoNothing;
+    mCvSelectedTrajectory.clear();
+    mHasCvSelectedTrajectory = false;
+    mTargetSpeed = 0.0;
+    mCommandDuration = 0.0;
 
     if (!mHasEgoContext || !mVehicleDataProvider) {
         EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
@@ -288,6 +296,12 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     const auto& snapshot = received.data;
     if (snapshot.requestedTrajectory.empty()) {
         EV_WARN << "McApplication CV maneuver classification kept DoNothing: Request has no requestedTrajectory\n";
+        return;
+    }
+
+    if (mEgoContext.routeReferenceX.empty() || mEgoContext.routeReferenceY.empty() ||
+            mEgoContext.routeReferenceIndex < 0) {
+        EV_WARN << "McApplication CV maneuver classification kept DoNothing: route reference coordinates/index are unavailable\n";
         return;
     }
 
@@ -314,20 +328,78 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
 
     const auto& myLastPoint = mEgoContext.plannedTrajectory.back();
     const auto& requestedLastPoint = snapshot.requestedTrajectory.back();
-    const bool oldMergingDecelerationBranch = myLastPoint.mY >= requestedLastPoint.mY;
+    const bool decelerationRequired = myLastPoint.mY >= requestedLastPoint.mY;
+    const bool accelerationRequired = !decelerationRequired;
+    const bool laneChangePossible = false;
+    const bool routeAffected = false;
+    const int priority = snapshot.priorityManeuver >= 0 && snapshot.priorityManeuver <= 2 ?
+        static_cast<int>(snapshot.priorityManeuver) : 1;
 
-    // Old McmService::indicate() chooses Decelerate/ChangeLane/Accelerate only
-    // after TrajectoryPlanner::findSuitableTrajectoryCV(reqTraj, priority,
-    // mMergingTraj, steps, dt, cx, cy, mIndex, ...) succeeds. McApplication does
-    // not yet own the selected CV route coordinate arrays and nearest index, so
-    // this milestone records that a conflict exists but keeps the maneuver
-    // conservative until that planner state is migrated.
+    auto result = mTrajectoryPlanner.findSuitableTrajectoryCV(
+        snapshot.requestedTrajectory,
+        priority,
+        true,
+        scRequestTrajectorySteps,
+        scRequestTrajectoryDt,
+        mEgoContext.routeReferenceX,
+        mEgoContext.routeReferenceY,
+        mEgoContext.routeReferenceIndex,
+        mEgoContext.speed,
+        eteDelay,
+        decelerationRequired,
+        accelerationRequired,
+        laneChangePossible,
+        routeAffected);
+
+    const bool foundSuitableTrajectory = std::get<0>(result);
+    if (!foundSuitableTrajectory) {
+        EV_INFO << "McApplication CV station " << mEgoContext.stationId
+            << " classified merging control maneuver: DoNothing"
+            << " because findSuitableTrajectoryCV found no safe trajectory"
+            << " oldBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
+            << " requestId=" << snapshot.requestId
+            << " priority=" << priority
+            << '\n';
+        return;
+    }
+
+    const auto& selectedTrajectory = std::get<1>(result);
+    const PlannedTrajValues& plannedValues = std::get<2>(result);
+    const double trajectoryCost = std::get<3>(result);
+    const int trajectoryType = std::get<4>(result);
+    const int possiblePriorityLevel = std::get<5>(result);
+
+    if (plannedValues.lane_change) {
+        mControlManeuver = controlManeuver::ChangeLane;
+    } else if (plannedValues.deceleration_change > 0.0) {
+        mControlManeuver = controlManeuver::Decelerate;
+        mTargetSpeed = mEgoContext.speed - plannedValues.speed_change * mEgoContext.speed;
+        mCommandDuration = 0.0;
+    } else if (plannedValues.acc_change > 0.0) {
+        mControlManeuver = controlManeuver::Accelerate;
+        mTargetSpeed = mEgoContext.speed + plannedValues.speed_change * mEgoContext.speed;
+    } else {
+        mControlManeuver = controlManeuver::DoNothing;
+    }
+
+    mCvSelectedTrajectory = selectedTrajectory;
+    mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
+
     EV_INFO << "McApplication CV station " << mEgoContext.stationId
         << " classified merging control maneuver: " << controlManeuverName(mControlManeuver)
-        << " because conflict exists but old suitable-trajectory search inputs are not yet available"
-        << " oldBranch=" << (oldMergingDecelerationBranch ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
+        << " using findSuitableTrajectoryCV"
+        << " oldBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
         << " requestId=" << snapshot.requestId
-        << " priority=" << snapshot.priorityManeuver
+        << " priority=" << priority
+        << " trajectoryType=" << trajectoryType
+        << " possiblePriorityLevel=" << possiblePriorityLevel
+        << " cost=" << trajectoryCost
+        << " speedChange=" << plannedValues.speed_change
+        << " acceleration=" << plannedValues.acc_change
+        << " deceleration=" << plannedValues.deceleration_change
+        << " laneChange=" << plannedValues.lane_change
+        << " targetSpeed=" << mTargetSpeed
+        << " decelerationTime=" << mCommandDuration
         << " egoLastY=" << myLastPoint.mY
         << " requestedLastY=" << requestedLastPoint.mY
         << '\n';

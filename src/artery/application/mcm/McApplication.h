@@ -160,6 +160,9 @@ struct McEgoContext {
     double speed = 0.0;
     double heading = 0.0;
     TrajectoryPlanner::Trajectory plannedTrajectory;
+    TrajectoryPlanner::Vec_f routeReferenceX;
+    TrajectoryPlanner::Vec_f routeReferenceY;
+    int routeReferenceIndex = -1;
 };
 
 struct PendingMcmCommand {
@@ -284,6 +287,8 @@ private:
     // the live plannedTrajectory/intent may continue updating beyond this horizon.
     TrajectoryPlanner::Trajectory mActiveNegotiatedTrajectory;
     bool mHasActiveNegotiatedTrajectory = false;
+    TrajectoryPlanner::Trajectory mCvSelectedTrajectory;
+    bool mHasCvSelectedTrajectory = false;
 
     // RV-side repeated Execute signaling during maneuver execution.
     omnetpp::SimTime mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;

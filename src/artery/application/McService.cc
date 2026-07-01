@@ -521,6 +521,10 @@ void McService::updateApplicationEgoContext(const SimTime& now)
 
     if (mUsePrerecordedIntentTrajectory && mVehicleController &&
             !mPrerecordedCx.empty() && !mPrerecordedCy.empty()) {
+        context.routeReferenceX = mPrerecordedCx;
+        context.routeReferenceY = mPrerecordedCy;
+        context.routeReferenceIndex = mPrerecordedTrajectoryIndex;
+
         context.plannedTrajectory = mTrajectoryPlanner.calculateRefTrajectory(
             mPrerecordedTrajectorySteps,
             mPrerecordedTrajectoryDt,
