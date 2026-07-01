@@ -51,6 +51,27 @@ const char* subtypeName(mcmSubtype subtype)
         default: return "Negotiation";
     }
 }
+
+bool isHighwayMergingCvRoute(const std::string& routeId)
+{
+    return routeId == "route_highway_0" ||
+        routeId == "route_highway_1" ||
+        routeId == "route_highway_2";
+}
+
+const char* controlManeuverName(controlManeuver maneuver)
+{
+    switch (maneuver) {
+        case controlManeuver::Decelerate: return "Decelerate";
+        case controlManeuver::Accelerate: return "Accelerate";
+        case controlManeuver::ChangeLane: return "ChangeLane";
+        case controlManeuver::LaneChangeExecution: return "LaneChangeExecution";
+        case controlManeuver::EmergencyDeceleration: return "EmergencyDeceleration";
+        case controlManeuver::DoNothing:
+        default:
+            return "DoNothing";
+    }
+}
 }
 
 void McApplication::initialize(
@@ -161,6 +182,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mCvRequestId = 0;
         mActiveNegotiatedTrajectory.clear();
         mHasActiveNegotiatedTrajectory = false;
+        mControlManeuver = controlManeuver::DoNothing;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -180,6 +202,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         } else {
             mCoordinationProgressCV = coordinationProgressCV::NoRequest;
             mOperationMode = operationMode::IntentionSharingMode;
+            mControlManeuver = controlManeuver::DoNothing;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -243,6 +266,71 @@ void McApplication::applyRvExecutionControl()
             << " speedMode=0 targetSpeed=22.22 maxSpeed=22.22\n";
         mRvMergingExecutionControlLogged = true;
     }
+}
+
+void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    mControlManeuver = controlManeuver::DoNothing;
+
+    if (!mHasEgoContext || !mVehicleDataProvider) {
+        EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
+        return;
+    }
+
+    if (!isHighwayMergingCvRoute(mEgoContext.routeId)) {
+        EV_DETAIL << "McApplication CV maneuver classification skipped for route "
+            << mEgoContext.routeId << " because this milestone only handles highway CVs for route_merging_1\n";
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (snapshot.requestedTrajectory.empty()) {
+        EV_WARN << "McApplication CV maneuver classification kept DoNothing: Request has no requestedTrajectory\n";
+        return;
+    }
+
+    if (mEgoContext.plannedTrajectory.empty()) {
+        EV_WARN << "McApplication CV maneuver classification kept DoNothing: ego plannedTrajectory is unavailable\n";
+        return;
+    }
+
+    const omnetpp::SimTime eteDelay =
+        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+    const bool conflict = mTrajectoryPlanner.check_traj_conflict_merging(
+        mEgoContext.plannedTrajectory,
+        snapshot.requestedTrajectory,
+        scMergingTimeGap,
+        eteDelay,
+        false);
+
+    if (!conflict) {
+        EV_INFO << "McApplication CV station " << mEgoContext.stationId
+            << " classified merging control maneuver: DoNothing"
+            << " because requestedTrajectory has no conflict with current plannedTrajectory\n";
+        return;
+    }
+
+    const auto& myLastPoint = mEgoContext.plannedTrajectory.back();
+    const auto& requestedLastPoint = snapshot.requestedTrajectory.back();
+    const bool oldMergingDecelerationBranch = myLastPoint.mY >= requestedLastPoint.mY;
+
+    // Old McmService::indicate() chooses Decelerate/ChangeLane/Accelerate only
+    // after TrajectoryPlanner::findSuitableTrajectoryCV(reqTraj, priority,
+    // mMergingTraj, steps, dt, cx, cy, mIndex, ...) succeeds. McApplication does
+    // not yet own the selected CV route coordinate arrays and nearest index, so
+    // this milestone records that a conflict exists but keeps the maneuver
+    // conservative until that planner state is migrated.
+    EV_INFO << "McApplication CV station " << mEgoContext.stationId
+        << " classified merging control maneuver: " << controlManeuverName(mControlManeuver)
+        << " because conflict exists but old suitable-trajectory search inputs are not yet available"
+        << " oldBranch=" << (oldMergingDecelerationBranch ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
+        << " requestId=" << snapshot.requestId
+        << " priority=" << snapshot.priorityManeuver
+        << " egoLastY=" << myLastPoint.mY
+        << " requestedLastY=" << requestedLastPoint.mY
+        << '\n';
 }
 
 void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
@@ -414,6 +502,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     mOperationMode = operationMode::ManeuverNegotiationMode;
     mCoordinationProgressCV = coordinationProgressCV::ReceivedRequest;
     mPriorityMcmCategory = priorityFromMcm(snapshot.priorityManeuver);
+    mControlManeuver = controlManeuver::DoNothing;
 
     PendingMcmCommand command;
     command.kind = PendingMcmCommand::Kind::Negotiation;
@@ -441,6 +530,8 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         //     << " to RV " << mCvRvStationId
         //     << " at " << omnetpp::simTime() << " s" << std::endl;
     } else if (snapshot.numberOfVehicles > 1) {
+        classifyCvMergingControlManeuver(received);
+
         command.subtype = mcmSubtype::Offer;
         command.requestedTrajectory = snapshot.requestedTrajectory;
         command.offeredTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
@@ -464,6 +555,8 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         //     << " offeredTrajectoryPoints=" << command.offeredTrajectory.size()
         //     << " at " << omnetpp::simTime() << " s" << std::endl;
     } else {
+        classifyCvMergingControlManeuver(received);
+
         command.subtype = mcmSubtype::Accept;
         command.requestedTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
             mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;

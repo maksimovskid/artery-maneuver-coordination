@@ -222,6 +222,7 @@ private:
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void applyRvExecutionControl();
+    void classifyCvMergingControlManeuver(const ReceivedMcm&);
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
