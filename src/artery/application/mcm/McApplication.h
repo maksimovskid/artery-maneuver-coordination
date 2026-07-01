@@ -2,11 +2,14 @@
 #define ARTERY_MCM_MCAPPLICATION_H_
 
 #include "artery/application/mcm/TrajPointMCM.h"
+#include "artery/application/mcm/TrajectoryPlanner.h"
 
 #include <omnetpp/simtime.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace traci
@@ -16,6 +19,8 @@ class VehicleController;
 
 namespace artery
 {
+class VehicleDataProvider;
+
 namespace mcm
 {
 
@@ -144,15 +149,46 @@ struct SentMcm {
     omnetpp::SimTime sentAt;
 };
 
+struct McEgoContext {
+    omnetpp::SimTime now;
+    uint32_t stationId = 0;
+    std::string routeId;
+    int laneIndex = -1;
+    double x = 0.0;
+    double y = 0.0;
+    double speed = 0.0;
+    double heading = 0.0;
+    TrajectoryPlanner::Trajectory plannedTrajectory;
+};
+
+struct PendingMcmCommand {
+    enum class Kind {
+        Negotiation
+    };
+
+    Kind kind = Kind::Negotiation;
+    mcmSubtype subtype = mcmSubtype::Request;
+    priorityMcmCategory priority = priorityMcmCategory::MediumPriority;
+    long cooperationType = 0;
+    uint8_t requestId = 0;
+    uint8_t numberOfVehicles = 1;
+    uint32_t targetVehicle1 = 0;
+    bool hasTargetVehicle2 = false;
+    uint32_t targetVehicle2 = 0;
+    TrajectoryPlanner::Trajectory requestedTrajectory;
+};
+
 class McApplication
 {
 public:
     McApplication() = default;
 
-    void initialize(traci::VehicleController*);
+    void initialize(const traci::VehicleController*, const VehicleDataProvider*);
+    void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void handleReceivedMcm(const ReceivedMcm&);
     void handleSentMcm(const SentMcm&);
+    std::optional<PendingMcmCommand> consumePendingCommand();
     void clearCommand();
     bool hasActiveExecution() const;
 
@@ -176,8 +212,12 @@ private:
     };
 
     void applyCommand();
+    void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    uint8_t makeRequestId(omnetpp::SimTime now) const;
 
-    traci::VehicleController* mVehicleController = nullptr;
+    const traci::VehicleController* mVehicleController = nullptr;
+    const VehicleDataProvider* mVehicleDataProvider = nullptr;
+    TrajectoryPlanner mTrajectoryPlanner;
     operationMode mOperationMode = operationMode::IntentionSharingMode;
     mcmSubtype mMcmSubtype = mcmSubtype::Regular;
     priorityMcmCategory mPriorityMcmCategory = priorityMcmCategory::NoPriority;
@@ -192,9 +232,14 @@ private:
     unsigned mReceivedMcmCount = 0;
     bool mHasLastReceivedMcm = false;
     ReceivedMcm mLastReceivedMcm;
+    std::vector<ReceivedMcm> mReceivedMcmCache;
     unsigned mSentMcmCount = 0;
     bool mHasLastSentMcm = false;
     SentMcm mLastSentMcm;
+    bool mHasEgoContext = false;
+    McEgoContext mEgoContext;
+    std::optional<PendingMcmCommand> mPendingMcmCommand;
+    bool mMergingRequestQueuedOrSent = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

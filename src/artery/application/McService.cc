@@ -53,6 +53,58 @@ auto microdegree = vanetza::units::degree * boost::units::si::micro;
 auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
 
+long mcmSubtypeToAsnCategory(mcm::mcmSubtype subtype)
+{
+    switch (subtype) {
+        case mcm::mcmSubtype::Request:
+            return McmCategory_request;
+        case mcm::mcmSubtype::Accept:
+            return McmCategory_accept;
+        case mcm::mcmSubtype::Reject:
+            return McmCategory_reject;
+        case mcm::mcmSubtype::Offer:
+            return McmCategory_offer;
+        case mcm::mcmSubtype::Confirm:
+            return McmCategory_confirm;
+        case mcm::mcmSubtype::Execute:
+            return McmCategory_execute;
+        case mcm::mcmSubtype::Cancel:
+            return McmCategory_cancel;
+        case mcm::mcmSubtype::Abort:
+            return McmCategory_abort;
+        case mcm::mcmSubtype::CascadingRequest:
+            return McmCategory_cascadingRequest;
+        case mcm::mcmSubtype::CascadingAccept:
+            return McmCategory_cascadingAccept;
+        case mcm::mcmSubtype::CascadingReject:
+            return McmCategory_cascadingReject;
+        case mcm::mcmSubtype::CascadingExecute:
+            return McmCategory_cascadingExecute;
+        case mcm::mcmSubtype::Regular:
+            return McmCategory_request;
+    }
+
+    return McmCategory_request;
+}
+
+long priorityToAsnPriority(mcm::priorityMcmCategory priority)
+{
+    switch (priority) {
+        case mcm::priorityMcmCategory::LowPriority:
+            return PriorityManeuver_low;
+        case mcm::priorityMcmCategory::MediumPriority:
+            return PriorityManeuver_medium;
+        case mcm::priorityMcmCategory::HighPriority:
+            return PriorityManeuver_high;
+        case mcm::priorityMcmCategory::EmergencyPriority:
+            return PriorityManeuver_emergency;
+        case mcm::priorityMcmCategory::NoPriority:
+            return PriorityManeuver_low;
+    }
+
+    return PriorityManeuver_low;
+}
+
 struct McmOperationMetadata {
     mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
@@ -206,12 +258,23 @@ void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
     }
 }
 
+long normalizeTrajectoryHeading(long heading)
+{
+    while (heading > 1800) {
+        heading -= 3600;
+    }
+    while (heading < -1800) {
+        heading += 3600;
+    }
+    return heading;
+}
+
 void appendTrajectoryPoint(TrajectoryMCM_t& trajectory, const mcm::TrajPointMCM& point, long heading)
 {
     TrajectoryPointMCM_t* trajectoryPoint = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
     trajectoryPoint->deltaLongitudinalPosition = static_cast<long>(std::round(point.mX));
     trajectoryPoint->deltaLateralPosition = static_cast<long>(std::round(point.mY));
-    trajectoryPoint->deltaHeading = heading;
+    trajectoryPoint->deltaHeading = normalizeTrajectoryHeading(heading);
     trajectoryPoint->deltaTime = static_cast<long>(std::round(point.mTime.dbl() * 100.0));
     if (ASN_SEQUENCE_ADD(&trajectory, trajectoryPoint) != 0) {
         throw cRuntimeError("Failed to append MCM trajectory point");
@@ -299,12 +362,13 @@ void McService::initialize()
         }
     }
     mApplication.reset(new mcm::McApplication());
-    mApplication->initialize(nullptr);
+    mApplication->initialize(mVehicleController, mVehicleDataProvider);
 }
 
 void McService::trigger()
 {
     Enter_Method("trigger");
+    updateApplicationEgoContext(simTime());
     mApplication->tick(simTime());
     checkTriggeringConditions(simTime());
 }
@@ -356,12 +420,28 @@ bool McService::checkSpeedDelta() const
 void McService::sendMcm(const SimTime& T_now)
 {
     uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
-    auto mcm = mSendNegotiationTestMcm ?
-        createMinimalNegotiationTestMessage(*mVehicleDataProvider, generationDeltaTime) :
-        createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
-    if (mSendNegotiationTestMcm) {
+    auto command = mApplication->consumePendingCommand();
+    auto mcmMessage = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+    if (command && command->kind == mcm::PendingMcmCommand::Kind::Negotiation) {
+        addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider, *command);
+        std::string error;
+        if (!mcmMessage.validate(error)) {
+            throw cRuntimeError("Invalid MCM Request command: %s", error.c_str());
+        }
+        EV_INFO << "McService validated route_merging_1 Request MCM: requestId="
+            << static_cast<int>(command->requestId)
+            << " numberOfVehicles=" << static_cast<int>(command->numberOfVehicles)
+            << " target1=" << command->targetVehicle1
+            << " target2=" << command->targetVehicle2
+            << " requestedTrajectoryPoints=" << command->requestedTrajectory.size() << '\n';
+    } else if (mSendNegotiationTestMcm) {
+        addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider);
+        std::string error;
+        if (!mcmMessage.validate(error)) {
+            throw cRuntimeError("Invalid minimal negotiation test MCM: %s", error.c_str());
+        }
         EV_DETAIL << "Sending minimal negotiation test MCM for station "
-            << (*mcm).header.stationID << " at " << T_now << '\n';
+            << (*mcmMessage).header.stationID << " at " << T_now << '\n';
     }
 
     using namespace vanetza;
@@ -373,7 +453,7 @@ void McService::sendMcm(const SimTime& T_now)
     request.gn.traffic_class.tc_id(static_cast<unsigned>(dcc::Profile::DP2));
     request.gn.communication_profile = geonet::CommunicationProfile::ITS_G5;
 
-    McObject obj(std::move(mcm));
+    McObject obj(std::move(mcmMessage));
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
     mApplication->handleSentMcm(makeSentMcm(message, T_now));
@@ -389,6 +469,47 @@ void McService::sendMcm(const SimTime& T_now)
     std::unique_ptr<convertible::byte_buffer> buffer { new McmByteBuffer(obj.shared_ptr()) };
     payload->layer(OsiLayer::Application) = std::move(buffer);
     this->request(request, std::move(payload));
+}
+
+void McService::updateApplicationEgoContext(const SimTime& now)
+{
+    if (!mApplication || !mVehicleDataProvider) {
+        return;
+    }
+
+    mcm::McEgoContext context;
+    context.now = now;
+    context.stationId = mVehicleDataProvider->station_id();
+    context.speed = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
+    context.heading = mVehicleDataProvider->heading() / boost::units::si::radians;
+
+    if (mVehicleController) {
+        context.routeId = mVehicleController->getRouteID();
+        const auto position = mVehicleController->getPositionSumo();
+        context.x = position.x / boost::units::si::meter;
+        context.y = position.y / boost::units::si::meter;
+        try {
+            context.laneIndex = mVehicleController->getTraCI()->vehicle.getLaneIndex(mVehicleController->getVehicleId());
+        } catch (const std::exception& e) {
+            EV_WARN << "McService ego context lane lookup failed: " << e.what() << '\n';
+        }
+    }
+
+    if (mUsePrerecordedIntentTrajectory && mVehicleController &&
+            !mPrerecordedCx.empty() && !mPrerecordedCy.empty()) {
+        context.plannedTrajectory = mTrajectoryPlanner.calculateRefTrajectory(
+            mPrerecordedTrajectorySteps,
+            mPrerecordedTrajectoryDt,
+            mPrerecordedCx,
+            mPrerecordedCy,
+            mPrerecordedTrajectoryIndex,
+            true,
+            0.0F,
+            0.0F,
+            0.0F);
+    }
+
+    mApplication->updateEgoContext(context);
 }
 
 void McService::fillHeader(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
@@ -439,6 +560,22 @@ void McService::fillIntentionSharingContainer(vanetza::asn1::Mcm& message, const
         EV_WARN << "McService using zero placeholder plannedTrajectory for station "
             << vdp.station_id() << '\n';
         appendZeroTrajectoryPoint(intent.plannedTrajectory);
+    }
+
+    if (mVehicleController) {
+        try {
+            const std::string vehicleId = mVehicleController->getVehicleId();
+            const long laneIndex = mVehicleController->getTraCI()->vehicle.getLaneIndex(vehicleId);
+            intent.roadID = vanetza::asn1::allocate<LaneID_t>();
+            intent.laneID = vanetza::asn1::allocate<LaneID_t>();
+            intent.laneIDEnd = vanetza::asn1::allocate<LaneID_t>();
+            *intent.roadID = laneIndex;
+            *intent.laneID = laneIndex;
+            *intent.laneIDEnd = laneIndex;
+        } catch (const std::exception& e) {
+            EV_WARN << "McService laneID optional fields unavailable for station "
+                << vdp.station_id() << ": " << e.what() << '\n';
+        }
     }
 }
 
@@ -511,6 +648,43 @@ void McService::addManeuverNegotiationContainer(vanetza::asn1::Mcm& message, con
 
     appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
     appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+}
+
+void McService::addManeuverNegotiationContainer(
+    vanetza::asn1::Mcm& message,
+    const VehicleDataProvider&,
+    const mcm::PendingMcmCommand& command) const
+{
+    ManeuverNegotiationContainer_t*& negotiation = (*message).mcm.mcmParameters.maneuverNegotiationContainer;
+
+    negotiation = vanetza::asn1::allocate<ManeuverNegotiationContainer_t>();
+    negotiation->mcmCategory = mcmSubtypeToAsnCategory(command.subtype);
+    negotiation->priorityManeuver = priorityToAsnPriority(command.priority);
+    negotiation->cooperationTypeMCM = command.cooperationType;
+    negotiation->requestID = command.requestId;
+    negotiation->numberOfVehicles = command.numberOfVehicles;
+    negotiation->negotiationVehicleID1 = command.targetVehicle1;
+    if (command.hasTargetVehicle2 && command.numberOfVehicles > 1) {
+        negotiation->negotiationVehicleID2 = vanetza::asn1::allocate<StationID_t>();
+        *negotiation->negotiationVehicleID2 = command.targetVehicle2;
+    }
+
+    const long heading = round(mVehicleDataProvider->heading(), decidegree);
+    for (const auto& point : command.requestedTrajectory) {
+        appendTrajectoryPoint(negotiation->requestedTrajectory, point, heading);
+    }
+
+    if (command.requestedTrajectory.empty()) {
+        appendZeroTrajectoryPoint(negotiation->requestedTrajectory);
+    }
+    appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
+
+    EV_INFO << "McService serialized route_merging_1 Request container: requestId="
+        << static_cast<int>(command.requestId)
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
 }
 
 void McService::addManeuverExecutionContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const

@@ -24,6 +24,7 @@ namespace artery
 namespace mcm
 {
 class McApplication;
+struct PendingMcmCommand;
 }
 
 class VehicleDataProvider;
@@ -51,6 +52,7 @@ private:
 
     // MCM transmission
     void sendMcm(const omnetpp::SimTime&);
+    void updateApplicationEgoContext(const omnetpp::SimTime&);
 
     // MCM message builders
     vanetza::asn1::Mcm createMinimalIntentionSharingMessage(
@@ -86,6 +88,11 @@ private:
     void addManeuverNegotiationContainer(
         vanetza::asn1::Mcm&,
         const VehicleDataProvider&) const;
+
+    void addManeuverNegotiationContainer(
+        vanetza::asn1::Mcm&,
+        const VehicleDataProvider&,
+        const mcm::PendingMcmCommand&) const;
 
     void addManeuverExecutionContainer(
         vanetza::asn1::Mcm&,
