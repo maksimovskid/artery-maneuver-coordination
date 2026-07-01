@@ -130,6 +130,7 @@ struct McmSnapshot {
     bool hasNegotiationVehicleId2 = false;
     uint32_t negotiationVehicleId2 = 0;
     std::size_t requestedTrajectoryPointCount = 0;
+    std::vector<mcm::TrajPointMCM> requestedTrajectory;
     std::size_t offeredTrajectoryPointCount = 0;
     bool hasAlternativeTrajectory = false;
     std::size_t alternativeTrajectoryPointCount = 0;
@@ -213,6 +214,7 @@ private:
 
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    void evaluateCvRequestResponse(const ReceivedMcm&);
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
@@ -240,6 +242,9 @@ private:
     McEgoContext mEgoContext;
     std::optional<PendingMcmCommand> mPendingMcmCommand;
     bool mMergingRequestQueuedOrSent = false;
+    bool mCvResponseQueuedOrSent = false;
+    uint32_t mCvRvStationId = 0;
+    uint8_t mCvRequestId = 0;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

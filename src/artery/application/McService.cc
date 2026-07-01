@@ -105,6 +105,20 @@ long priorityToAsnPriority(mcm::priorityMcmCategory priority)
     return PriorityManeuver_low;
 }
 
+const char* mcmSubtypeName(mcm::mcmSubtype subtype)
+{
+    switch (subtype) {
+        case mcm::mcmSubtype::Request:
+            return "Request";
+        case mcm::mcmSubtype::Accept:
+            return "Accept";
+        case mcm::mcmSubtype::Reject:
+            return "Reject";
+        default:
+            return "Negotiation";
+    }
+}
+
 struct McmOperationMetadata {
     mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
@@ -223,6 +237,10 @@ mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
     snapshot.hasNegotiationVehicleId2 = metadata.hasNegotiationVehicleId2;
     snapshot.negotiationVehicleId2 = metadata.negotiationVehicleId2;
     snapshot.requestedTrajectoryPointCount = metadata.requestedTrajectoryPointCount;
+    if (message.mcm.mcmParameters.maneuverNegotiationContainer) {
+        snapshot.requestedTrajectory = extractTrajectory(
+            message.mcm.mcmParameters.maneuverNegotiationContainer->requestedTrajectory);
+    }
     snapshot.offeredTrajectoryPointCount = metadata.offeredTrajectoryPointCount;
     snapshot.hasAlternativeTrajectory = metadata.hasAlternativeTrajectory;
     snapshot.alternativeTrajectoryPointCount = metadata.alternativeTrajectoryPointCount;
@@ -426,9 +444,10 @@ void McService::sendMcm(const SimTime& T_now)
         addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider, *command);
         std::string error;
         if (!mcmMessage.validate(error)) {
-            throw cRuntimeError("Invalid MCM Request command: %s", error.c_str());
+            throw cRuntimeError("Invalid MCM %s command: %s", mcmSubtypeName(command->subtype), error.c_str());
         }
-        EV_INFO << "McService validated route_merging_1 Request MCM: requestId="
+        EV_INFO << "McService validated route_merging_1 " << mcmSubtypeName(command->subtype)
+            << " MCM: requestId="
             << static_cast<int>(command->requestId)
             << " numberOfVehicles=" << static_cast<int>(command->numberOfVehicles)
             << " target1=" << command->targetVehicle1
@@ -679,7 +698,8 @@ void McService::addManeuverNegotiationContainer(
     }
     appendZeroTrajectoryPoint(negotiation->offeredTrajectory);
 
-    EV_INFO << "McService serialized route_merging_1 Request container: requestId="
+    EV_INFO << "McService serialized route_merging_1 " << mcmSubtypeName(command.subtype)
+        << " container: requestId="
         << static_cast<int>(command.requestId)
         << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
         << " target1=" << command.targetVehicle1

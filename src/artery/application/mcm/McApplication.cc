@@ -22,6 +22,30 @@ constexpr double scMergingTimeGap = 1.2;
 constexpr int scRequestTrajectorySteps = 20;
 constexpr double scRequestTrajectoryDt = 0.25;
 constexpr std::size_t scMaxReceivedMcmCache = 256;
+
+priorityMcmCategory priorityFromMcm(long priority)
+{
+    if (priority == static_cast<long>(priorityMcmCategory::LowPriority)) {
+        return priorityMcmCategory::LowPriority;
+    }
+    if (priority == static_cast<long>(priorityMcmCategory::HighPriority)) {
+        return priorityMcmCategory::HighPriority;
+    }
+    if (priority == static_cast<long>(priorityMcmCategory::EmergencyPriority)) {
+        return priorityMcmCategory::EmergencyPriority;
+    }
+    return priorityMcmCategory::MediumPriority;
+}
+
+const char* subtypeName(mcmSubtype subtype)
+{
+    switch (subtype) {
+        case mcmSubtype::Request: return "Request";
+        case mcmSubtype::Accept: return "Accept";
+        case mcmSubtype::Reject: return "Reject";
+        default: return "Negotiation";
+    }
+}
 }
 
 void McApplication::initialize(
@@ -53,6 +77,8 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     if (mReceivedMcmCache.size() > scMaxReceivedMcmCache) {
         mReceivedMcmCache.erase(mReceivedMcmCache.begin());
     }
+
+    evaluateCvRequestResponse(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -66,6 +92,19 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired) {
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
         mMergingRequestQueuedOrSent = true;
+    } else if (mcm.data.hasNegotiationContainer &&
+            mCooperatingVehicleType == cooperatingVehicleType::CV &&
+            mcm.data.requestId == mCvRequestId &&
+            mcm.data.negotiationVehicleId1 == mCvRvStationId &&
+            (mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Accept) ||
+                mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Reject))) {
+        if (mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Accept)) {
+            mCoordinationProgressCV = coordinationProgressCV::AcceptSent;
+        } else {
+            mCoordinationProgressCV = coordinationProgressCV::NoRequest;
+            mOperationMode = operationMode::IntentionSharingMode;
+        }
+        mCvResponseQueuedOrSent = true;
     }
 }
 
@@ -216,6 +255,74 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
         << " requestedTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
+}
+
+void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleDataProvider || mPendingMcmCommand || mCvResponseQueuedOrSent ||
+            mCoordinationProgressCV != coordinationProgressCV::NoRequest) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Request)) {
+        return;
+    }
+
+    const uint32_t egoStationId = mVehicleDataProvider->station_id();
+    const bool targetsEgo = snapshot.negotiationVehicleId1 == egoStationId ||
+        (snapshot.hasNegotiationVehicleId2 && snapshot.negotiationVehicleId2 == egoStationId);
+    if (!targetsEgo) {
+        return;
+    }
+
+    mCvRvStationId = snapshot.stationId;
+    mCvRequestId = snapshot.requestId >= 0 ? static_cast<uint8_t>(snapshot.requestId) : 0;
+    mCooperatingVehicleType = cooperatingVehicleType::CV;
+    mOperationMode = operationMode::ManeuverNegotiationMode;
+    mCoordinationProgressCV = coordinationProgressCV::ReceivedRequest;
+    mPriorityMcmCategory = priorityFromMcm(snapshot.priorityManeuver);
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = snapshot.cooperationTypeMcm >= 0 ? snapshot.cooperationTypeMcm : 0;
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = 1;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+
+    if (snapshot.requestedTrajectory.empty()) {
+        command.subtype = mcmSubtype::Reject;
+        command.requestedTrajectory = mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
+        mCoordinationProgressCV = coordinationProgressCV::SendReject;
+        EV_WARN << "McApplication CV station " << egoStationId
+            << " rejecting Request " << static_cast<int>(command.requestId)
+            << " from RV " << mCvRvStationId
+            << " because requestedTrajectory is missing\n";
+    } else {
+        command.subtype = mcmSubtype::Accept;
+        command.requestedTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
+            mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
+        mCoordinationProgressCV = coordinationProgressCV::SendAccept;
+        EV_INFO << "McApplication CV station " << egoStationId
+            << " accepted targeted route_merging_1 Request " << static_cast<int>(command.requestId)
+            << " from RV " << mCvRvStationId
+            << " using default Accept path after old suitability check was deferred"
+            << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size() << '\n';
+    }
+
+    mMcmSubtype = command.subtype;
+    mPendingMcmCommand = command;
+    mCvResponseQueuedOrSent = true;
+
+    EV_INFO << "McApplication queued CV " << subtypeName(command.subtype)
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " rvStation=" << command.targetVehicle1
+        << " responseTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
 }
 
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const
