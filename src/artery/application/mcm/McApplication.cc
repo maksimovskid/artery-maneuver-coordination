@@ -71,6 +71,7 @@ void McApplication::updateEgoContext(const McEgoContext& context)
 void McApplication::tick(omnetpp::SimTime now)
 {
     evaluateMergingRequestTrigger(now);
+    evaluateRvExecutionProgress();
 }
 
 void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
@@ -266,6 +267,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mActiveNegotiatedTrajectory.clear();
+    mHasActiveNegotiatedTrajectory = false;
 
     mCooperatingVehicleType = cooperatingVehicleType::RV;
     mMcmSubtype = mcmSubtype::Request;
@@ -599,6 +602,9 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     command.targetVehicle2 = mRvTargetVehicle2;
     command.requestedTrajectory = mEgoContext.plannedTrajectory;
 
+    mActiveNegotiatedTrajectory = command.requestedTrajectory;
+    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+
     mPendingMcmCommand = command;
     mRvExecuteQueuedOrSent = true;
     mMcmSubtype = mcmSubtype::Execute;
@@ -666,6 +672,78 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     //     << " received Execute for requestId " << static_cast<int>(mCvRequestId)
     //     << " from RV " << mCvRvStationId
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::evaluateRvExecutionProgress()
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
+            !mHasActiveNegotiatedTrajectory) {
+        return;
+    }
+
+    if (!hasReachedActiveNegotiatedTrajectoryEnd()) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Cancel;
+    // TODO: temporary Complete workaround.
+    // The legacy ASN.1/model used Cancel here because Complete was not available.
+    // Semantically this means: maneuver execution completed after reaching/passing
+    // the final point of the saved negotiated trajectory.
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+    mPendingMcmCommand = command;
+    mMcmSubtype = mcmSubtype::Cancel;
+    mCoordinationProgressRV = coordinationProgressRV::SendComplete;
+
+    EV_INFO << "McApplication RV station " << mEgoContext.stationId
+        << " queued completion workaround after passing negotiated trajectory end"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " currentY=" << mEgoContext.y
+        << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+        << '\n';
+
+    // std::cout << "MCM_DEBUG RV station " << mEgoContext.stationId
+    //     << " queued Complete workaround using Cancel for requestId "
+    //     << static_cast<int>(command.requestId)
+    //     << " currentY=" << mEgoContext.y
+    //     << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
+{
+    if (!mHasEgoContext || !mHasActiveNegotiatedTrajectory ||
+            mActiveNegotiatedTrajectory.empty()) {
+        return false;
+    }
+
+    const auto& lastPoint = mActiveNegotiatedTrajectory.back();
+
+    if (mEgoContext.routeId == scMergingRouteId) {
+        // Old route_merging_1 behavior:
+        // if RV passed the last negotiated trajectory point, then send Complete.
+        // In this scenario, passing the point means current SUMO y is below the
+        // final negotiated trajectory y.
+        return mEgoContext.y < lastPoint.mY;
+    }
+
+    return false;
 }
 
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const

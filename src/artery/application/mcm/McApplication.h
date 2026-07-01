@@ -220,11 +220,13 @@ private:
 
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    void evaluateRvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
+    bool hasReachedActiveNegotiatedTrajectoryEnd() const;
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
@@ -271,6 +273,12 @@ private:
     bool mRvAcceptReceived1 = false;
     bool mRvAcceptReceived2 = false;
     bool mRvExecuteQueuedOrSent = false;
+
+    // Fixed trajectory agreed during negotiation.
+    // During execution this is used only as the completion reference;
+    // the live plannedTrajectory/intent may continue updating beyond this horizon.
+    TrajectoryPlanner::Trajectory mActiveNegotiatedTrajectory;
+    bool mHasActiveNegotiatedTrajectory = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;
