@@ -223,6 +223,7 @@ private:
     void evaluateCvRequestResponse(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
+    void handleReceivedAcceptAsRv(const ReceivedMcm&);
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     const traci::VehicleController* mVehicleController = nullptr;
@@ -264,6 +265,11 @@ private:
     bool mRvOfferReceived1 = false;
     bool mRvOfferReceived2 = false;
     bool mRvConfirmQueuedOrSent = false;
+
+    // RV-side state for final Accept responses after Confirm.
+    bool mRvAcceptReceived1 = false;
+    bool mRvAcceptReceived2 = false;
+    bool mRvExecuteQueuedOrSent = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

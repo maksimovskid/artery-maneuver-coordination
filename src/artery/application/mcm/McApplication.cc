@@ -86,6 +86,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     evaluateCvRequestResponse(mcm);
     handleReceivedOfferAsRv(mcm);
     handleReceivedConfirmAsCv(mcm);
+    handleReceivedAcceptAsRv(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -261,6 +262,9 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvOfferReceived1 = false;
     mRvOfferReceived2 = false;
     mRvConfirmQueuedOrSent = false;
+    mRvAcceptReceived1 = false;
+    mRvAcceptReceived2 = false;
+    mRvExecuteQueuedOrSent = false;
 
     mCooperatingVehicleType = cooperatingVehicleType::RV;
     mMcmSubtype = mcmSubtype::Request;
@@ -531,6 +535,87 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
     // std::cout << "MCM_DEBUG CV station " << egoStationId
     //     << " queued Accept for requestId " << static_cast<int>(command.requestId)
     //     << " after receiving Confirm from RV " << mCvRvStationId
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
+            mRvExecuteQueuedOrSent ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mCoordinationProgressRV != coordinationProgressRV::SendConfirm) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Accept)) {
+        return;
+    }
+
+    if (snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mRvRequestId) {
+        return;
+    }
+
+    const uint32_t senderStationId = snapshot.stationId;
+
+    if (senderStationId == mRvTargetVehicle1 && !mRvAcceptReceived1) {
+        mRvAcceptReceived1 = true;
+        EV_INFO << "McApplication RV station " << mEgoContext.stationId
+            << " received Accept 1 from CV " << senderStationId
+            << " for requestId=" << static_cast<int>(mRvRequestId) << '\n';
+    } else if (mRvNumberOfVehicles > 1 &&
+            senderStationId == mRvTargetVehicle2 && !mRvAcceptReceived2) {
+        mRvAcceptReceived2 = true;
+        EV_INFO << "McApplication RV station " << mEgoContext.stationId
+            << " received Accept 2 from CV " << senderStationId
+            << " for requestId=" << static_cast<int>(mRvRequestId) << '\n';
+    } else {
+        return;
+    }
+
+    const bool allExpectedAcceptsReceived =
+        mRvNumberOfVehicles > 1 ?
+        (mRvAcceptReceived1 && mRvAcceptReceived2) :
+        mRvAcceptReceived1;
+
+    if (!allExpectedAcceptsReceived) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Execute;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = snapshot.cooperationTypeMcm >= 0 ? snapshot.cooperationTypeMcm : 0;
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+    mPendingMcmCommand = command;
+    mRvExecuteQueuedOrSent = true;
+    mMcmSubtype = mcmSubtype::Execute;
+    mCoordinationProgressRV = coordinationProgressRV::SendExecute;
+
+    EV_INFO << "McApplication RV station " << mEgoContext.stationId
+        << " queued Execute after receiving all Accepts"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
+
+    // std::cout << "MCM_DEBUG RV station " << mEgoContext.stationId
+    //     << " queued Execute for requestId " << static_cast<int>(command.requestId)
+    //     << " after receiving Accepts from " << mRvTargetVehicle1
+    //     << " and " << mRvTargetVehicle2
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
