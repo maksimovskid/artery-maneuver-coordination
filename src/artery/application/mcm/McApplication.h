@@ -225,6 +225,7 @@ private:
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void applyRvExecutionControl();
+    void applyCvDecelerationControl();
     void classifyCvMergingControlManeuver(const ReceivedMcm&);
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
@@ -294,6 +295,8 @@ private:
     omnetpp::SimTime mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     bool mHasLastExecuteQueuedAt = false;
     bool mRvMergingExecutionControlLogged = false;
+    bool mCvDecelerationControlApplied = false;
+    bool mCvDecelerationControlSkippedLogged = false;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

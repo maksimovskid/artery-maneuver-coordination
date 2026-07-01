@@ -5,6 +5,7 @@
 #include "artery/traci/VehicleController.h"
 
 #include <algorithm>
+#include <cmath>
 // #include <iostream> // temporary MCM_DEBUG prints
 
 namespace artery
@@ -93,6 +94,7 @@ void McApplication::tick(omnetpp::SimTime now)
 {
     evaluateMergingRequestTrigger(now);
     applyRvExecutionControl();
+    applyCvDecelerationControl();
     evaluateRvExecutionProgress();
     evaluateCvExecutionProgress();
 }
@@ -185,6 +187,10 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mControlManeuver = controlManeuver::DoNothing;
         mCvSelectedTrajectory.clear();
         mHasCvSelectedTrajectory = false;
+        mTargetSpeed = 0.0;
+        mCommandDuration = 0.0;
+        mCvDecelerationControlApplied = false;
+        mCvDecelerationControlSkippedLogged = false;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -207,6 +213,10 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mControlManeuver = controlManeuver::DoNothing;
             mCvSelectedTrajectory.clear();
             mHasCvSelectedTrajectory = false;
+            mTargetSpeed = 0.0;
+            mCommandDuration = 0.0;
+            mCvDecelerationControlApplied = false;
+            mCvDecelerationControlSkippedLogged = false;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -227,6 +237,8 @@ void McApplication::clearCommand()
     mCommandDuration = 0.0;
     mRestoreSpeed = 0.0;
     mRestoreMaxSpeed = 0.0;
+    mCvDecelerationControlApplied = false;
+    mCvDecelerationControlSkippedLogged = false;
     mPendingMcmCommand.reset();
 }
 
@@ -272,6 +284,49 @@ void McApplication::applyRvExecutionControl()
     }
 }
 
+void McApplication::applyCvDecelerationControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            mControlManeuver != controlManeuver::Decelerate ||
+            mCvDecelerationControlApplied) {
+        return;
+    }
+
+    if (mTargetSpeed <= 0.0 || mCommandDuration <= 0.0 ||
+            !std::isfinite(mTargetSpeed) || !std::isfinite(mCommandDuration)) {
+        if (!mCvDecelerationControlSkippedLogged) {
+            EV_WARN << "McApplication skipped CV deceleration control"
+                << ": station=" << mEgoContext.stationId
+                << " targetSpeed=" << mTargetSpeed
+                << " decelerationTime=" << mCommandDuration
+                << '\n';
+            mCvDecelerationControlSkippedLogged = true;
+        }
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+
+    // The old CV deceleration path initially used speedMode 0. For this narrow
+    // execution milestone we keep SUMO safety checks enabled with speedMode 31;
+    // speedMode 0 remains reserved for the route_merging_1 RV right-of-way case.
+    mVehicleController->setSpeedMode(vehicleId, 31);
+    mVehicleController->slowDown(vehicleId, mTargetSpeed, mCommandDuration);
+    mCvDecelerationControlApplied = true;
+
+    EV_INFO << "McApplication applied highway-merging CV deceleration control"
+        << ": station=" << mEgoContext.stationId
+        << " vehicleId=" << vehicleId
+        << " speedMode=31 targetSpeed=" << mTargetSpeed
+        << " decelerationTime=" << mCommandDuration
+        << '\n';
+}
+
 void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -281,6 +336,8 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     mHasCvSelectedTrajectory = false;
     mTargetSpeed = 0.0;
     mCommandDuration = 0.0;
+    mCvDecelerationControlApplied = false;
+    mCvDecelerationControlSkippedLogged = false;
 
     if (!mHasEgoContext || !mVehicleDataProvider) {
         EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
@@ -374,7 +431,21 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     } else if (plannedValues.deceleration_change > 0.0) {
         mControlManeuver = controlManeuver::Decelerate;
         mTargetSpeed = mEgoContext.speed - plannedValues.speed_change * mEgoContext.speed;
-        mCommandDuration = 0.0;
+        const double decelerationOffset = decelerationRequired ? 0.05 : 0.2;
+        mCommandDuration = calculateDecelerationTime(
+            mEgoContext.speed,
+            mTargetSpeed,
+            plannedValues.deceleration_change + decelerationOffset);
+        if (mCommandDuration <= 0.0 || !std::isfinite(mCommandDuration)) {
+            EV_WARN << "McApplication CV station " << mEgoContext.stationId
+                << " classified Decelerate but cannot apply slowDown yet"
+                << ": targetSpeed=" << mTargetSpeed
+                << " currentSpeed=" << mEgoContext.speed
+                << " deceleration=" << plannedValues.deceleration_change
+                << " offset=" << decelerationOffset
+                << " decelerationTime=" << mCommandDuration
+                << '\n';
+        }
     } else if (plannedValues.acc_change > 0.0) {
         mControlManeuver = controlManeuver::Accelerate;
         mTargetSpeed = mEgoContext.speed + plannedValues.speed_change * mEgoContext.speed;
