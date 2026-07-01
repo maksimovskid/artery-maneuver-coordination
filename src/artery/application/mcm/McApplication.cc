@@ -72,6 +72,7 @@ void McApplication::tick(omnetpp::SimTime now)
 {
     evaluateMergingRequestTrigger(now);
     evaluateRvExecutionProgress();
+    evaluateCvExecutionProgress();
 }
 
 void McApplication::prepareMcmGeneration(omnetpp::SimTime now)
@@ -708,6 +709,12 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressCV = coordinationProgressCV::SendExecuteCV;
 
+    // Store the CV-side negotiated trajectory reference.
+    // During execution, the live plannedTrajectory/intent may continue updating;
+    // this saved trajectory is used only to detect maneuver completion.
+    mActiveNegotiatedTrajectory = mEgoContext.plannedTrajectory;
+    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+
     EV_INFO << "McApplication CV station " << egoStationId
         << " received Execute from RV " << mCvRvStationId
         << ": requestId=" << static_cast<int>(mCvRequestId)
@@ -817,6 +824,57 @@ void McApplication::evaluateRvExecutionProgress()
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+void McApplication::evaluateCvExecutionProgress()
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
+            !mHasActiveNegotiatedTrajectory) {
+        return;
+    }
+
+    if (!hasReachedActiveNegotiatedTrajectoryEnd()) {
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Cancel;
+    // TODO: temporary Complete workaround.
+    // The legacy ASN.1/model used Cancel here because Complete was not available.
+    // Semantically this means: CV maneuver execution completed after reaching/passing
+    // the final point of the saved negotiated trajectory.
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = 1;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+    mPendingMcmCommand = command;
+    mMcmSubtype = mcmSubtype::Cancel;
+    mCoordinationProgressCV = coordinationProgressCV::SendCompleteCV;
+
+    EV_INFO << "McApplication CV station " << mEgoContext.stationId
+        << " queued completion workaround after passing negotiated trajectory end"
+        << ": requestId=" << static_cast<int>(command.requestId)
+        << " rvStation=" << command.targetVehicle1
+        << " currentY=" << mEgoContext.y
+        << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+        << '\n';
+
+    // std::cout << "MCM_DEBUG CV station " << mEgoContext.stationId
+    //     << " queued Complete workaround using Cancel for requestId "
+    //     << static_cast<int>(command.requestId)
+    //     << " currentY=" << mEgoContext.y
+    //     << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+    //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
 bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
 {
     if (!mHasEgoContext || !mHasActiveNegotiatedTrajectory ||
@@ -824,19 +882,29 @@ bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
         return false;
     }
 
+    const auto& firstPoint = mActiveNegotiatedTrajectory.front();
     const auto& lastPoint = mActiveNegotiatedTrajectory.back();
 
     if (mEgoContext.routeId == scMergingRouteId) {
-        // Old route_merging_1 behavior:
+        // Old route_merging_1 RV behavior:
         // if RV passed the last negotiated trajectory point, then send Complete.
         // In this scenario, passing the point means current SUMO y is below the
         // final negotiated trajectory y.
-        return mEgoContext.y < lastPoint.mY;
+        return mEgoContext.y <= lastPoint.mY;
     }
 
-    return false;
-}
+    // Generic trajectory-end check for non-merging-route vehicles, e.g. CVs on
+    // the main lane. Use the dominant trajectory direction to decide whether the
+    // vehicle has passed the final saved negotiated point.
+    const double dx = lastPoint.mX - firstPoint.mX;
+    const double dy = lastPoint.mY - firstPoint.mY;
 
+    if (std::abs(dx) >= std::abs(dy)) {
+        return dx >= 0.0 ? mEgoContext.x >= lastPoint.mX : mEgoContext.x <= lastPoint.mX;
+    }
+
+    return dy >= 0.0 ? mEgoContext.y >= lastPoint.mY : mEgoContext.y <= lastPoint.mY;
+}
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const
 {
     const auto millis = static_cast<uint64_t>(now.inUnit(omnetpp::SIMTIME_MS));
