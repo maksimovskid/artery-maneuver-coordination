@@ -145,6 +145,30 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             << " returned to IntentionSharingMode\n";
     } else if (mcm.data.hasNegotiationContainer &&
             mCooperatingVehicleType == cooperatingVehicleType::CV &&
+            mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
+            mCoordinationProgressCV == coordinationProgressCV::SendCompleteCV &&
+            mcm.data.requestId == mCvRequestId &&
+            mcm.data.negotiationVehicleId1 == mCvRvStationId) {
+        mCoordinationProgressCV = coordinationProgressCV::CompleteSentCV;
+        mOperationMode = operationMode::IntentionSharingMode;
+        mMcmSubtype = mcmSubtype::Regular;
+        mCooperatingVehicleType = cooperatingVehicleType::NCV;
+
+        mCvResponseQueuedOrSent = false;
+        mCvRvStationId = 0;
+        mCvRequestId = 0;
+        mActiveNegotiatedTrajectory.clear();
+        mHasActiveNegotiatedTrajectory = false;
+
+        EV_INFO << "McApplication CV station completed coordination workaround"
+            << " and returned to IntentionSharingMode\n";
+
+        // std::cout << "MCM_DEBUG CV station " << mEgoContext.stationId
+        //     << " returned to IntentionSharingMode after sending Complete workaround"
+        //     << " at " << omnetpp::simTime() << " s" << std::endl;
+
+    } else if (mcm.data.hasNegotiationContainer &&
+            mCooperatingVehicleType == cooperatingVehicleType::CV &&
             mcm.data.requestId == mCvRequestId &&
             mcm.data.negotiationVehicleId1 == mCvRvStationId &&
             (mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Accept) ||
