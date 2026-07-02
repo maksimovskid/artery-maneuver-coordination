@@ -131,6 +131,8 @@ private:
     bool mFixedRate = false;
     omnetpp::SimTime mFixedRateInterval;
     omnetpp::SimTime mNegotiationRetryInterval;
+    omnetpp::SimTime mNegotiationLimitMerging;
+    omnetpp::SimTime mNegotiationLimitLaneChange;
 
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;

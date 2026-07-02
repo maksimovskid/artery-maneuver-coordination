@@ -139,6 +139,14 @@ void McApplication::setNegotiationRetryInterval(omnetpp::SimTime interval)
     mNegotiationRetryInterval = interval;
 }
 
+void McApplication::setNegotiationLimits(
+    omnetpp::SimTime mergingLimit,
+    omnetpp::SimTime laneChangeLimit)
+{
+    mNegotiationLimitMerging = mergingLimit;
+    mNegotiationLimitLaneChange = laneChangeLimit;
+}
+
 void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;
@@ -238,6 +246,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mRvOfferReceived1 = false;
         mRvOfferReceived2 = false;
         mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
+        mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+        mHasRvNegotiationStartedAt = false;
         mHasRvLastRequestQueuedAt = false;
         mRvConfirmQueuedOrSent = false;
         mRvAcceptReceived1 = false;
@@ -757,7 +767,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     EV_STATICCONTEXT;
 
     if (!mHasEgoContext || !mVehicleDataProvider || !mVehicleController ||
-            mPendingMcmCommand || mMergingRequestQueuedOrSent) {
+            mPendingMcmCommand || mMergingRequestQueuedOrSent ||
+            mRvNegotiationTimedOut) {
         return;
     }
 
@@ -861,6 +872,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mMergingRequestQueuedOrSent = true;
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;
+    mRvNegotiationStartedAt = now;
+    mHasRvNegotiationStartedAt = true;
 
     // Store active RV-side negotiation state.
     // This is needed later to match incoming Offer/Accept/Reject messages
@@ -914,6 +927,61 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
         mRvOfferReceived1 && mRvOfferReceived2;
 
     if (allExpectedOffersReceived) {
+        return;
+    }
+
+    if (mHasRvNegotiationStartedAt &&
+        now - mRvNegotiationStartedAt >= mNegotiationLimitMerging) {
+        EV_STATICCONTEXT;
+        EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
+            << " t=" << now
+            << " role=RV"
+            << " vehicle=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+            << " event=timeout-waiting-for-offers"
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " expectedCv1=" << mRvTargetVehicle1
+            << " expectedCv2=" << mRvTargetVehicle2
+            << " offer1Received=" << mRvOfferReceived1
+            << " offer2Received=" << mRvOfferReceived2
+            << " elapsed=" << (now - mRvNegotiationStartedAt)
+            << " limit=" << mNegotiationLimitMerging
+            << '\n';
+
+        std::cout << "[MCM-NEGOTIATION-TIMEOUT]"
+            << " t=" << now
+            << " " << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+            << " TIMEOUT waiting-for-offers"
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " target1=" << mRvTargetVehicle1
+            << " target2=" << mRvTargetVehicle2
+            << " offer1Received=" << mRvOfferReceived1
+            << " offer2Received=" << mRvOfferReceived2
+            << " elapsed=" << (now - mRvNegotiationStartedAt)
+            << " limit=" << mNegotiationLimitMerging
+            << std::endl;
+
+        mMergingRequestQueuedOrSent = false;
+        mRvOfferReceived1 = false;
+        mRvOfferReceived2 = false;
+        mRvConfirmQueuedOrSent = false;
+        mRvAcceptReceived1 = false;
+        mRvAcceptReceived2 = false;
+        mRvExecuteQueuedOrSent = false;
+        mRvNegotiationTimedOut = true;
+
+        mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
+        mHasRvLastRequestQueuedAt = false;
+        mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+        mHasRvNegotiationStartedAt = false;
+
+        mActiveNegotiatedTrajectory.clear();
+        mHasActiveNegotiatedTrajectory = false;
+
+        mOperationMode = operationMode::IntentionSharingMode;
+        mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
+
         return;
     }
 

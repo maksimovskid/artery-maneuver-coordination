@@ -10,6 +10,8 @@ simple McService like ItsG5Service
         bool fixedRate = default(true);
         double fixedRateInterval @unit(s) = default(0.1s);
         double negotiationRetryInterval @unit(s) = default(0.1s);
+        double negotiationLimitMerging @unit(s) = default(1.0s);
+        double negotiationLimitLaneChange @unit(s) = default(1.0s);
         bool usePrerecordedIntentTrajectory = default(false);
         string prerecordedTrajectoryCsv = default("");
         int prerecordedTrajectorySteps = default(20);

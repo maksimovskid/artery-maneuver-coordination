@@ -196,6 +196,7 @@ public:
 
     void initialize(traci::VehicleController*, const VehicleDataProvider*);
     void setNegotiationRetryInterval(omnetpp::SimTime interval);
+    void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -279,6 +280,8 @@ private:
     std::optional<PendingMcmCommand> mPendingMcmCommand;
     bool mMergingRequestQueuedOrSent = false;
     omnetpp::SimTime mNegotiationRetryInterval = 0.1;
+    omnetpp::SimTime mNegotiationLimitMerging = 1.0;
+    omnetpp::SimTime mNegotiationLimitLaneChange = 1.0;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;
@@ -295,6 +298,9 @@ private:
     bool mRvConfirmQueuedOrSent = false;
     omnetpp::SimTime mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     bool mHasRvLastRequestQueuedAt = false;
+    omnetpp::SimTime mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    bool mHasRvNegotiationStartedAt = false;
+    bool mRvNegotiationTimedOut = false;
 
     // RV-side state for final Accept responses after Confirm.
     bool mRvAcceptReceived1 = false;
