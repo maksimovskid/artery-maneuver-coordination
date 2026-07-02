@@ -228,6 +228,7 @@ private:
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateRvRequestRetry(omnetpp::SimTime now);
+    void evaluateRvConfirmRetry(omnetpp::SimTime now);
     void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
     void evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now);
     void logScenarioVehicleLifetime(omnetpp::SimTime now);
@@ -298,6 +299,8 @@ private:
     bool mRvConfirmQueuedOrSent = false;
     omnetpp::SimTime mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     bool mHasRvLastRequestQueuedAt = false;
+    omnetpp::SimTime mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasRvLastConfirmQueuedAt = false;
     omnetpp::SimTime mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     bool mHasRvNegotiationStartedAt = false;
     bool mRvNegotiationTimedOut = false;
