@@ -167,7 +167,8 @@ struct McEgoContext {
 
 struct PendingMcmCommand {
     enum class Kind {
-        Negotiation
+        Negotiation,
+        Execution
     };
 
     Kind kind = Kind::Negotiation;
@@ -224,6 +225,9 @@ private:
 
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
+    void evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now);
+    void logScenarioVehicleLifetime(omnetpp::SimTime now);
     void applyRvExecutionControl();
     void applyCvDecelerationControl();
     void applyCvAccelerationControl();
@@ -238,8 +242,12 @@ private:
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
+    void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
     bool hasReachedActiveNegotiatedTrajectoryEnd() const;
     void queueRepeatedExecute();
+    void resetMergingGapDiagnostics();
+    void sampleMergingGapDiagnostics(const char* phase);
+    void logMergingGapSummary(omnetpp::SimTime completionTime) const;
     uint8_t makeRequestId(omnetpp::SimTime now) const;
 
     traci::VehicleController* mVehicleController = nullptr;
@@ -303,6 +311,41 @@ private:
     bool mCvDecelerationControlSkippedLogged = false;
     bool mCvAccelerationControlApplied = false;
     bool mCvLaneChangeControlLogged = false;
+
+    bool mEmergencyBrakeApplied = false;
+    bool mEmergencyMcmQueued = false;
+    bool mScenarioVehicleFirstSeenLogged = false;
+    bool mScenarioVehicleNearEmergencyLogged = false;
+    bool mScenarioVehicleAfterEmergencyLogged = false;
+    bool mEmergencyTriggerWaitingLogged = false;
+    bool mEmergencyReceived = false;
+    bool mLaneChangeRequestQueuedOrSent = false;
+    bool mLaneChangeStateLogged = false;
+    bool mLaneChangeThreeVehiclePath = false;
+    uint32_t mEmergencyStationId = 0;
+    double mEmergencyDistanceGap = 0.0;
+    double mEmergencyTimeGap = 0.0;
+    double mEmergencyReactionWindow = 0.0;
+
+    // Diagnostic-only route_merging_1 RV/CV gap tracking.
+    bool mMergingGapDiagActive = false;
+    omnetpp::SimTime mMergingGapDiagExecutionStart = omnetpp::SimTime::ZERO;
+    uint32_t mMergingGapDiagTargetCvStationId = 0;
+    double mMergingGapDiagMinDistance = 0.0;
+    double mMergingGapDiagMinTimeGap = 0.0;
+    omnetpp::SimTime mMergingGapDiagMinDistanceAt = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime mMergingGapDiagMinTimeGapAt = omnetpp::SimTime::ZERO;
+    bool mMergingGapDiagHasMinDistance = false;
+    bool mMergingGapDiagHasMinTimeGap = false;
+    std::string mMergingGapDiagMinRvLaneId;
+    std::string mMergingGapDiagMinCvLaneId;
+    int mMergingGapDiagMinRvLaneIndex = -1;
+    int mMergingGapDiagMinCvLaneIndex = -1;
+    double mMergingGapDiagMinRvLanePosition = 0.0;
+    double mMergingGapDiagMinCvX = 0.0;
+    double mMergingGapDiagMinCvY = 0.0;
+    double mMergingGapDiagMinRvX = 0.0;
+    double mMergingGapDiagMinRvY = 0.0;
 
     double mTargetSpeed = 0.0;
     double mCommandDuration = 0.0;

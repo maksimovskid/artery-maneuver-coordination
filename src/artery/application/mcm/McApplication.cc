@@ -16,6 +16,16 @@ namespace mcm
 namespace
 {
 constexpr const char* scMergingRouteId = "route_merging_1";
+constexpr const char* scEmergencyVehicleId = "car_hl0_Emergency";
+constexpr const char* scSafetyCriticalLaneChangeRouteId = "route_highway_1";
+constexpr const char* scTargetLaneChangeRouteId = "route_highway_2";
+constexpr double scEmergencyStartTime = 12.0;
+constexpr double scEmergencyMaxSpeed = 0.1;
+constexpr double scNormalHighwaySpeed = 27.77;
+constexpr double scLaneChangeShiftX = 3.0;
+constexpr double scSafetyCriticalTimeGap = 1.0;
+constexpr double scEmergencyCoordinationTimeGap = 1.5;
+constexpr double scInitialPaperTimeGap = 1.22;
 constexpr double scMergeStartX = 216554.0;
 constexpr double scMergeStartY = 452461.0;
 constexpr double scHighwayLane0MinY = 452474.0;
@@ -60,6 +70,20 @@ bool isHighwayMergingCvRoute(const std::string& routeId)
         routeId == "route_highway_2";
 }
 
+bool isSafetyCriticalLaneChangeScenarioVehicle(const std::string& vehicleId)
+{
+    return vehicleId == scEmergencyVehicleId ||
+        vehicleId == "car_hl1_1" ||
+        vehicleId == "car_hl1_2" ||
+        vehicleId == "car_hl1_3" ||
+        vehicleId == "car_hl2_1" ||
+        vehicleId == "car_hl2_2" ||
+        vehicleId == "car_hl2_3" ||
+        vehicleId == "car_hl2_4" ||
+        vehicleId == "car_hl2_5" ||
+        vehicleId == "car_hl2_6";
+}
+
 const char* controlManeuverName(controlManeuver maneuver)
 {
     switch (maneuver) {
@@ -92,8 +116,12 @@ void McApplication::updateEgoContext(const McEgoContext& context)
 
 void McApplication::tick(omnetpp::SimTime now)
 {
+    logScenarioVehicleLifetime(now);
+    evaluateEmergencyBrakingTrigger(now);
     evaluateMergingRequestTrigger(now);
+    evaluateSafetyCriticalLaneChangeTrigger(now);
     applyRvExecutionControl();
+    sampleMergingGapDiagnostics("tick");
     applyCvDecelerationControl();
     applyCvAccelerationControl();
     applyCvLaneChangeControl();
@@ -130,6 +158,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedConfirmAsCv(mcm);
     handleReceivedAcceptAsRv(mcm);
     handleReceivedExecuteAsCv(mcm);
+    handleReceivedEmergencyAsFollower(mcm);
 }
 
 void McApplication::handleSentMcm(const SentMcm& mcm)
@@ -144,12 +173,28 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Request) &&
             mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired) {
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
-        mMergingRequestQueuedOrSent = true;
+        if (mEgoContext.routeId == scMergingRouteId) {
+            mMergingRequestQueuedOrSent = true;
+        } else if (mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId) {
+            mLaneChangeRequestQueuedOrSent = true;
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mcm.sentAt
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+                << " event=request-sent"
+                << " requestId=" << mcm.data.requestId
+                << " targetCv1=" << mcm.data.negotiationVehicleId1
+                << " targetCv2=" << mcm.data.negotiationVehicleId2
+                << " priority=HighPriority\n";
+        }
     } else if (mcm.data.hasNegotiationContainer &&
             mCooperatingVehicleType == cooperatingVehicleType::RV &&
             mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
             mCoordinationProgressRV == coordinationProgressRV::SendComplete &&
             mcm.data.requestId == mRvRequestId) {
+        logMergingGapSummary(mcm.sentAt);
+
         mCoordinationProgressRV = coordinationProgressRV::CompleteSent;
         mOperationMode = operationMode::IntentionSharingMode;
         mMcmSubtype = mcmSubtype::Regular;
@@ -167,10 +212,25 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
         mHasLastExecuteQueuedAt = false;
         mRvMergingExecutionControlLogged = false;
+        resetMergingGapDiagnostics();
 
         EV_INFO << "McApplication RV station completed coordination workaround"
             << ": requestId=" << static_cast<int>(mRvRequestId)
             << " returned to IntentionSharingMode\n";
+    } else if (mcm.data.hasExecutionContainer &&
+            mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Abort) &&
+            mcm.data.priorityManeuver == static_cast<long>(priorityMcmCategory::EmergencyPriority)) {
+        EV_INFO << "[MCM-EMERGENCY]"
+            << " simTime=" << mcm.sentAt
+            << " role=emergency-vehicle"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " route=" << mEgoContext.routeId
+            << " laneIndex=" << mEgoContext.laneIndex
+            << " event=sent-emergency-execution-mcm"
+            << " subtype=Abort"
+            << " priority=EmergencyPriority"
+            << " executionContainer=1\n";
     } else if (mcm.data.hasNegotiationContainer &&
             mCooperatingVehicleType == cooperatingVehicleType::CV &&
             mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
@@ -717,6 +777,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
+    resetMergingGapDiagnostics();
 
     mCooperatingVehicleType = cooperatingVehicleType::RV;
     mMcmSubtype = mcmSubtype::Request;
@@ -730,6 +791,430 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
         << " requestedTrajectoryPoints=" << command.requestedTrajectory.size() << '\n';
+}
+
+void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mVehicleController->getVehicleId() != scEmergencyVehicleId) {
+        return;
+    }
+
+    if (mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId &&
+            mEgoContext.speed < scNormalHighwaySpeed - 0.5 &&
+            now.dbl() < scEmergencyStartTime) {
+        mVehicleController->setMaxSpeed(scNormalHighwaySpeed * boost::units::si::meter_per_second);
+    }
+
+    if (now.dbl() < scEmergencyStartTime) {
+        if (!mEmergencyTriggerWaitingLogged && now.dbl() >= scEmergencyStartTime - 0.25) {
+            EV_INFO << "[MCM-EMERGENCY]"
+                << " simTime=" << now
+                << " role=emergency-vehicle"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << mVehicleController->getVehicleId()
+                << " route=" << mEgoContext.routeId
+                << " laneIndex=" << mEgoContext.laneIndex
+                << " event=trigger-skipped"
+                << " reason=before-scheduled-start"
+                << " scheduledStartTime=" << scEmergencyStartTime
+                << " timeUntilStart=" << (scEmergencyStartTime - now.dbl())
+                << '\n';
+            mEmergencyTriggerWaitingLogged = true;
+        }
+        return;
+    }
+
+    if (!mPendingMcmCommand && !mEmergencyMcmQueued) {
+        PendingMcmCommand command;
+        command.kind = PendingMcmCommand::Kind::Execution;
+        command.subtype = mcmSubtype::Abort;
+        command.priority = priorityMcmCategory::EmergencyPriority;
+        command.cooperationType = 0;
+        command.requestId = 1;
+        command.numberOfVehicles = 1;
+        command.targetVehicle1 = 1;
+        command.hasTargetVehicle2 = false;
+        command.targetVehicle2 = 0;
+        command.requestedTrajectory = mEgoContext.plannedTrajectory;
+
+        mPendingMcmCommand = command;
+        mEmergencyMcmQueued = true;
+        mCooperatingVehicleType = cooperatingVehicleType::EmergencyV;
+        mMcmSubtype = mcmSubtype::Abort;
+        mPriorityMcmCategory = priorityMcmCategory::EmergencyPriority;
+        mOperationMode = operationMode::ManeuverExecutionMode;
+        mCoordinationProgressRV = coordinationProgressRV::SendExecute;
+
+        EV_INFO << "[MCM-EMERGENCY]"
+            << " simTime=" << now
+            << " role=emergency-vehicle"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " route=" << mEgoContext.routeId
+            << " laneIndex=" << mEgoContext.laneIndex
+            << " event=queue-emergency-execution-mcm"
+            << " scheduledStartTime=" << scEmergencyStartTime
+            << " subtype=Abort"
+            << " priority=EmergencyPriority"
+            << " executionContainer=1"
+            << " plannedTrajectoryPoints=" << mEgoContext.plannedTrajectory.size()
+            << '\n';
+    }
+
+    if (!mEmergencyBrakeApplied) {
+        try {
+            mVehicleController->setMaxSpeed(scEmergencyMaxSpeed * boost::units::si::meter_per_second);
+            mEmergencyBrakeApplied = true;
+
+            EV_INFO << "[MCM-EMERGENCY]"
+                << " simTime=" << now
+                << " role=emergency-vehicle"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << mVehicleController->getVehicleId()
+                << " route=" << mEgoContext.routeId
+                << " laneIndex=" << mEgoContext.laneIndex
+                << " event=emergency-brake-trigger"
+                << " scheduledStartTime=" << scEmergencyStartTime
+                << " maxSpeed=" << scEmergencyMaxSpeed
+                << '\n';
+        } catch (const std::exception& e) {
+            EV_WARN << "[MCM-EMERGENCY]"
+                << " simTime=" << now
+                << " role=emergency-vehicle"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << mVehicleController->getVehicleId()
+                << " route=" << mEgoContext.routeId
+                << " laneIndex=" << mEgoContext.laneIndex
+                << " event=emergency-brake-trigger-failed"
+                << " scheduledStartTime=" << scEmergencyStartTime
+                << " maxSpeed=" << scEmergencyMaxSpeed
+                << " reason=\"" << e.what() << "\"\n";
+        }
+    }
+}
+
+void McApplication::logScenarioVehicleLifetime(omnetpp::SimTime now)
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+    if (!isSafetyCriticalLaneChangeScenarioVehicle(vehicleId)) {
+        return;
+    }
+
+    const bool isEmergencyVehicle = vehicleId == scEmergencyVehicleId;
+    const bool isLane1Follower = vehicleId == "car_hl1_1" ||
+        vehicleId == "car_hl1_2" ||
+        vehicleId == "car_hl1_3";
+    const bool isTargetLaneCv = !isEmergencyVehicle && !isLane1Follower;
+
+    const bool shouldLogFirstSeen = !mScenarioVehicleFirstSeenLogged;
+    const bool shouldLogNearEmergency =
+        !mScenarioVehicleNearEmergencyLogged &&
+        now.dbl() >= scEmergencyStartTime - 0.25 &&
+        now.dbl() < scEmergencyStartTime;
+    const bool shouldLogAfterEmergency =
+        !mScenarioVehicleAfterEmergencyLogged &&
+        now.dbl() >= scEmergencyStartTime;
+
+    if (!shouldLogFirstSeen && !shouldLogNearEmergency && !shouldLogAfterEmergency) {
+        return;
+    }
+
+    std::string laneId = "unavailable";
+    int laneIndex = mEgoContext.laneIndex;
+    double lanePosition = 0.0;
+    bool hasLanePosition = false;
+
+    try {
+        auto traci = mVehicleController->getTraCI();
+        if (traci) {
+            laneId = traci->vehicle.getLaneID(vehicleId);
+            laneIndex = traci->vehicle.getLaneIndex(vehicleId);
+            lanePosition = traci->vehicle.getLanePosition(vehicleId);
+            hasLanePosition = true;
+        }
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-VEHICLE-LIFETIME]"
+            << " simTime=" << now
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << vehicleId
+            << " event=traci-query-failed"
+            << " reason=\"" << e.what() << "\"\n";
+    }
+
+    const char* event = shouldLogFirstSeen ? "first-seen" :
+        (shouldLogNearEmergency ? "near-emergency-start" : "alive-after-emergency-start");
+
+    EV_INFO << "[MCM-SCENARIO-DIAG]"
+        << " simTime=" << now
+        << " event=active-highway-emergency-scenario-vehicle"
+        << " vehicleId=" << vehicleId
+        << " station=" << mEgoContext.stationId
+        << " route=" << mEgoContext.routeId
+        << " expectedConfig=envmod-19CAVs"
+        << " expectedSumocfg=routes/test_19CAVs.sumocfg"
+        << " scheduledEmergencyStart=" << scEmergencyStartTime
+        << '\n';
+
+    EV_INFO << "[MCM-VEHICLE-LIFETIME]"
+        << " simTime=" << now
+        << " event=" << event
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << vehicleId
+        << " role=" << (isEmergencyVehicle ? "emergency-vehicle-v0" :
+            (isLane1Follower ? "safety-critical-lane-change-candidate-rv" : "target-lane-candidate-cv"))
+        << " route=" << mEgoContext.routeId
+        << " laneId=" << laneId
+        << " laneIndex=" << laneIndex
+        << " lanePosition=";
+    if (hasLanePosition) {
+        EV_INFO << lanePosition;
+    } else {
+        EV_INFO << "unavailable";
+    }
+    EV_INFO << " x=" << mEgoContext.x
+        << " y=" << mEgoContext.y
+        << " speed=" << mEgoContext.speed
+        << " isEmergencyVehicle=" << isEmergencyVehicle
+        << " isLane1Follower=" << isLane1Follower
+        << " isTargetLaneCv=" << isTargetLaneCv
+        << '\n';
+
+    if (shouldLogFirstSeen) {
+        mScenarioVehicleFirstSeenLogged = true;
+    }
+    if (shouldLogNearEmergency) {
+        mScenarioVehicleNearEmergencyLogged = true;
+    }
+    if (shouldLogAfterEmergency) {
+        mScenarioVehicleAfterEmergencyLogged = true;
+    }
+}
+
+void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
+            mPendingMcmCommand || mLaneChangeRequestQueuedOrSent ||
+            !mEmergencyReceived ||
+            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            mCoordinationProgressRV != coordinationProgressRV::CheckForCoordination ||
+            mControlManeuver != controlManeuver::ChangeLane) {
+        return;
+    }
+
+    TrajectoryPlanner::Trajectory laneChangeTrajectory;
+    if (!mEgoContext.routeReferenceX.empty() && !mEgoContext.routeReferenceY.empty() &&
+            mEgoContext.routeReferenceIndex >= 0) {
+        auto shiftedX = mEgoContext.routeReferenceX;
+        std::transform(shiftedX.begin(), shiftedX.end(), shiftedX.begin(),
+            [](float x) { return x + static_cast<float>(scLaneChangeShiftX); });
+        laneChangeTrajectory = mTrajectoryPlanner.calculateRefTrajectory(
+            scRequestTrajectorySteps,
+            scRequestTrajectoryDt,
+            shiftedX,
+            mEgoContext.routeReferenceY,
+            mEgoContext.routeReferenceIndex,
+            true,
+            0.0F,
+            0.0F,
+            0.0F);
+    }
+
+    if (laneChangeTrajectory.empty()) {
+        laneChangeTrajectory = mEgoContext.plannedTrajectory;
+        for (auto& point : laneChangeTrajectory) {
+            point.mX += scLaneChangeShiftX;
+        }
+    }
+
+    if (laneChangeTrajectory.empty()) {
+        EV_WARN << "[MCM-LC-TRIGGER]"
+            << " simTime=" << now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " route=" << mEgoContext.routeId
+            << " result=no-request"
+            << " reason=no-lane-change-trajectory\n";
+        return;
+    }
+
+    unsigned considered = 0;
+    unsigned conflicts = 0;
+    uint32_t target1 = 0;
+    uint32_t target2 = 0;
+
+    for (const auto& received : mReceivedMcmCache) {
+        const auto& snapshot = received.data;
+        if (snapshot.stationId == mEgoContext.stationId || snapshot.stationId == mEmergencyStationId ||
+                !snapshot.hasLaneId || snapshot.plannedTrajectory.empty()) {
+            continue;
+        }
+
+        const auto& first = snapshot.plannedTrajectory.front();
+        const int rawLaneReceived = static_cast<int>(snapshot.laneId);
+        int laneReceived = rawLaneReceived;
+        const bool laneWorkaroundApplied = first.mY > 452365.0;
+        if (laneWorkaroundApplied) {
+            laneReceived += 1;
+        }
+        const bool targetLaneMatch = laneReceived == mEgoContext.laneIndex + 1;
+
+        EV_INFO << "[MCM-LC-LANE-WORKAROUND]"
+            << " simTime=" << now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " route=" << mEgoContext.routeId
+            << " rvLaneIndex=" << mEgoContext.laneIndex
+            << " targetLaneIndex=" << (mEgoContext.laneIndex + 1)
+            << " candidateCvStation=" << snapshot.stationId
+            << " rawLaneReceived=" << rawLaneReceived
+            << " firstTrajectoryY=" << first.mY
+            << " workaroundThresholdY=452365"
+            << " workaroundApplied=" << laneWorkaroundApplied
+            << " correctedLaneReceived=" << laneReceived
+            << " targetLaneMatch=" << targetLaneMatch
+            << " activeScenarioFlag=EmergencyReceived"
+            << " emergencyReceived=" << mEmergencyReceived
+            << " controlManeuver=" << controlManeuverName(mControlManeuver)
+            << '\n';
+
+        if (!targetLaneMatch) {
+            continue;
+        }
+
+        ++considered;
+        const omnetpp::SimTime eteDelay =
+            std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
+        const bool conflict = mTrajectoryPlanner.check_traj_conflict(
+            laneChangeTrajectory,
+            snapshot.plannedTrajectory,
+            scMergingTimeGap,
+            eteDelay);
+
+        EV_INFO << "[MCM-LC-3VEH]"
+            << " simTime=" << now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " route=" << mEgoContext.routeId
+            << " candidateCvStation=" << snapshot.stationId
+            << " candidateCvRawLane=" << rawLaneReceived
+            << " candidateCvCorrectedLane=" << laneReceived
+            << " targetLane=" << (mEgoContext.laneIndex + 1)
+            << " eteDelay=" << eteDelay
+            << " conflict=" << conflict
+            << " selectedCv1=" << target1
+            << " selectedCv2=" << target2
+            << " currentConflicts=" << conflicts
+            << " source=latest-mcm-plannedTrajectory\n";
+
+        if (!conflict) {
+            continue;
+        }
+
+        if (target1 == 0 || target1 == snapshot.stationId) {
+            target1 = snapshot.stationId;
+            ++conflicts;
+        } else if (target2 == 0 && target1 != snapshot.stationId) {
+            target2 = snapshot.stationId;
+            ++conflicts;
+        }
+
+        if (target1 != 0 && target2 != 0) {
+            break;
+        }
+    }
+
+    EV_INFO << "[MCM-LC-TRIGGER]"
+        << " simTime=" << now
+        << " role=safety-critical-lane-change-rv"
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << mVehicleController->getVehicleId()
+        << " route=" << mEgoContext.routeId
+        << " laneIndex=" << mEgoContext.laneIndex
+        << " emergencyStation=" << mEmergencyStationId
+        << " emergencyDistanceGap=" << mEmergencyDistanceGap
+        << " emergencyTimeGap=" << mEmergencyTimeGap
+        << " reactionWindow=" << mEmergencyReactionWindow
+        << " consideredTargetLaneCv=" << considered
+        << " conflicts=" << conflicts
+        << " priority=HighPriority"
+        << '\n';
+
+    if (target1 == 0) {
+        EV_WARN << "[MCM-LC-TRIGGER]"
+            << " simTime=" << now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " result=no-request"
+            << " reason=no-conflicting-target-lane-cv\n";
+        return;
+    }
+
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Request;
+    command.priority = priorityMcmCategory::HighPriority;
+    command.cooperationType = 0;
+    command.requestId = makeRequestId(now);
+    command.numberOfVehicles = target2 == 0 ? 1 : 2;
+    command.targetVehicle1 = target1;
+    command.hasTargetVehicle2 = target2 != 0;
+    command.targetVehicle2 = target2;
+    command.requestedTrajectory = laneChangeTrajectory;
+
+    mPendingMcmCommand = command;
+    mLaneChangeRequestQueuedOrSent = true;
+    mLaneChangeThreeVehiclePath = target2 != 0;
+    mRvRequestId = command.requestId;
+    mRvNumberOfVehicles = command.numberOfVehicles;
+    mRvTargetVehicle1 = command.targetVehicle1;
+    mRvTargetVehicle2 = command.hasTargetVehicle2 ? command.targetVehicle2 : 0;
+    mRvOfferReceived1 = false;
+    mRvOfferReceived2 = false;
+    mRvConfirmQueuedOrSent = false;
+    mRvAcceptReceived1 = false;
+    mRvAcceptReceived2 = false;
+    mRvExecuteQueuedOrSent = false;
+    mActiveNegotiatedTrajectory = laneChangeTrajectory;
+    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+    mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
+    mHasLastExecuteQueuedAt = false;
+
+    mCooperatingVehicleType = cooperatingVehicleType::RV;
+    mMcmSubtype = mcmSubtype::Request;
+    mPriorityMcmCategory = priorityMcmCategory::HighPriority;
+    mOperationMode = operationMode::ManeuverNegotiationMode;
+    mCoordinationProgressRV = coordinationProgressRV::CoordinationRequired;
+
+    EV_INFO << "[MCM-LC-3VEH]"
+        << " simTime=" << now
+        << " role=safety-critical-lane-change-rv"
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << mVehicleController->getVehicleId()
+        << " route=" << mEgoContext.routeId
+        << " event=queued-request"
+        << " requestId=" << static_cast<int>(command.requestId)
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " targetCv1=" << command.targetVehicle1
+        << " targetCv2=" << command.targetVehicle2
+        << " path=" << (mLaneChangeThreeVehiclePath ? "three-vehicle-two-cv" : "two-vehicle-one-cv")
+        << " priority=HighPriority"
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
 }
 
 void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
@@ -793,6 +1278,31 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         //     << " queued Reject for requestId " << static_cast<int>(command.requestId)
         //     << " to RV " << mCvRvStationId
         //     << " at " << omnetpp::simTime() << " s" << std::endl;
+    } else if (mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
+            mHasEgoContext && mEgoContext.routeId == scTargetLaneChangeRouteId) {
+        command.subtype = snapshot.numberOfVehicles > 1 ? mcmSubtype::Offer : mcmSubtype::Accept;
+        command.requestedTrajectory = snapshot.requestedTrajectory;
+        command.offeredTrajectory = !mEgoContext.plannedTrajectory.empty() ?
+            mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
+        command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+        mCoordinationProgressCV = snapshot.numberOfVehicles > 1 ?
+            coordinationProgressCV::SendOffer : coordinationProgressCV::SendAccept;
+
+        EV_INFO << "[MCM-LC-3VEH]"
+            << " simTime=" << mEgoContext.now
+            << " role=target-cv"
+            << " station=" << egoStationId
+            << " route=" << mEgoContext.routeId
+            << " laneIndex=" << mEgoContext.laneIndex
+            << " event=received-high-priority-lane-change-request"
+            << " response=" << subtypeName(command.subtype)
+            << " requestId=" << static_cast<int>(command.requestId)
+            << " rvStation=" << command.targetVehicle1
+            << " numberOfVehicles=" << snapshot.numberOfVehicles
+            << " path=" << (snapshot.numberOfVehicles > 1 ? "three-vehicle-two-cv" : "two-vehicle-one-cv")
+            << " priority=HighPriority"
+            << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size()
+            << '\n';
     } else if (snapshot.numberOfVehicles > 1) {
         classifyCvMergingControlManeuver(received);
 
@@ -950,6 +1460,16 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
 
     if (senderStationId == mRvTargetVehicle1 && !mRvOfferReceived1) {
         mRvOfferReceived1 = true;
+        if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mEgoContext.now
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " event=received-offer-1"
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " cvStation=" << senderStationId
+                << " path=three-vehicle-two-cv\n";
+        }
         EV_INFO << "McApplication RV station " << mEgoContext.stationId
             << " received Offer 1 from CV " << senderStationId
             << " for requestId=" << static_cast<int>(mRvRequestId)
@@ -957,6 +1477,16 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     } else if (mRvNumberOfVehicles > 1 &&
             senderStationId == mRvTargetVehicle2 && !mRvOfferReceived2) {
         mRvOfferReceived2 = true;
+        if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mEgoContext.now
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " event=received-offer-2"
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " cvStation=" << senderStationId
+                << " path=three-vehicle-two-cv\n";
+        }
         EV_INFO << "McApplication RV station " << mEgoContext.stationId
             << " received Offer 2 from CV " << senderStationId
             << " for requestId=" << static_cast<int>(mRvRequestId)
@@ -990,6 +1520,18 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     mRvConfirmQueuedOrSent = true;
     mMcmSubtype = mcmSubtype::Confirm;
     mCoordinationProgressRV = coordinationProgressRV::SendConfirm;
+
+    if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+        EV_INFO << "[MCM-LC-3VEH]"
+            << " simTime=" << mEgoContext.now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " event=queued-confirm-after-all-offers"
+            << " requestId=" << static_cast<int>(command.requestId)
+            << " targetCv1=" << command.targetVehicle1
+            << " targetCv2=" << command.targetVehicle2
+            << " priority=HighPriority\n";
+    }
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
         << " queued Confirm after receiving all Offers"
@@ -1056,6 +1598,17 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
     mMcmSubtype = mcmSubtype::Accept;
     mCoordinationProgressCV = coordinationProgressCV::SendAccept;
 
+    if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+        EV_INFO << "[MCM-LC-STATE]"
+            << " simTime=" << mEgoContext.now
+            << " role=target-cv"
+            << " station=" << egoStationId
+            << " event=queued-accept-after-confirm"
+            << " requestId=" << static_cast<int>(command.requestId)
+            << " rvStation=" << command.targetVehicle1
+            << " priority=HighPriority\n";
+    }
+
     EV_INFO << "McApplication CV station " << egoStationId
         << " queued Accept after receiving Confirm"
         << ": requestId=" << static_cast<int>(command.requestId)
@@ -1096,12 +1649,32 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
 
     if (senderStationId == mRvTargetVehicle1 && !mRvAcceptReceived1) {
         mRvAcceptReceived1 = true;
+        if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mEgoContext.now
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " event=received-accept-1"
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " cvStation=" << senderStationId
+                << '\n';
+        }
         EV_INFO << "McApplication RV station " << mEgoContext.stationId
             << " received Accept 1 from CV " << senderStationId
             << " for requestId=" << static_cast<int>(mRvRequestId) << '\n';
     } else if (mRvNumberOfVehicles > 1 &&
             senderStationId == mRvTargetVehicle2 && !mRvAcceptReceived2) {
         mRvAcceptReceived2 = true;
+        if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mEgoContext.now
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " event=received-accept-2"
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " cvStation=" << senderStationId
+                << '\n';
+        }
         EV_INFO << "McApplication RV station " << mEgoContext.stationId
             << " received Accept 2 from CV " << senderStationId
             << " for requestId=" << static_cast<int>(mRvRequestId) << '\n';
@@ -1140,6 +1713,25 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     mMcmSubtype = mcmSubtype::Execute;
     mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressRV = coordinationProgressRV::SendExecute;
+    mMergingGapDiagActive = mEgoContext.routeId == scMergingRouteId;
+    mMergingGapDiagExecutionStart = mEgoContext.now;
+    mMergingGapDiagTargetCvStationId = mRvTargetVehicle1;
+    sampleMergingGapDiagnostics("execution-start");
+
+    if (mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
+            mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId) {
+        EV_INFO << "[MCM-LC-3VEH]"
+            << " simTime=" << mEgoContext.now
+            << " role=safety-critical-lane-change-rv"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " event=queued-execute-after-all-accepts"
+            << " requestId=" << static_cast<int>(command.requestId)
+            << " targetCv1=" << command.targetVehicle1
+            << " targetCv2=" << command.targetVehicle2
+            << " priority=HighPriority"
+            << " execution=lateral-control-not-implemented\n";
+    }
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
         << " queued Execute after receiving all Accepts"
@@ -1193,6 +1785,17 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressCV = coordinationProgressCV::SendExecuteCV;
 
+    if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
+        EV_INFO << "[MCM-LC-STATE]"
+            << " simTime=" << mEgoContext.now
+            << " role=target-cv"
+            << " station=" << egoStationId
+            << " event=received-execute"
+            << " requestId=" << static_cast<int>(mCvRequestId)
+            << " rvStation=" << mCvRvStationId
+            << " priority=HighPriority\n";
+    }
+
     // Store the CV-side negotiated trajectory reference.
     // During execution, the live plannedTrajectory/intent may continue updating;
     // this saved trajectory is used only to detect maneuver completion.
@@ -1210,6 +1813,123 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     //     << " received Execute for requestId " << static_cast<int>(mCvRequestId)
     //     << " from RV " << mCvRvStationId
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
+            mEmergencyReceived ||
+            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            mVehicleController->getVehicleId() == scEmergencyVehicleId) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasExecutionContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Abort) ||
+            snapshot.priorityManeuver != static_cast<long>(priorityMcmCategory::EmergencyPriority) ||
+            snapshot.plannedTrajectory.empty() || mEgoContext.plannedTrajectory.empty()) {
+        return;
+    }
+
+    const auto& emergencyPoint = snapshot.plannedTrajectory.front();
+    const auto& egoPoint = mEgoContext.plannedTrajectory.front();
+    if (mEgoContext.y >= 452368.0 || egoPoint.mY < emergencyPoint.mY) {
+        EV_INFO << "[MCM-EMERGENCY]"
+            << " simTime=" << mEgoContext.now
+            << " role=lane-1-follower"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " route=" << mEgoContext.routeId
+            << " event=emergency-mcm-ignored"
+            << " reason=not-behind-relevant-emergency-window"
+            << " egoY=" << egoPoint.mY
+            << " emergencyY=" << emergencyPoint.mY
+            << '\n';
+        return;
+    }
+
+    const omnetpp::SimTime eteDelay =
+        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+    const bool conflictAtMinimumGap = mTrajectoryPlanner.check_traj_conflict(
+        mEgoContext.plannedTrajectory,
+        snapshot.plannedTrajectory,
+        scSafetyCriticalTimeGap,
+        eteDelay);
+    const bool conflictAtCoordinationGap = mTrajectoryPlanner.check_traj_conflict(
+        mEgoContext.plannedTrajectory,
+        snapshot.plannedTrajectory,
+        scEmergencyCoordinationTimeGap,
+        eteDelay);
+    const double dx = egoPoint.mX - emergencyPoint.mX;
+    const double dy = egoPoint.mY - emergencyPoint.mY;
+    const double distanceGap = std::sqrt(dx * dx + dy * dy);
+    const double timeGap = mEgoContext.speed > 0.1 ? distanceGap / mEgoContext.speed : -1.0;
+    const double reactionWindow = timeGap >= 0.0 ? timeGap - scSafetyCriticalTimeGap : -1.0;
+    const bool safetyCritical = conflictAtCoordinationGap;
+
+    EV_INFO << "[MCM-EMERGENCY]"
+        << " simTime=" << mEgoContext.now
+        << " role=lane-1-follower"
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << mVehicleController->getVehicleId()
+        << " route=" << mEgoContext.routeId
+        << " laneIndex=" << mEgoContext.laneIndex
+        << " event=received-emergency-execution-mcm"
+        << " emergencyStation=" << snapshot.stationId
+        << " subtype=Abort"
+        << " priority=EmergencyPriority"
+        << " distanceGap=" << distanceGap
+        << " timeGap=" << timeGap
+        << " desiredMinimumTimeGap=" << scSafetyCriticalTimeGap
+        << " reactionWindow=" << reactionWindow
+        << " paperInitialTimeGap=" << scInitialPaperTimeGap
+        << " oldMinimumGapConflict=" << conflictAtMinimumGap
+        << " oldCoordinationGap=" << scEmergencyCoordinationTimeGap
+        << " oldCoordinationConflict=" << conflictAtCoordinationGap
+        << " safetyCritical=" << safetyCritical
+        << '\n';
+
+    if (!safetyCritical) {
+        EV_INFO << "[MCM-LC-TRIGGER]"
+            << " simTime=" << mEgoContext.now
+            << " role=lane-1-follower"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << mVehicleController->getVehicleId()
+            << " result=no-request"
+            << " reason=emergency-gap-not-safety-critical"
+            << " timeGap=" << timeGap
+            << " reactionWindow=" << reactionWindow
+            << '\n';
+        return;
+    }
+
+    mEmergencyReceived = true;
+    mEmergencyStationId = snapshot.stationId;
+    mEmergencyDistanceGap = distanceGap;
+    mEmergencyTimeGap = timeGap;
+    mEmergencyReactionWindow = reactionWindow;
+    mCooperatingVehicleType = cooperatingVehicleType::RV;
+    mCoordinationProgressRV = coordinationProgressRV::CheckForCoordination;
+    mControlManeuver = controlManeuver::ChangeLane;
+    mPriorityMcmCategory = priorityMcmCategory::HighPriority;
+
+    EV_INFO << "[MCM-LC-TRIGGER]"
+        << " simTime=" << mEgoContext.now
+        << " role=safety-critical-lane-change-rv"
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << mVehicleController->getVehicleId()
+        << " route=" << mEgoContext.routeId
+        << " laneIndex=" << mEgoContext.laneIndex
+        << " event=safety-critical-trigger-armed"
+        << " emergencyStation=" << mEmergencyStationId
+        << " distanceGap=" << mEmergencyDistanceGap
+        << " timeGap=" << mEmergencyTimeGap
+        << " reactionWindow=" << mEmergencyReactionWindow
+        << " priority=HighPriority"
+        << " controlManeuver=ChangeLane\n";
 }
 
 void McApplication::queueRepeatedExecute()
@@ -1290,6 +2010,7 @@ void McApplication::evaluateRvExecutionProgress()
     mPendingMcmCommand = command;
     mMcmSubtype = mcmSubtype::Cancel;
     mCoordinationProgressRV = coordinationProgressRV::SendComplete;
+    sampleMergingGapDiagnostics("rv-completion-queued");
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
         << " queued completion workaround after passing negotiated trajectory end"
@@ -1389,6 +2110,206 @@ bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
 
     return dy >= 0.0 ? mEgoContext.y >= lastPoint.mY : mEgoContext.y <= lastPoint.mY;
 }
+
+void McApplication::resetMergingGapDiagnostics()
+{
+    mMergingGapDiagActive = false;
+    mMergingGapDiagExecutionStart = omnetpp::SimTime::ZERO;
+    mMergingGapDiagTargetCvStationId = 0;
+    mMergingGapDiagMinDistance = 0.0;
+    mMergingGapDiagMinTimeGap = 0.0;
+    mMergingGapDiagMinDistanceAt = omnetpp::SimTime::ZERO;
+    mMergingGapDiagMinTimeGapAt = omnetpp::SimTime::ZERO;
+    mMergingGapDiagHasMinDistance = false;
+    mMergingGapDiagHasMinTimeGap = false;
+    mMergingGapDiagMinRvLaneId.clear();
+    mMergingGapDiagMinCvLaneId.clear();
+    mMergingGapDiagMinRvLaneIndex = -1;
+    mMergingGapDiagMinCvLaneIndex = -1;
+    mMergingGapDiagMinRvLanePosition = 0.0;
+    mMergingGapDiagMinCvX = 0.0;
+    mMergingGapDiagMinCvY = 0.0;
+    mMergingGapDiagMinRvX = 0.0;
+    mMergingGapDiagMinRvY = 0.0;
+}
+
+void McApplication::sampleMergingGapDiagnostics(const char* phase)
+{
+    EV_STATICCONTEXT;
+
+    if (!mMergingGapDiagActive || !mHasEgoContext || !mVehicleController ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
+            mEgoContext.routeId != scMergingRouteId) {
+        return;
+    }
+
+    const std::string rvVehicleId = mVehicleController->getVehicleId();
+    std::string rvLaneId = "unavailable";
+    int rvLaneIndex = mEgoContext.laneIndex;
+    double rvLanePosition = 0.0;
+    bool hasRvLanePosition = false;
+
+    try {
+        auto traci = mVehicleController->getTraCI();
+        if (traci) {
+            rvLaneId = traci->vehicle.getLaneID(rvVehicleId);
+            rvLaneIndex = traci->vehicle.getLaneIndex(rvVehicleId);
+            rvLanePosition = traci->vehicle.getLanePosition(rvVehicleId);
+            hasRvLanePosition = true;
+        }
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-GAP-DIAG]"
+            << " simTime=" << mEgoContext.now
+            << " side=RV"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << rvVehicleId
+            << " route=" << mEgoContext.routeId
+            << " phase=" << phase
+            << " rvTraCIQuery=failed"
+            << " reason=\"" << e.what() << "\"\n";
+    }
+
+    const uint32_t targets[] = { mRvTargetVehicle1, mRvTargetVehicle2 };
+    for (uint32_t targetStationId : targets) {
+        if (targetStationId == 0) {
+            continue;
+        }
+
+        const ReceivedMcm* latestTargetMcm = nullptr;
+        for (auto it = mReceivedMcmCache.rbegin(); it != mReceivedMcmCache.rend(); ++it) {
+            if (it->data.stationId == targetStationId) {
+                latestTargetMcm = &*it;
+                break;
+            }
+        }
+
+        if (!latestTargetMcm || latestTargetMcm->data.plannedTrajectory.empty()) {
+            EV_INFO << "[MCM-GAP-DIAG]"
+                << " simTime=" << mEgoContext.now
+                << " side=RV"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << rvVehicleId
+                << " route=" << mEgoContext.routeId
+                << " phase=" << phase
+                << " targetCvStation=" << targetStationId
+                << " targetCvSample=unavailable"
+                << " reason=no-latest-target-mcm-plannedTrajectory\n";
+            continue;
+        }
+
+        const auto& snapshot = latestTargetMcm->data;
+        const auto& cvPoint = snapshot.plannedTrajectory.front();
+        const double dx = cvPoint.mX - mEgoContext.x;
+        const double dy = cvPoint.mY - mEgoContext.y;
+        const double euclideanGap = std::sqrt(dx * dx + dy * dy);
+        const double signedYGap = cvPoint.mY - mEgoContext.y;
+        const double cvSpeed = snapshot.speedValue >= 0 && snapshot.speedValue < 16383 ?
+            static_cast<double>(snapshot.speedValue) / 100.0 : -1.0;
+        const double rvSpeedTimeGap = mEgoContext.speed > 0.1 ?
+            euclideanGap / mEgoContext.speed : -1.0;
+        const double closingSpeed = cvSpeed >= 0.0 ? mEgoContext.speed - cvSpeed : 0.0;
+        const double closingTimeGap = closingSpeed > 0.1 ? euclideanGap / closingSpeed : -1.0;
+        const int cvLaneIndex = snapshot.hasLaneId ? static_cast<int>(snapshot.laneId) : -1;
+        const std::string cvLaneId = snapshot.hasLaneId ? std::to_string(snapshot.laneId) : "unavailable";
+
+        if (!mMergingGapDiagHasMinDistance || euclideanGap < mMergingGapDiagMinDistance) {
+            mMergingGapDiagHasMinDistance = true;
+            mMergingGapDiagMinDistance = euclideanGap;
+            mMergingGapDiagMinDistanceAt = mEgoContext.now;
+            mMergingGapDiagTargetCvStationId = targetStationId;
+            mMergingGapDiagMinRvLaneId = rvLaneId;
+            mMergingGapDiagMinCvLaneId = cvLaneId;
+            mMergingGapDiagMinRvLaneIndex = rvLaneIndex;
+            mMergingGapDiagMinCvLaneIndex = cvLaneIndex;
+            mMergingGapDiagMinRvLanePosition = rvLanePosition;
+            mMergingGapDiagMinRvX = mEgoContext.x;
+            mMergingGapDiagMinRvY = mEgoContext.y;
+            mMergingGapDiagMinCvX = cvPoint.mX;
+            mMergingGapDiagMinCvY = cvPoint.mY;
+        }
+
+        if (rvSpeedTimeGap >= 0.0 &&
+                (!mMergingGapDiagHasMinTimeGap || rvSpeedTimeGap < mMergingGapDiagMinTimeGap)) {
+            mMergingGapDiagHasMinTimeGap = true;
+            mMergingGapDiagMinTimeGap = rvSpeedTimeGap;
+            mMergingGapDiagMinTimeGapAt = mEgoContext.now;
+        }
+
+        EV_INFO << "[MCM-GAP-DIAG]"
+            << " simTime=" << mEgoContext.now
+            << " side=RV"
+            << " station=" << mEgoContext.stationId
+            << " vehicleId=" << rvVehicleId
+            << " route=" << mEgoContext.routeId
+            << " phase=" << phase
+            << " targetCvStation=" << targetStationId
+            << " targetCvSample=latest-mcm-plannedTrajectory-front"
+            << " rvLaneId=" << rvLaneId
+            << " rvLaneIndex=" << rvLaneIndex
+            << " rvLanePosition=" << (hasRvLanePosition ? rvLanePosition : -1.0)
+            << " cvLaneId=" << cvLaneId
+            << " cvLaneIndex=" << cvLaneIndex
+            << " cvLanePosition=unavailable"
+            << " rvX=" << mEgoContext.x
+            << " rvY=" << mEgoContext.y
+            << " cvApproxX=" << cvPoint.mX
+            << " cvApproxY=" << cvPoint.mY
+            << " rvSpeed=" << mEgoContext.speed
+            << " cvSpeed=" << cvSpeed
+            << " approxEuclideanGap=" << euclideanGap
+            << " approxSignedYGap=" << signedYGap
+            << " approxTimeGapByRvSpeed=" << rvSpeedTimeGap
+            << " approxTimeGapByClosingSpeed=" << closingTimeGap
+            << " currentMinApproxEuclideanGap=" << mMergingGapDiagMinDistance
+            << " currentMinApproxTimeGapByRvSpeed="
+            << (mMergingGapDiagHasMinTimeGap ? mMergingGapDiagMinTimeGap : -1.0)
+            << '\n';
+    }
+}
+
+void McApplication::logMergingGapSummary(omnetpp::SimTime completionTime) const
+{
+    EV_STATICCONTEXT;
+
+    if (!mMergingGapDiagHasMinDistance) {
+        EV_INFO << "[MCM-GAP-DIAG]"
+            << " summary=rv-completion"
+            << " rvStation=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+            << " route=" << scMergingRouteId
+            << " executionStart=" << mMergingGapDiagExecutionStart
+            << " completionTime=" << completionTime
+            << " targetCvStation=" << mMergingGapDiagTargetCvStationId
+            << " result=no-gap-samples\n";
+        return;
+    }
+
+    EV_INFO << "[MCM-GAP-DIAG]"
+        << " summary=rv-completion"
+        << " rvStation=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " route=" << scMergingRouteId
+        << " executionStart=" << mMergingGapDiagExecutionStart
+        << " completionTime=" << completionTime
+        << " targetCvStationAtMin=" << mMergingGapDiagTargetCvStationId
+        << " minApproxEuclideanGap=" << mMergingGapDiagMinDistance
+        << " minGapAt=" << mMergingGapDiagMinDistanceAt
+        << " minApproxTimeGapByRvSpeed="
+        << (mMergingGapDiagHasMinTimeGap ? mMergingGapDiagMinTimeGap : -1.0)
+        << " minTimeGapAt="
+        << (mMergingGapDiagHasMinTimeGap ? mMergingGapDiagMinTimeGapAt : omnetpp::SimTime::ZERO)
+        << " rvLaneIdAtMin=" << mMergingGapDiagMinRvLaneId
+        << " rvLaneIndexAtMin=" << mMergingGapDiagMinRvLaneIndex
+        << " rvLanePositionAtMin=" << mMergingGapDiagMinRvLanePosition
+        << " cvLaneIdAtMin=" << mMergingGapDiagMinCvLaneId
+        << " cvLaneIndexAtMin=" << mMergingGapDiagMinCvLaneIndex
+        << " rvXAtMin=" << mMergingGapDiagMinRvX
+        << " rvYAtMin=" << mMergingGapDiagMinRvY
+        << " cvApproxXAtMin=" << mMergingGapDiagMinCvX
+        << " cvApproxYAtMin=" << mMergingGapDiagMinCvY
+        << " cvPositionSourceAtMin=latest-mcm-plannedTrajectory-front\n";
+}
+
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const
 {
     const auto millis = static_cast<uint64_t>(now.inUnit(omnetpp::SIMTIME_MS));

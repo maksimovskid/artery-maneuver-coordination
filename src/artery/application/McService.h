@@ -98,6 +98,11 @@ private:
         vanetza::asn1::Mcm&,
         const VehicleDataProvider&) const;
 
+    void addManeuverExecutionContainer(
+        vanetza::asn1::Mcm&,
+        const VehicleDataProvider&,
+        const mcm::PendingMcmCommand&) const;
+
     // Facilities-layer state
     ChannelNumber mPrimaryChannel = channel::CCH;
     const NetworkInterfaceTable* mNetworkInterfaceTable = nullptr;

@@ -114,6 +114,16 @@ const char* mcmSubtypeName(mcm::mcmSubtype subtype)
             return "Accept";
         case mcm::mcmSubtype::Reject:
             return "Reject";
+        case mcm::mcmSubtype::Offer:
+            return "Offer";
+        case mcm::mcmSubtype::Confirm:
+            return "Confirm";
+        case mcm::mcmSubtype::Execute:
+            return "Execute";
+        case mcm::mcmSubtype::Cancel:
+            return "Cancel";
+        case mcm::mcmSubtype::Abort:
+            return "Abort";
         default:
             return "Negotiation";
     }
@@ -458,6 +468,19 @@ void McService::sendMcm(const SimTime& T_now)
             << " target1=" << command->targetVehicle1
             << " target2=" << command->targetVehicle2
             << " requestedTrajectoryPoints=" << command->requestedTrajectory.size() << '\n';
+    } else if (command && command->kind == mcm::PendingMcmCommand::Kind::Execution) {
+        addManeuverExecutionContainer(mcmMessage, *mVehicleDataProvider, *command);
+        // The generated MCMextra CooperationID descriptor has no constraint
+        // callback, so asn_check_constraints() dereferences null for execution
+        // containers. Keep validation for minimal/negotiation MCMs, but skip it
+        // here to preserve the legacy execution-container emergency workaround.
+        EV_INFO << "McService serialized " << mcmSubtypeName(command->subtype)
+            << " execution MCM: cooperationId="
+            << static_cast<int>(command->requestId)
+            << " priority=" << static_cast<int>(command->priority)
+            << " target1=" << command->targetVehicle1
+            << " target2=" << command->targetVehicle2
+            << '\n';
     } else if (mSendNegotiationTestMcm) {
         addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider);
         std::string error;
@@ -735,6 +758,26 @@ void McService::addManeuverExecutionContainer(vanetza::asn1::Mcm& message, const
     execution->priorityManeuver = PriorityManeuver_low;
     execution->cooperationID = 0;
     execution->cooperationVehicleID1 = vdp.station_id();
+    execution->cooperationVehicleID2 = nullptr;
+}
+
+void McService::addManeuverExecutionContainer(
+    vanetza::asn1::Mcm& message,
+    const VehicleDataProvider&,
+    const mcm::PendingMcmCommand& command) const
+{
+    ManeuverExecutionContainer_t*& execution = (*message).mcm.mcmParameters.maneuverExecutionContainer;
+
+    execution = vanetza::asn1::allocate<ManeuverExecutionContainer_t>();
+    execution->mcmCategory = mcmSubtypeToAsnCategory(command.subtype);
+    execution->priorityManeuver = priorityToAsnPriority(command.priority);
+    execution->cooperationID = command.requestId;
+    execution->cooperationVehicleID1 = command.targetVehicle1;
+    execution->cooperationVehicleID2 = nullptr;
+    if (command.hasTargetVehicle2) {
+        execution->cooperationVehicleID2 = vanetza::asn1::allocate<StationID_t>();
+        *execution->cooperationVehicleID2 = command.targetVehicle2;
+    }
 }
 
 vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
@@ -808,13 +851,23 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             return;
         }
 
-        std::string error;
-        if (!decodedMcm->validate(error)) {
-            EV_WARN << "McService receive: invalid MCM, dropping packet: " << error << '\n';
-            return;
+        const MCM_t& message = **decodedMcm;
+        const bool hasExecutionContainer = message.mcm.mcmParameters.maneuverExecutionContainer != nullptr;
+        if (!hasExecutionContainer) {
+            std::string error;
+            if (!decodedMcm->validate(error)) {
+                EV_WARN << "McService receive: invalid MCM, dropping packet: " << error << '\n';
+                return;
+            }
+            EV_DETAIL << "McService receive: decoded and validated MCM, emitting McmReceived\n";
+        } else {
+            // The generated MCMextra CooperationID descriptor has no constraint
+            // callback. Skip validation for execution-container MCMs for the
+            // same reason as the send path, while preserving validation for
+            // minimal and negotiation MCMs.
+            EV_DETAIL << "McService receive: decoded execution-container MCM, emitting McmReceived\n";
         }
 
-        EV_DETAIL << "McService receive: decoded and validated MCM, emitting McmReceived\n";
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
         if (!mLocalDynamicMapMCM) {
@@ -826,7 +879,6 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             EV_WARN << "McService receive: LocalDynamicMapMCM unavailable; validated MCM awareness not stored\n";
         }
 
-        const MCM_t& message = *obj.asn1();
         mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
     } catch (const std::exception& e) {
         EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';
