@@ -356,6 +356,7 @@ void McService::initialize()
     mDccRestriction = par("withDccRestriction");
     mFixedRate = par("fixedRate");
     mFixedRateInterval = par("fixedRateInterval");
+    mNegotiationRetryInterval = par("negotiationRetryInterval");
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
     mUsePrerecordedIntentTrajectory = par("usePrerecordedIntentTrajectory").boolValue();
     mPrerecordedTrajectoryCsv = par("prerecordedTrajectoryCsv").stdstringValue();
@@ -391,6 +392,7 @@ void McService::initialize()
     }
     mApplication.reset(new mcm::McApplication());
     mApplication->initialize(mVehicleController, mVehicleDataProvider);
+    mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
 }
 
 void McService::trigger()

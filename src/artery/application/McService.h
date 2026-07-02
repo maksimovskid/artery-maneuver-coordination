@@ -130,6 +130,7 @@ private:
     bool mDccRestriction = false;
     bool mFixedRate = false;
     omnetpp::SimTime mFixedRateInterval;
+    omnetpp::SimTime mNegotiationRetryInterval;
 
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;

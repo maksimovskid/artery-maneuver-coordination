@@ -195,6 +195,7 @@ public:
     McApplication() = default;
 
     void initialize(traci::VehicleController*, const VehicleDataProvider*);
+    void setNegotiationRetryInterval(omnetpp::SimTime interval);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -225,6 +226,7 @@ private:
 
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
+    void evaluateRvRequestRetry(omnetpp::SimTime now);
     void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
     void evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now);
     void logScenarioVehicleLifetime(omnetpp::SimTime now);
@@ -243,6 +245,7 @@ private:
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
     void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
+    void logNegotiationTrace(const char* action, const McmSnapshot& snapshot, omnetpp::SimTime time) const;
     bool hasReachedActiveNegotiatedTrajectoryEnd() const;
     void queueRepeatedExecute();
     void resetMergingGapDiagnostics();
@@ -275,6 +278,7 @@ private:
     McEgoContext mEgoContext;
     std::optional<PendingMcmCommand> mPendingMcmCommand;
     bool mMergingRequestQueuedOrSent = false;
+    omnetpp::SimTime mNegotiationRetryInterval = 0.1;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;
@@ -289,6 +293,8 @@ private:
     bool mRvOfferReceived1 = false;
     bool mRvOfferReceived2 = false;
     bool mRvConfirmQueuedOrSent = false;
+    omnetpp::SimTime mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasRvLastRequestQueuedAt = false;
 
     // RV-side state for final Accept responses after Confirm.
     bool mRvAcceptReceived1 = false;
