@@ -229,6 +229,8 @@ private:
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateRvRequestRetry(omnetpp::SimTime now);
     void evaluateRvConfirmRetry(omnetpp::SimTime now);
+    void evaluateCvOfferRetry(omnetpp::SimTime now);
+    void evaluateCvAcceptRetry(omnetpp::SimTime now);
     void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
     void evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now);
     void logScenarioVehicleLifetime(omnetpp::SimTime now);
@@ -288,6 +290,13 @@ private:
     bool mCvResponseQueuedOrSent = false;
     uint32_t mCvRvStationId = 0;
     uint8_t mCvRequestId = 0;
+    uint8_t mCvResponseNumberOfVehicles = 1;
+    omnetpp::SimTime mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasCvLastOfferQueuedAt = false;
+    omnetpp::SimTime mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasCvLastAcceptQueuedAt = false;
+    omnetpp::SimTime mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    bool mHasCvNegotiationStartedAt = false;
 
     // RV-side state for the active merging Request.
     uint8_t mRvRequestId = 0;
