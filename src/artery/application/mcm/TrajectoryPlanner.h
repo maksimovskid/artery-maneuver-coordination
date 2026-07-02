@@ -30,6 +30,7 @@ struct State {
 
 struct FrontVehicleInfo {
 	int frontVehID;
+	std::string frontVehicleId;
 	bool sameEdgeLane;
 	double distance;
 	double speed;

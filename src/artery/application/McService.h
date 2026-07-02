@@ -31,6 +31,7 @@ class VehicleDataProvider;
 class NetworkInterfaceTable;
 class Timer;
 class LocalDynamicMapMCM;
+class LocalEnvironmentModel;
 
 class McService : public ItsG5BaseService
 {
@@ -109,6 +110,7 @@ private:
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
     const Timer* mTimer = nullptr;
     LocalDynamicMapMCM* mLocalDynamicMapMCM = nullptr;
+    const LocalEnvironmentModel* mLocalEnvironmentModel = nullptr;
 
     // CA-service-style generation state
     omnetpp::SimTime mGenMcmMin;

@@ -5,6 +5,7 @@
 
 #include <boost/units/systems/si/length.hpp>
 
+#include <exception>
 #include <iostream>
 #include <string>
 
@@ -45,9 +46,14 @@ FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
     FrontVehicleInfo FVinfo;
 
     FVinfo.frontVehID = 1;
+    FVinfo.frontVehicleId = "";
     FVinfo.sameEdgeLane = false;
     FVinfo.distance = 999.0;
     FVinfo.speed = 99.0;
+
+    if (!mLocalEnvironmentModel || !mVehicleController) {
+        return FVinfo;
+    }
 
     const auto& objects = mLocalEnvironmentModel->allObjects();
 
@@ -73,8 +79,16 @@ FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
             continue;
         }
 
-        const std::string other_RoadID = vehicle_api.getRoadID(other_vehicle_id);
-        const int other_LaneIndex = vehicle_api.getLaneIndex(other_vehicle_id);
+        std::string other_RoadID;
+        int other_LaneIndex = -1;
+        double otherSpeed = 99.0;
+        try {
+            other_RoadID = vehicle_api.getRoadID(other_vehicle_id);
+            other_LaneIndex = vehicle_api.getLaneIndex(other_vehicle_id);
+            otherSpeed = vehicle_api.getSpeed(other_vehicle_id);
+        } catch (const std::exception&) {
+            continue;
+        }
 
         if (!artery::mcm::checkIfSameEdgeAndLane(
                 ego_RoadID,
@@ -94,9 +108,10 @@ FrontVehicleInfo TrajectoryPlanner::getFrontVehicleInfo()
 
         if (distance < FVinfo.distance) {
             FVinfo.frontVehID = 1;  // dummy, because other_vehicle_id is string
+            FVinfo.frontVehicleId = other_vehicle_id;
             FVinfo.sameEdgeLane = true;
             FVinfo.distance = distance;
-            FVinfo.speed = vehicle_api.getSpeed(other_vehicle_id);
+            FVinfo.speed = otherSpeed;
         }
     }
 

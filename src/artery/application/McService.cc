@@ -9,6 +9,7 @@
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
 #include "artery/application/mcm/TrajectoryCsv.h"
+#include "artery/envmod/LocalEnvironmentModel.h"
 #include "artery/utility/round.h"
 #include "artery/traci/VehicleController.h"
 
@@ -345,6 +346,11 @@ void McService::initialize()
     mTimer = &getFacilities().get_const<Timer>();
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
     mVehicleController = getFacilities().get_mutable_ptr<traci::VehicleController>();
+    if (auto* host = findHost()) {
+        if (auto* environmentModelModule = host->getSubmodule("environmentModel")) {
+            mLocalEnvironmentModel = static_cast<const LocalEnvironmentModel*>(environmentModelModule);
+        }
+    }
 
     mLastMcmTimestamp = simTime();
     mGenMcmMin = par("minInterval");
@@ -365,7 +371,7 @@ void McService::initialize()
     mPrerecordedTrajectorySteps = par("prerecordedTrajectorySteps").intValue();
     mPrerecordedTrajectoryDt = par("prerecordedTrajectoryDt").doubleValue();
     mPrerecordedTrajectorySteps = std::max(1, std::min(mPrerecordedTrajectorySteps, scMaxTrajectoryMcmPoints));
-    mTrajectoryPlanner.initialize(mVehicleController, mVehicleDataProvider, nullptr);
+    mTrajectoryPlanner.initialize(mVehicleController, mVehicleDataProvider, mLocalEnvironmentModel);
 
     if (mUsePrerecordedIntentTrajectory) {
         if (!mVehicleController) {
@@ -393,7 +399,7 @@ void McService::initialize()
         }
     }
     mApplication.reset(new mcm::McApplication());
-    mApplication->initialize(mVehicleController, mVehicleDataProvider);
+    mApplication->initialize(mVehicleController, mVehicleDataProvider, mLocalEnvironmentModel);
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,

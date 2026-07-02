@@ -20,6 +20,7 @@ class VehicleController;
 namespace artery
 {
 class VehicleDataProvider;
+class LocalEnvironmentModel;
 
 namespace mcm
 {
@@ -194,7 +195,7 @@ class McApplication
 public:
     McApplication() = default;
 
-    void initialize(traci::VehicleController*, const VehicleDataProvider*);
+    void initialize(traci::VehicleController*, const VehicleDataProvider*, const LocalEnvironmentModel* = nullptr);
     void setNegotiationRetryInterval(omnetpp::SimTime interval);
     void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
     void updateEgoContext(const McEgoContext&);
@@ -225,6 +226,24 @@ private:
         RestoreNormalSpeed
     };
 
+    struct CvCooperationDecision {
+        bool feasible = false;
+        mcmSubtype responseSubtype = mcmSubtype::Reject;
+        controlManeuver selectedManeuver = controlManeuver::DoNothing;
+        TrajectoryPlanner::Trajectory selectedTrajectory;
+        PlannedTrajValues plannedValues { 0.0, 0.0, 0.0, false, 1.0, 3.0 };
+        double cooperationCost = 0.0;
+        double threshold = 0.0;
+        int trajectoryType = 10;
+        int possiblePriorityLevel = 10;
+        bool conflictWithRequestedTrajectory = false;
+        bool leaderSeen = false;
+        std::string leaderVehicleId;
+        double leaderDistance = 999.0;
+        double leaderSpeed = 99.0;
+        std::string reason;
+    };
+
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateRvRequestRetry(omnetpp::SimTime now);
@@ -243,14 +262,17 @@ private:
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
+    CvCooperationDecision evaluateCvCooperationDecision(const ReceivedMcm&);
     void handleReceivedCancelAsCv(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
+    void handleReceivedRejectAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
     void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
     void logNegotiationTrace(const char* action, const McmSnapshot& snapshot, omnetpp::SimTime time) const;
     bool hasReachedActiveNegotiatedTrajectoryEnd() const;
+    void applyEmergencyFallbackBrake(const char* event, const char* reason, uint8_t requestId);
     void queueRepeatedExecute();
     void resetMergingGapDiagnostics();
     void sampleMergingGapDiagnostics(const char* phase);
@@ -259,6 +281,7 @@ private:
 
     traci::VehicleController* mVehicleController = nullptr;
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
+    const LocalEnvironmentModel* mLocalEnvironmentModel = nullptr;
     TrajectoryPlanner mTrajectoryPlanner;
     operationMode mOperationMode = operationMode::IntentionSharingMode;
     mcmSubtype mMcmSubtype = mcmSubtype::Regular;
@@ -338,11 +361,18 @@ private:
 
     bool mEmergencyBrakeApplied = false;
     bool mEmergencyMcmQueued = false;
+    bool mEmergencyBroadcastStarted = false;
+    bool mEmergencyBroadcastFinished = false;
+    omnetpp::SimTime mEmergencyBroadcastStartedAt = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime mLastEmergencyMcmQueuedAt = omnetpp::SimTime::ZERO;
+    bool mHasLastEmergencyMcmQueuedAt = false;
+    unsigned mEmergencyMcmCount = 0;
     bool mScenarioVehicleFirstSeenLogged = false;
     bool mScenarioVehicleNearEmergencyLogged = false;
     bool mScenarioVehicleAfterEmergencyLogged = false;
     bool mEmergencyTriggerWaitingLogged = false;
     bool mEmergencyReceived = false;
+    bool mEmergencyAlreadyArmedLogged = false;
     bool mLaneChangeRequestQueuedOrSent = false;
     bool mLaneChangeStateLogged = false;
     bool mLaneChangeThreeVehiclePath = false;
