@@ -254,10 +254,14 @@ private:
     void evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now);
     void logScenarioVehicleLifetime(omnetpp::SimTime now);
     void applyRvExecutionControl();
+    void applySafetyCriticalLaneChangeExecutionControl();
     void applyCvDecelerationControl();
     void applyCvAccelerationControl();
     void applyCvLaneChangeControl();
+    void monitorCvExecutionControl();
     void restoreCvSpeedControl();
+    bool canRestoreNormalSpeedFromLeader(double desiredSpeed);
+    void restoreNormalSpeedIfSafe(const char* role, uint8_t requestId);
     void classifyCvMergingControlManeuver(const ReceivedMcm&);
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
@@ -358,7 +362,19 @@ private:
     bool mCvDecelerationControlSkippedLogged = false;
     bool mCvAccelerationControlApplied = false;
     bool mCvLaneChangeControlLogged = false;
+    bool mCvTargetSpeedReachedLogged = false;
+    bool mCvRestoreNormalSpeedSkippedLogged = false;
+    bool mCvStoppedDecelerationForRvLogged = false;
 
+    // High-priority lane-change RV execution state. The old scenario uses ten
+    // small moveToXY steps, so the state must survive across service ticks.
+    bool mSafetyCriticalLaneChangeExecutionActive = false;
+    int mLaneChangeMoveStepCounter = 0;
+    omnetpp::SimTime mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
+
+    // Emergency V0 broadcasts an execution-container Abort at 10 Hz for 15 s.
+    // This preserves the old emergency-MCM workaround and yields about 150 MCMs.
     bool mEmergencyBrakeApplied = false;
     bool mEmergencyMcmQueued = false;
     bool mEmergencyBroadcastStarted = false;

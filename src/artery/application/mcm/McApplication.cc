@@ -4,10 +4,13 @@
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
+#include <libsumo/TraCIConstants.h>
+
 #include <algorithm>
 #include <cmath>
 #include <exception>
 #include <iostream> // temporary MCM_DEBUG prints
+#include <limits>
 
 namespace artery
 {
@@ -195,10 +198,12 @@ void McApplication::tick(omnetpp::SimTime now)
     evaluateCvAcceptRetry(now);
     evaluateSafetyCriticalLaneChangeTrigger(now);
     applyRvExecutionControl();
+    applySafetyCriticalLaneChangeExecutionControl();
     sampleMergingGapDiagnostics("tick");
     applyCvDecelerationControl();
     applyCvAccelerationControl();
     applyCvLaneChangeControl();
+    monitorCvExecutionControl();
     evaluateRvExecutionProgress();
     evaluateCvExecutionProgress();
 }
@@ -297,6 +302,11 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
         mHasLastExecuteQueuedAt = false;
         mRvMergingExecutionControlLogged = false;
+        mSafetyCriticalLaneChangeExecutionActive = false;
+        mLaneChangeMoveStepCounter = 0;
+        mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;
+        mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
+        mControlManeuver = controlManeuver::DoNothing;
         resetMergingGapDiagnostics();
 
         EV_INFO << "McApplication RV station completed coordination workaround"
@@ -350,6 +360,9 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mCvDecelerationControlSkippedLogged = false;
         mCvAccelerationControlApplied = false;
         mCvLaneChangeControlLogged = false;
+        mCvTargetSpeedReachedLogged = false;
+        mCvRestoreNormalSpeedSkippedLogged = false;
+        mCvStoppedDecelerationForRvLogged = false;
 
         EV_INFO << "McApplication CV station completed coordination workaround"
             << " and returned to IntentionSharingMode\n";
@@ -378,6 +391,9 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCvDecelerationControlSkippedLogged = false;
             mCvAccelerationControlApplied = false;
             mCvLaneChangeControlLogged = false;
+            mCvTargetSpeedReachedLogged = false;
+            mCvRestoreNormalSpeedSkippedLogged = false;
+            mCvStoppedDecelerationForRvLogged = false;
         }
         mCvResponseQueuedOrSent = true;
     }
@@ -467,6 +483,13 @@ void McApplication::clearCommand()
     mCvDecelerationControlSkippedLogged = false;
     mCvAccelerationControlApplied = false;
     mCvLaneChangeControlLogged = false;
+    mCvTargetSpeedReachedLogged = false;
+    mCvRestoreNormalSpeedSkippedLogged = false;
+    mCvStoppedDecelerationForRvLogged = false;
+    mSafetyCriticalLaneChangeExecutionActive = false;
+    mLaneChangeMoveStepCounter = 0;
+    mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;
+    mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
     mPendingMcmCommand.reset();
 }
 
@@ -512,6 +535,331 @@ void McApplication::applyRvExecutionControl()
     }
 }
 
+bool McApplication::canRestoreNormalSpeedFromLeader(double desiredSpeed)
+{
+    if (!mHasEgoContext || !mVehicleController) {
+        return false;
+    }
+
+    FrontVehicleInfo frontInfo;
+    try {
+        frontInfo = mTrajectoryPlanner.getFrontVehicleInfo();
+    } catch (const std::exception&) {
+        return false;
+    }
+
+    if (!frontInfo.sameEdgeLane) {
+        return true;
+    }
+
+    const double timeGap = calculateTimeGap(frontInfo.distance, std::max(0.1, desiredSpeed));
+    const double ttc = calculateTTC(desiredSpeed, frontInfo.speed, frontInfo.distance);
+
+    // Speed hand-back is intentionally conservative: after RV/CV execution,
+    // raising max speed is allowed only when the existing environment-model
+    // leader is faster or far enough away. This avoids unsafe recovery surges.
+    return frontInfo.speed >= desiredSpeed ||
+        (frontInfo.distance > 10.0 && timeGap >= scSafetyCriticalTimeGap && ttc >= 2.0);
+}
+
+void McApplication::restoreNormalSpeedIfSafe(const char* role, uint8_t requestId)
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+    FrontVehicleInfo frontInfo;
+    try {
+        frontInfo = mTrajectoryPlanner.getFrontVehicleInfo();
+    } catch (const std::exception&) {
+        frontInfo = {};
+        frontInfo.distance = 999.0;
+        frontInfo.speed = 99.0;
+    }
+
+    const double desiredSpeed = scNormalHighwaySpeed;
+    const double timeGap = frontInfo.sameEdgeLane ?
+        calculateTimeGap(frontInfo.distance, std::max(0.1, mEgoContext.speed)) :
+        std::numeric_limits<double>::infinity();
+    const double ttc = frontInfo.sameEdgeLane ?
+        calculateTTC(mEgoContext.speed, frontInfo.speed, frontInfo.distance) :
+        std::numeric_limits<double>::infinity();
+
+    // Normal-speed restoration is shared by RV and CV execution completion.
+    // It is deliberately gated by the leader check instead of blindly restoring
+    // 27.77 m/s, because the emergency lane-change case can leave a close
+    // front vehicle in the target lane.
+    if (!canRestoreNormalSpeedFromLeader(desiredSpeed)) {
+        EV_INFO << "[MCM-CV-CONTROL]"
+            << " simTime=" << mEgoContext.now
+            << " event=restore-normal-speed-skipped"
+            << " role=" << role
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(requestId)
+            << " currentSpeed=" << mEgoContext.speed
+            << " targetSpeed=" << desiredSpeed
+            << " currentLane=" << mEgoContext.laneIndex
+            << " currentX=" << mEgoContext.x
+            << " currentY=" << mEgoContext.y
+            << " frontVehicleId=" << frontInfo.frontVehicleId
+            << " frontDistance=" << frontInfo.distance
+            << " frontSpeed=" << frontInfo.speed
+            << " timeGap=" << timeGap
+            << " ttc=" << ttc
+            << " reason=leader-condition-not-safe\n";
+        return;
+    }
+
+    try {
+        mVehicleController->setSpeedMode(vehicleId, 31);
+        mVehicleController->setMaxSpeed(desiredSpeed * boost::units::si::meter_per_second);
+        if (mCvAccelerationControlApplied) {
+            mVehicleController->setSpeed(desiredSpeed * boost::units::si::meter_per_second);
+        }
+        EV_INFO << "[MCM-CV-CONTROL]"
+            << " simTime=" << mEgoContext.now
+            << " event=restore-normal-speed"
+            << " role=" << role
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(requestId)
+            << " currentSpeed=" << mEgoContext.speed
+            << " targetSpeed=" << desiredSpeed
+            << " currentLane=" << mEgoContext.laneIndex
+            << " currentX=" << mEgoContext.x
+            << " currentY=" << mEgoContext.y
+            << " frontVehicleId=" << frontInfo.frontVehicleId
+            << " frontDistance=" << frontInfo.distance
+            << " frontSpeed=" << frontInfo.speed
+            << " timeGap=" << timeGap
+            << " ttc=" << ttc
+            << " reason=leader-condition-safe\n";
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-CV-CONTROL]"
+            << " simTime=" << mEgoContext.now
+            << " event=restore-normal-speed-skipped"
+            << " role=" << role
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(requestId)
+            << " reason=traci-exception"
+            << " error=\"" << e.what() << "\"\n";
+    }
+}
+
+void McApplication::applySafetyCriticalLaneChangeExecutionControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mPriorityMcmCategory != priorityMcmCategory::HighPriority ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
+            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            (mControlManeuver != controlManeuver::ChangeLane &&
+                mControlManeuver != controlManeuver::LaneChangeExecution)) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+    int laneIndex = mEgoContext.laneIndex;
+    double currentX = mEgoContext.x;
+    double currentY = mEgoContext.y;
+    double currentSpeed = mEgoContext.speed;
+
+    try {
+        laneIndex = mVehicleController->getTraCI()->vehicle.getLaneIndex(vehicleId);
+        const auto position = mVehicleController->getPositionSumo();
+        currentX = position.x / boost::units::si::meter;
+        currentY = position.y / boost::units::si::meter;
+        currentSpeed = mVehicleController->getTraCI()->vehicle.getSpeed(vehicleId);
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-LC-EXEC]"
+            << " simTime=" << mEgoContext.now
+            << " event=moveToXY-failed"
+            << " role=RV"
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " reason=traci-state-read-failed"
+            << " error=\"" << e.what() << "\"\n";
+        applyEmergencyFallbackBrake("moveToXY-failed-brake", "traci-state-read-failed", mRvRequestId);
+        return;
+    }
+
+    if (!mSafetyCriticalLaneChangeExecutionActive) {
+        mSafetyCriticalLaneChangeExecutionActive = true;
+        mLaneChangeMoveStepCounter = 0;
+        mSafetyCriticalLaneChangeExecutionStartedAt = mEgoContext.now;
+        mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
+        mControlManeuver = controlManeuver::LaneChangeExecution;
+
+        EV_INFO << "[MCM-LC-EXEC]"
+            << " simTime=" << mEgoContext.now
+            << " event=lane-change-execution-start"
+            << " role=RV"
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " currentSpeed=" << currentSpeed
+            << " currentLane=" << laneIndex
+            << " currentX=" << currentX
+            << " currentY=" << currentY
+            << " stepCounter=" << mLaneChangeMoveStepCounter
+            << '\n';
+    }
+
+    // The RV keeps monitoring the environment-model front vehicle while moving
+    // laterally. If the target lane becomes unsafe, execution falls back to
+    // braking instead of continuing the moveToXY sequence.
+    FrontVehicleInfo frontInfo;
+    try {
+        frontInfo = mTrajectoryPlanner.getFrontVehicleInfo();
+    } catch (const std::exception&) {
+        frontInfo = {};
+        frontInfo.distance = 999.0;
+        frontInfo.speed = 99.0;
+    }
+
+    const double timeGap = frontInfo.sameEdgeLane ?
+        calculateTimeGap(frontInfo.distance, std::max(0.1, currentSpeed)) :
+        std::numeric_limits<double>::infinity();
+    const double ttc = frontInfo.sameEdgeLane ?
+        calculateTTC(currentSpeed, frontInfo.speed, frontInfo.distance) :
+        std::numeric_limits<double>::infinity();
+
+    EV_INFO << "[MCM-LC-EXEC]"
+        << " simTime=" << mEgoContext.now
+        << " event=execution-monitor"
+        << " role=RV"
+        << " vehicleId=" << vehicleId
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " currentSpeed=" << currentSpeed
+        << " currentLane=" << laneIndex
+        << " currentX=" << currentX
+        << " currentY=" << currentY
+        << " stepCounter=" << mLaneChangeMoveStepCounter
+        << " frontVehicleId=" << frontInfo.frontVehicleId
+        << " frontDistance=" << frontInfo.distance
+        << " frontSpeed=" << frontInfo.speed
+        << " timeGap=" << timeGap
+        << " ttc=" << ttc
+        << '\n';
+
+    const bool unsafeFrontVehicle =
+        frontInfo.sameEdgeLane &&
+        (frontInfo.distance < 5.0 || timeGap < 0.3 || ttc < 1.0);
+    if (unsafeFrontVehicle) {
+        EV_WARN << "[MCM-LC-FAILSAFE]"
+            << " simTime=" << mEgoContext.now
+            << " event=unsafe-front-vehicle-brake"
+            << " role=RV"
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " currentSpeed=" << currentSpeed
+            << " currentLane=" << laneIndex
+            << " currentX=" << currentX
+            << " currentY=" << currentY
+            << " frontVehicleId=" << frontInfo.frontVehicleId
+            << " frontDistance=" << frontInfo.distance
+            << " frontSpeed=" << frontInfo.speed
+            << " timeGap=" << timeGap
+            << " ttc=" << ttc
+            << " reason=unsafe-front-vehicle\n";
+        applyEmergencyFallbackBrake("unsafe-front-vehicle-brake", "unsafe-front-vehicle", mRvRequestId);
+        return;
+    }
+
+    if (mLaneChangeMoveStepCounter >= 10) {
+        if (mSafetyCriticalLaneChangeExecutionActive) {
+            EV_INFO << "[MCM-LC-EXEC]"
+                << " simTime=" << mEgoContext.now
+                << " event=lane-change-execution-complete"
+                << " role=RV"
+                << " vehicleId=" << vehicleId
+                << " station=" << mEgoContext.stationId
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " currentSpeed=" << currentSpeed
+                << " currentLane=" << laneIndex
+                << " currentX=" << currentX
+                << " currentY=" << currentY
+                << " stepCounter=" << mLaneChangeMoveStepCounter
+                << '\n';
+        }
+        mSafetyCriticalLaneChangeExecutionActive = false;
+        mControlManeuver = controlManeuver::DoNothing;
+        restoreNormalSpeedIfSafe("RV", mRvRequestId);
+        return;
+    }
+
+    // Old safety-critical lane-change execution is a scenario-specific
+    // positive-X shift: 3.2 m lane width over 10 ticks, so 0.32 m each step.
+    // The longitudinal step follows the old y -= speed / 10 pattern.
+    const double targetX = currentX + 0.32;
+    const double targetY = currentY - currentSpeed / 10.0;
+
+    try {
+        // Use SUMO/libsumo's invalid-angle sentinel. A NaN angle produced
+        // invalid environment-model polygons during execution validation.
+        mVehicleController->moveToXY(
+            vehicleId,
+            "-1",
+            laneIndex,
+            targetX,
+            targetY,
+            libsumo::INVALID_DOUBLE_VALUE,
+            3);
+        ++mLaneChangeMoveStepCounter;
+        mLastSafetyCriticalLaneChangeMoveAt = mEgoContext.now;
+
+        EV_INFO << "[MCM-LC-EXEC]"
+            << " simTime=" << mEgoContext.now
+            << " event=moveToXY-step"
+            << " role=RV"
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " currentSpeed=" << currentSpeed
+            << " currentLane=" << laneIndex
+            << " currentX=" << currentX
+            << " currentY=" << currentY
+            << " targetX=" << targetX
+            << " targetY=" << targetY
+            << " stepCounter=" << mLaneChangeMoveStepCounter
+            << " frontVehicleId=" << frontInfo.frontVehicleId
+            << " frontDistance=" << frontInfo.distance
+            << " frontSpeed=" << frontInfo.speed
+            << " timeGap=" << timeGap
+            << " ttc=" << ttc
+            << '\n';
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-LC-EXEC]"
+            << " simTime=" << mEgoContext.now
+            << " event=moveToXY-failed"
+            << " role=RV"
+            << " vehicleId=" << vehicleId
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << static_cast<int>(mRvRequestId)
+            << " currentSpeed=" << currentSpeed
+            << " currentLane=" << laneIndex
+            << " currentX=" << currentX
+            << " currentY=" << currentY
+            << " targetX=" << targetX
+            << " targetY=" << targetY
+            << " stepCounter=" << mLaneChangeMoveStepCounter
+            << " reason=moveToXY-exception"
+            << " error=\"" << e.what() << "\"\n";
+        applyEmergencyFallbackBrake("moveToXY-failed-brake", "moveToXY-exception", mRvRequestId);
+    }
+}
+
 void McApplication::applyCvDecelerationControl()
 {
     EV_STATICCONTEXT;
@@ -553,6 +901,9 @@ void McApplication::applyCvDecelerationControl()
     mVehicleController->setSpeedMode(vehicleId, 31);
     mVehicleController->slowDown(vehicleId, mTargetSpeed, mCommandDuration);
     mCvDecelerationControlApplied = true;
+    mCvTargetSpeedReachedLogged = false;
+    mCvRestoreNormalSpeedSkippedLogged = false;
+    mCvStoppedDecelerationForRvLogged = false;
 
     EV_INFO << "McApplication applied highway-merging CV deceleration control"
         << ": station=" << mEgoContext.stationId
@@ -609,6 +960,7 @@ void McApplication::applyCvAccelerationControl()
     mVehicleController->setSpeed(targetSpeed * boost::units::si::meter_per_second);
     mVehicleController->setMaxSpeed(targetSpeed * boost::units::si::meter_per_second);
     mCvAccelerationControlApplied = true;
+    mCvRestoreNormalSpeedSkippedLogged = false;
 
     EV_INFO << "McApplication applied highway-merging CV acceleration control"
         << ": station=" << mEgoContext.stationId
@@ -673,6 +1025,261 @@ void McApplication::applyCvLaneChangeControl()
     mCvLaneChangeControlLogged = true;
 }
 
+void McApplication::monitorCvExecutionControl()
+{
+    EV_STATICCONTEXT;
+
+    if (!mVehicleController || !mHasEgoContext ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
+            mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV) {
+        return;
+    }
+
+    const std::string& vehicleId = mVehicleController->getVehicleId();
+    int laneIndex = mEgoContext.laneIndex;
+    double currentX = mEgoContext.x;
+    double currentY = mEgoContext.y;
+    double currentSpeed = mEgoContext.speed;
+
+    try {
+        laneIndex = mVehicleController->getTraCI()->vehicle.getLaneIndex(vehicleId);
+        const auto position = mVehicleController->getPositionSumo();
+        currentX = position.x / boost::units::si::meter;
+        currentY = position.y / boost::units::si::meter;
+        currentSpeed = mVehicleController->getTraCI()->vehicle.getSpeed(vehicleId);
+    } catch (const std::exception& e) {
+        EV_WARN << "[MCM-CV-CONTROL]"
+            << " simTime=" << mEgoContext.now
+            << " event=execution-monitor"
+            << " cvVehicleId=" << vehicleId
+            << " cvStation=" << mEgoContext.stationId
+            << " rvStation=" << mCvRvStationId
+            << " requestId=" << static_cast<int>(mCvRequestId)
+            << " selectedAction=" << controlManeuverName(mControlManeuver)
+            << " reason=traci-state-read-failed"
+            << " error=\"" << e.what() << "\"\n";
+        return;
+    }
+
+    FrontVehicleInfo frontInfo;
+    try {
+        frontInfo = mTrajectoryPlanner.getFrontVehicleInfo();
+    } catch (const std::exception&) {
+        frontInfo = {};
+        frontInfo.distance = 999.0;
+        frontInfo.speed = 99.0;
+    }
+
+    const double frontTimeGap = frontInfo.sameEdgeLane ?
+        calculateTimeGap(frontInfo.distance, std::max(0.1, currentSpeed)) :
+        std::numeric_limits<double>::infinity();
+    const double frontTtc = frontInfo.sameEdgeLane ?
+        calculateTTC(currentSpeed, frontInfo.speed, frontInfo.distance) :
+        std::numeric_limits<double>::infinity();
+
+    // During execution the CV monitors both its own environment-model leader
+    // and the latest RV MCM. This keeps accepted acceleration/deceleration
+    // bounded after the message handshake has completed.
+    const McmSnapshot* rvSnapshot = nullptr;
+    for (auto it = mReceivedMcmCache.rbegin(); it != mReceivedMcmCache.rend(); ++it) {
+        if (it->data.stationId == mCvRvStationId && !it->data.plannedTrajectory.empty()) {
+            rvSnapshot = &it->data;
+            break;
+        }
+    }
+
+    int rvLane = -1;
+    double rvX = 0.0;
+    double rvY = 0.0;
+    double rvSpeed = -1.0;
+    double rvDistance = -1.0;
+    double rvTimeGap = -1.0;
+    bool rvSameLane = false;
+    bool rvAhead = false;
+    bool laneWorkaroundApplied = false;
+
+    if (rvSnapshot) {
+        const auto& rvPoint = rvSnapshot->plannedTrajectory.front();
+        rvX = rvPoint.mX;
+        rvY = rvPoint.mY;
+        rvLane = rvSnapshot->hasLaneId ? static_cast<int>(rvSnapshot->laneId) : -1;
+        if (rvPoint.mY > 452365.0 && rvLane >= 0) {
+            ++rvLane;
+            laneWorkaroundApplied = true;
+        }
+        rvSpeed = rvSnapshot->speedValue >= 0 && rvSnapshot->speedValue < 16383 ?
+            static_cast<double>(rvSnapshot->speedValue) / 100.0 : -1.0;
+        rvDistance = getDistance(currentX, currentY, rvX, rvY);
+        rvTimeGap = currentSpeed > 0.1 ? rvDistance / currentSpeed : -1.0;
+        rvSameLane = rvLane == laneIndex;
+        rvAhead = currentY >= rvY;
+    }
+
+    EV_INFO << "[MCM-CV-CONTROL]"
+        << " simTime=" << mEgoContext.now
+        << " event=execution-monitor"
+        << " role=CV"
+        << " cvVehicleId=" << vehicleId
+        << " cvStation=" << mEgoContext.stationId
+        << " rvStation=" << mCvRvStationId
+        << " requestId=" << static_cast<int>(mCvRequestId)
+        << " priority=" << priorityName(static_cast<long>(mPriorityMcmCategory))
+        << " selectedAction=" << controlManeuverName(mControlManeuver)
+        << " currentSpeed=" << currentSpeed
+        << " targetSpeed=" << mTargetSpeed
+        << " currentLane=" << laneIndex
+        << " currentX=" << currentX
+        << " currentY=" << currentY
+        << " frontVehicleId=" << frontInfo.frontVehicleId
+        << " frontDistance=" << frontInfo.distance
+        << " frontSpeed=" << frontInfo.speed
+        << " timeGap=" << frontTimeGap
+        << " ttc=" << frontTtc
+        << " rvSeen=" << (rvSnapshot != nullptr)
+        << " rvLane=" << rvLane
+        << " rvLaneWorkaroundApplied=" << laneWorkaroundApplied
+        << " rvX=" << rvX
+        << " rvY=" << rvY
+        << " rvSpeed=" << rvSpeed
+        << " rvDistance=" << rvDistance
+        << " rvTimeGap=" << rvTimeGap
+        << " rvSameLane=" << rvSameLane
+        << " rvAhead=" << rvAhead
+        << '\n';
+
+    if (mControlManeuver == controlManeuver::Decelerate && mTargetSpeed > 0.0) {
+        if (currentSpeed <= mTargetSpeed + 1.0) {
+            try {
+                mVehicleController->setMaxSpeed(mTargetSpeed * boost::units::si::meter_per_second);
+            } catch (const std::exception& e) {
+                EV_WARN << "[MCM-CV-CONTROL]"
+                    << " simTime=" << mEgoContext.now
+                    << " event=target-speed-reached"
+                    << " cvVehicleId=" << vehicleId
+                    << " cvStation=" << mEgoContext.stationId
+                    << " requestId=" << static_cast<int>(mCvRequestId)
+                    << " targetSpeed=" << mTargetSpeed
+                    << " applied=false"
+                    << " reason=traci-exception"
+                    << " error=\"" << e.what() << "\"\n";
+            }
+
+            if (!mCvTargetSpeedReachedLogged) {
+                EV_INFO << "[MCM-CV-CONTROL]"
+                    << " simTime=" << mEgoContext.now
+                    << " event=target-speed-reached"
+                    << " cvVehicleId=" << vehicleId
+                    << " cvStation=" << mEgoContext.stationId
+                    << " rvStation=" << mCvRvStationId
+                    << " requestId=" << static_cast<int>(mCvRequestId)
+                    << " currentSpeed=" << currentSpeed
+                    << " targetSpeed=" << mTargetSpeed
+                    << " currentLane=" << laneIndex
+                    << " frontVehicleId=" << frontInfo.frontVehicleId
+                    << " frontDistance=" << frontInfo.distance
+                    << " frontSpeed=" << frontInfo.speed
+                    << " timeGap=" << frontTimeGap
+                    << " ttc=" << frontTtc
+                    << '\n';
+                mCvTargetSpeedReachedLogged = true;
+            }
+
+            if (frontInfo.sameEdgeLane && frontInfo.speed > currentSpeed &&
+                    canRestoreNormalSpeedFromLeader(scNormalHighwaySpeed)) {
+                restoreNormalSpeedIfSafe("CV", mCvRequestId);
+            } else if (!mCvRestoreNormalSpeedSkippedLogged) {
+                EV_INFO << "[MCM-CV-CONTROL]"
+                    << " simTime=" << mEgoContext.now
+                    << " event=restore-normal-speed-skipped"
+                    << " role=CV"
+                    << " cvVehicleId=" << vehicleId
+                    << " cvStation=" << mEgoContext.stationId
+                    << " rvStation=" << mCvRvStationId
+                    << " requestId=" << static_cast<int>(mCvRequestId)
+                    << " currentSpeed=" << currentSpeed
+                    << " targetSpeed=" << scNormalHighwaySpeed
+                    << " currentLane=" << laneIndex
+                    << " frontVehicleId=" << frontInfo.frontVehicleId
+                    << " frontDistance=" << frontInfo.distance
+                    << " frontSpeed=" << frontInfo.speed
+                    << " timeGap=" << frontTimeGap
+                    << " ttc=" << frontTtc
+                    << " reason=leader-condition-not-safe-or-not-faster\n";
+                mCvRestoreNormalSpeedSkippedLogged = true;
+            }
+        }
+
+        if (rvSnapshot && rvSameLane && rvAhead && rvSpeed > currentSpeed &&
+                !mCvStoppedDecelerationForRvLogged) {
+            // Once the RV is in front and faster, the old behavior stops
+            // unnecessary CV deceleration, but only if the CV's own leader
+            // constraints allow a safe return toward normal speed.
+            if (canRestoreNormalSpeedFromLeader(scNormalHighwaySpeed)) {
+                try {
+                    mVehicleController->setSpeedMode(vehicleId, 31);
+                    mVehicleController->slowDown(vehicleId, currentSpeed, 0.1);
+                    mVehicleController->setSpeed(scNormalHighwaySpeed * boost::units::si::meter_per_second);
+                    mVehicleController->setMaxSpeed(scNormalHighwaySpeed * boost::units::si::meter_per_second);
+                    mControlManeuver = controlManeuver::DoNothing;
+                    mCvStoppedDecelerationForRvLogged = true;
+
+                    EV_INFO << "[MCM-CV-CONTROL]"
+                        << " simTime=" << mEgoContext.now
+                        << " event=stop-deceleration-rv-ahead-faster"
+                        << " cvVehicleId=" << vehicleId
+                        << " cvStation=" << mEgoContext.stationId
+                        << " rvStation=" << mCvRvStationId
+                        << " requestId=" << static_cast<int>(mCvRequestId)
+                        << " currentSpeed=" << currentSpeed
+                        << " targetSpeed=" << scNormalHighwaySpeed
+                        << " currentLane=" << laneIndex
+                        << " rvLane=" << rvLane
+                        << " rvSpeed=" << rvSpeed
+                        << " rvDistance=" << rvDistance
+                        << " rvTimeGap=" << rvTimeGap
+                        << " frontVehicleId=" << frontInfo.frontVehicleId
+                        << " frontDistance=" << frontInfo.distance
+                        << " frontSpeed=" << frontInfo.speed
+                        << " reason=rv-ahead-faster-and-leader-safe\n";
+                } catch (const std::exception& e) {
+                    EV_WARN << "[MCM-CV-CONTROL]"
+                        << " simTime=" << mEgoContext.now
+                        << " event=restore-normal-speed-skipped"
+                        << " role=CV"
+                        << " cvVehicleId=" << vehicleId
+                        << " cvStation=" << mEgoContext.stationId
+                        << " requestId=" << static_cast<int>(mCvRequestId)
+                        << " reason=traci-exception"
+                        << " error=\"" << e.what() << "\"\n";
+                }
+            } else if (!mCvRestoreNormalSpeedSkippedLogged) {
+                EV_INFO << "[MCM-CV-CONTROL]"
+                    << " simTime=" << mEgoContext.now
+                    << " event=restore-normal-speed-skipped"
+                    << " role=CV"
+                    << " cvVehicleId=" << vehicleId
+                    << " cvStation=" << mEgoContext.stationId
+                    << " rvStation=" << mCvRvStationId
+                    << " requestId=" << static_cast<int>(mCvRequestId)
+                    << " currentSpeed=" << currentSpeed
+                    << " targetSpeed=" << scNormalHighwaySpeed
+                    << " currentLane=" << laneIndex
+                    << " rvLane=" << rvLane
+                    << " rvSpeed=" << rvSpeed
+                    << " rvDistance=" << rvDistance
+                    << " frontVehicleId=" << frontInfo.frontVehicleId
+                    << " frontDistance=" << frontInfo.distance
+                    << " frontSpeed=" << frontInfo.speed
+                    << " timeGap=" << frontTimeGap
+                    << " ttc=" << frontTtc
+                    << " reason=rv-ahead-faster-but-leader-not-safe\n";
+                mCvRestoreNormalSpeedSkippedLogged = true;
+            }
+        }
+    }
+}
+
 void McApplication::restoreCvSpeedControl()
 {
     EV_STATICCONTEXT;
@@ -682,22 +1289,14 @@ void McApplication::restoreCvSpeedControl()
         return;
     }
 
-    const std::string& vehicleId = mVehicleController->getVehicleId();
     const bool restoredAfterAcceleration = mCvAccelerationControlApplied;
     const bool restoredAfterDeceleration = mCvDecelerationControlApplied;
 
-    // Legacy highway restore uses 27.77 m/s as the normal mainline speed.
-    // Deceleration completion only restored maxSpeed; acceleration changed both
-    // speed and maxSpeed, so restore both in that case.
-    mVehicleController->setSpeedMode(vehicleId, 31);
-    if (restoredAfterAcceleration) {
-        mVehicleController->setSpeed(27.77 * boost::units::si::meter_per_second);
-    }
-    mVehicleController->setMaxSpeed(27.77 * boost::units::si::meter_per_second);
+    restoreNormalSpeedIfSafe("CV", mCvRequestId);
 
     EV_INFO << "McApplication restored highway-merging CV speed control"
         << ": station=" << mEgoContext.stationId
-        << " vehicleId=" << vehicleId
+        << " vehicleId=" << mVehicleController->getVehicleId()
         << " speedMode=31 normalSpeed=27.77"
         << " restoredAfterDeceleration=" << restoredAfterDeceleration
         << " restoredAfterAcceleration=" << restoredAfterAcceleration
@@ -991,6 +1590,10 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
+    mSafetyCriticalLaneChangeExecutionActive = false;
+    mLaneChangeMoveStepCounter = 0;
+    mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;
+    mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
     resetMergingGapDiagnostics();
 
     mCooperatingVehicleType = cooperatingVehicleType::RV;
@@ -1578,6 +2181,9 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     const bool withinBroadcastWindow =
         emergencyElapsed >= 0.0 && emergencyElapsed < scEmergencyBroadcastDuration;
 
+    // Old emergency signaling is represented as an execution-container
+    // Abort with EmergencyPriority. Sending every 0.1 s for 15 s gives the
+    // expected 10 Hz broadcast window, approximately 150 emergency MCMs.
     if (!mEmergencyBroadcastStarted && withinBroadcastWindow) {
         mEmergencyBroadcastStarted = true;
         mEmergencyBroadcastStartedAt = now;
@@ -1622,6 +2228,9 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     if (emergencySendDue) {
         PendingMcmCommand command;
         command.kind = PendingMcmCommand::Kind::Execution;
+        // Complete emergency semantics are not available in the current MCM
+        // model, so the old implementation's Abort + EmergencyPriority
+        // execution-container workaround is preserved here.
         command.subtype = mcmSubtype::Abort;
         command.priority = priorityMcmCategory::EmergencyPriority;
         command.cooperationType = 0;
@@ -1854,6 +2463,9 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     uint32_t target1 = 0;
     uint32_t target2 = 0;
 
+    // Arming the emergency response does not by itself send a Request. The RV
+    // still scans target-lane MCM trajectories and selects only CVs whose
+    // planned trajectories conflict with the intended lane-change trajectory.
     for (const auto& received : mReceivedMcmCache) {
         const auto& snapshot = received.data;
         if (snapshot.stationId == mEgoContext.stationId || snapshot.stationId == mEmergencyStationId ||
@@ -2028,6 +2640,9 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
 {
     EV_STATICCONTEXT;
 
+    // This wrapper only gathers request context, leader information, and log
+    // fields. Feasibility, candidate trajectory generation, and cooperation
+    // cost stay in TrajectoryPlanner::findSuitableTrajectoryCV().
     CvCooperationDecision decision;
     const auto& snapshot = received.data;
     const uint32_t egoStationId = mVehicleDataProvider ? mVehicleDataProvider->station_id() : 0;
@@ -2070,6 +2685,9 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
 
     FrontVehicleInfo leaderInfo;
     try {
+        // Leader/front-vehicle constraints come from the existing local
+        // environment model through TrajectoryPlanner; do not create a parallel
+        // perception path for CV decisions.
         leaderInfo = mTrajectoryPlanner.getFrontVehicleInfo();
     } catch (const std::exception& e) {
         EV_WARN << "[MCM-CV-DECISION]"
@@ -2183,6 +2801,9 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
         const bool priorityAllowsCost =
             decision.possiblePriorityLevel >= 0 &&
             decision.possiblePriorityLevel <= requestPriority;
+        // Old priority-level ordering is numeric severity:
+        // 0 = Low, 1 = Medium, 2 = High. A request may accept a cooperation
+        // trajectory whose required priority is less than or equal to its own.
         const bool leaderBlocksAcceleration =
             decision.selectedManeuver == controlManeuver::Accelerate &&
             decision.leaderSeen &&
@@ -2526,6 +3147,9 @@ void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
     mCvDecelerationControlSkippedLogged = false;
     mCvAccelerationControlApplied = false;
     mCvLaneChangeControlLogged = false;
+    mCvTargetSpeedReachedLogged = false;
+    mCvRestoreNormalSpeedSkippedLogged = false;
+    mCvStoppedDecelerationForRvLogged = false;
 
     EV_INFO << "McApplication CV station " << mEgoContext.stationId
         << " rolled back coordination after receiving Cancel from RV"
@@ -2856,7 +3480,7 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
             << " targetCv1=" << command.targetVehicle1
             << " targetCv2=" << command.targetVehicle2
             << " priority=HighPriority"
-            << " execution=lateral-control-not-implemented\n";
+            << " execution=moveToXY-10-step-monitoring\n";
     }
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
@@ -3040,6 +3664,9 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
     const double ttc = relativeSpeed > 0.1 ? distanceGap / relativeSpeed : -1.0;
     const double reactionWindow = timeGap >= 0.0 ? timeGap - scSafetyCriticalTimeGap : -1.0;
 
+    // Same lane and ahead are the trigger gates for arming the emergency
+    // lane-change search. Gap, TTC, and reaction window stay diagnostic here;
+    // target-lane trajectory conflict detection decides whether a Request is sent.
     EV_INFO << "[MCM-EMERGENCY]"
         << " simTime=" << mEgoContext.now
         << " role=lane-1-follower"
@@ -3083,6 +3710,8 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         return;
     }
 
+    // These old conflict checks are logged for comparison with the thesis
+    // behavior, but they are not a hard gate for arming the safety-critical RV.
     const omnetpp::SimTime eteDelay =
         std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
     const bool conflictAtMinimumGap = mTrajectoryPlanner.check_traj_conflict(
@@ -3167,6 +3796,8 @@ void McApplication::applyEmergencyFallbackBrake(
     constexpr double targetSpeed = 0.1;
     constexpr double decelerationTime = 1.0;
 
+    // Reject, negotiation timeout, unsafe front vehicle, and moveToXY failure
+    // all use the same RV safety fallback: brake and clear active coordination.
     if (mVehicleController) {
         const std::string& vehicleId = mVehicleController->getVehicleId();
         try {
@@ -3214,6 +3845,10 @@ void McApplication::applyEmergencyFallbackBrake(
     mHasRvNegotiationStartedAt = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
+    mSafetyCriticalLaneChangeExecutionActive = false;
+    mLaneChangeMoveStepCounter = 0;
+    mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;
+    mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
     mOperationMode = operationMode::IntentionSharingMode;
     mMcmSubtype = mcmSubtype::Regular;
     mCooperatingVehicleType = cooperatingVehicleType::NCV;
