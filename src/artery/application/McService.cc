@@ -781,10 +781,18 @@ void McService::addManeuverExecutionContainer(
     execution->cooperationID = command.requestId;
     execution->cooperationVehicleID1 = command.targetVehicle1;
     execution->cooperationVehicleID2 = nullptr;
-    if (command.hasTargetVehicle2) {
+
+    if (command.hasTargetVehicle2 && command.numberOfVehicles > 1) {
         execution->cooperationVehicleID2 = vanetza::asn1::allocate<StationID_t>();
         *execution->cooperationVehicleID2 = command.targetVehicle2;
     }
+
+    EV_INFO << "McService serialized execution " << mcmSubtypeName(command.subtype)
+        << " container: requestId=" << static_cast<int>(command.requestId)
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " cooperationVehicleID1=" << command.targetVehicle1
+        << " cooperationVehicleID2=" << command.targetVehicle2
+        << '\n';
 }
 
 vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
