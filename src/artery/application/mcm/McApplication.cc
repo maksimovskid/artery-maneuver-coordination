@@ -11,6 +11,7 @@
 #include <exception>
 #include <iostream> // temporary MCM_DEBUG prints
 #include <limits>
+#include <unordered_map>
 
 namespace artery
 {
@@ -40,6 +41,7 @@ constexpr double scMergingTimeGap = 1.2;
 constexpr int scRequestTrajectorySteps = 20;
 constexpr double scRequestTrajectoryDt = 0.25;
 constexpr std::size_t scMaxReceivedMcmCache = 256;
+constexpr double scMergeTargetMaxSnapshotAge = 0.6;
 
 priorityMcmCategory priorityFromMcm(long priority)
 {
@@ -93,6 +95,16 @@ const char* priorityName(long priority)
         return "EmergencyPriority";
     }
     return "NoPriority";
+}
+
+const char* operationModeName(operationMode mode)
+{
+    switch (mode) {
+        case operationMode::IntentionSharingMode: return "IntentionSharingMode";
+        case operationMode::ManeuverNegotiationMode: return "ManeuverNegotiationMode";
+        case operationMode::ManeuverExecutionMode: return "ManeuverExecutionMode";
+        default: return "Unknown";
+    }
 }
 
 bool isHighwayMergingCvRoute(const std::string& routeId)
@@ -276,6 +288,39 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCoordinationProgressRV == coordinationProgressRV::SendComplete &&
             mcm.data.requestId == mRvRequestId) {
         logMergingGapSummary(mcm.sentAt);
+
+        if (mEgoContext.routeId == scMergingRouteId && mVehicleController) {
+            const std::string& vehicleId = mVehicleController->getVehicleId();
+            try {
+                // route_merging_1 uses speedMode 0 only for the active
+                // right-of-way workaround. After the Complete-as-Cancel has
+                // been sent, hand control back to SUMO safety checks so the
+                // merged RV does not keep ignoring downstream leaders.
+                mVehicleController->setSpeedMode(vehicleId, 31);
+                const bool restoreNormalSpeed = canRestoreNormalSpeedFromLeader(scNormalHighwaySpeed);
+                if (restoreNormalSpeed) {
+                    mVehicleController->setMaxSpeed(scNormalHighwaySpeed * boost::units::si::meter_per_second);
+                }
+                EV_INFO << "[MCM-MERGE-CONTROL]"
+                    << " simTime=" << mcm.sentAt
+                    << " event=rv-speedmode-restored-after-completion"
+                    << " vehicleId=" << vehicleId
+                    << " station=" << mEgoContext.stationId
+                    << " requestId=" << static_cast<int>(mRvRequestId)
+                    << " speedMode=31"
+                    << " normalSpeedRestored=" << restoreNormalSpeed
+                    << '\n';
+            } catch (const std::exception& e) {
+                EV_WARN << "[MCM-MERGE-CONTROL]"
+                    << " simTime=" << mcm.sentAt
+                    << " event=rv-speedmode-restore-failed"
+                    << " vehicleId=" << vehicleId
+                    << " station=" << mEgoContext.stationId
+                    << " requestId=" << static_cast<int>(mRvRequestId)
+                    << " reason=" << e.what()
+                    << '\n';
+            }
+        }
 
         mCoordinationProgressRV = coordinationProgressRV::CompleteSent;
         mOperationMode = operationMode::IntentionSharingMode;
@@ -1497,55 +1542,195 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         return;
     }
 
-    unsigned considered = 0;
-    uint32_t target1 = 0;
-    uint32_t target2 = 0;
-    unsigned conflicts = 0;
+    struct MergeTargetCandidate {
+        uint32_t stationId = 0;
+        double signedLongitudinalGap = 0.0;
+        double absLongitudinalGap = 0.0;
+        double euclideanDistance = 0.0;
+        double rvY = 0.0;
+        double cvY = 0.0;
+        omnetpp::SimTime age = omnetpp::SimTime::ZERO;
+        bool legacyPointConflict = false;
+    };
 
+    std::unordered_map<uint32_t, const ReceivedMcm*> latestByStation;
     for (const auto& received : mReceivedMcmCache) {
-        const auto& snapshot = received.data;
-        if (snapshot.stationId == mEgoContext.stationId || !snapshot.hasLaneId ||
-                snapshot.laneId != 0 || snapshot.plannedTrajectory.empty()) {
+        const auto stationId = received.data.stationId;
+        if (stationId == 0) {
             continue;
         }
+        const auto previous = latestByStation.find(stationId);
+        if (previous == latestByStation.end() ||
+                previous->second->receivedAt < received.receivedAt) {
+            latestByStation[stationId] = &received;
+        }
+    }
 
-        const auto& first = snapshot.plannedTrajectory.front();
-        if (first.mX == 1.0 && first.mY == 1.0) {
+    unsigned considered = 0;
+    unsigned skippedBusy = 0;
+    unsigned skippedStale = 0;
+    unsigned skippedLane = 0;
+    unsigned skippedTrajectory = 0;
+    unsigned legacyPointConflicts = 0;
+    std::vector<MergeTargetCandidate> candidates;
+
+    for (const auto& item : latestByStation) {
+        const auto& received = *item.second;
+        const auto& snapshot = received.data;
+        if (snapshot.stationId == mEgoContext.stationId) {
             continue;
         }
 
         ++considered;
 
-        if (first.mY <= scHighwayLane0MinY || first.mY >= scHighwayLane0MaxY) {
+        const omnetpp::SimTime age = std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
+        if (age.dbl() > scMergeTargetMaxSnapshotAge) {
+            ++skippedStale;
             continue;
         }
 
-        const omnetpp::SimTime eteDelay = std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
-        const bool conflict = mTrajectoryPlanner.check_traj_conflict_merging(
+        if (snapshot.operationMode != operationMode::IntentionSharingMode ||
+                snapshot.hasNegotiationContainer || snapshot.hasExecutionContainer) {
+            ++skippedBusy;
+            EV_INFO << "[MCM-MERGE-TARGET]"
+                << " t=" << now
+                << " event=skip-busy-candidate"
+                << " rvStation=" << mEgoContext.stationId
+                << " candidateStation=" << snapshot.stationId
+                << " operationMode=" << operationModeName(snapshot.operationMode)
+                << " hasNegotiationContainer=" << snapshot.hasNegotiationContainer
+                << " hasExecutionContainer=" << snapshot.hasExecutionContainer
+                << " age=" << age
+                << '\n';
+            continue;
+        }
+
+        if (!snapshot.hasLaneId || snapshot.laneId != 0) {
+            ++skippedLane;
+            continue;
+        }
+
+        if (snapshot.plannedTrajectory.empty()) {
+            ++skippedTrajectory;
+            continue;
+        }
+
+        const auto& first = snapshot.plannedTrajectory.front();
+        if (first.mX == 1.0 && first.mY == 1.0) {
+            ++skippedTrajectory;
+            continue;
+        }
+
+        if (first.mY <= scHighwayLane0MinY || first.mY >= scHighwayLane0MaxY) {
+            ++skippedLane;
+            continue;
+        }
+
+        const bool legacyPointConflict = mTrajectoryPlanner.check_traj_conflict_merging(
             mEgoContext.plannedTrajectory,
             snapshot.plannedTrajectory,
             scMergingTimeGap,
-            eteDelay,
+            age,
             true);
 
-        if (!conflict) {
+        const std::size_t rvIndex = mEgoContext.plannedTrajectory.size() - 1;
+        const std::size_t cvIndex = std::min(rvIndex, snapshot.plannedTrajectory.size() - 1);
+        const auto& rvPoint = mEgoContext.plannedTrajectory[rvIndex];
+        const auto& cvPoint = snapshot.plannedTrajectory[cvIndex];
+        const double signedLongitudinalGap = cvPoint.mY - rvPoint.mY;
+        const double dx = cvPoint.mX - rvPoint.mX;
+        const double dy = cvPoint.mY - rvPoint.mY;
+
+        MergeTargetCandidate candidate;
+        candidate.stationId = snapshot.stationId;
+        candidate.signedLongitudinalGap = signedLongitudinalGap;
+        candidate.absLongitudinalGap = std::abs(signedLongitudinalGap);
+        candidate.euclideanDistance = std::sqrt(dx * dx + dy * dy);
+        candidate.rvY = rvPoint.mY;
+        candidate.cvY = cvPoint.mY;
+        candidate.age = age;
+        candidate.legacyPointConflict = legacyPointConflict;
+
+        const double mergeGapWindow =
+            std::max(desiredDistanceGap, scMergingTimeGap * std::max(mEgoContext.speed, 1.0) * 2.5);
+        if (candidate.absLongitudinalGap > mergeGapWindow) {
             continue;
         }
 
-        EV_INFO << "McApplication route_merging_1 conflict found with station "
-            << snapshot.stationId << '\n';
+        candidates.push_back(candidate);
+        if (legacyPointConflict) {
+            ++legacyPointConflicts;
+        }
 
-        if (target1 == 0 || target1 == snapshot.stationId) {
-            target1 = snapshot.stationId;
-            ++conflicts;
-        } else if (target2 == 0 && target1 != snapshot.stationId) {
-            target2 = snapshot.stationId;
-            ++conflicts;
+        EV_INFO << "[MCM-MERGE-TARGET]"
+            << " t=" << now
+            << " event=gap-candidate"
+            << " rvStation=" << mEgoContext.stationId
+            << " candidateStation=" << snapshot.stationId
+            << " laneId=" << snapshot.laneId
+            << " operationMode=" << operationModeName(snapshot.operationMode)
+            << " age=" << age
+            << " rvY=" << candidate.rvY
+            << " cvY=" << candidate.cvY
+            << " signedLongitudinalGap=" << candidate.signedLongitudinalGap
+            << " absLongitudinalGap=" << candidate.absLongitudinalGap
+            << " euclideanDistance=" << candidate.euclideanDistance
+            << " mergeGapWindow=" << mergeGapWindow
+            << " legacyPointConflict=" << candidate.legacyPointConflict
+            << '\n';
+    }
+
+    auto closerToGap = [](const MergeTargetCandidate& lhs, const MergeTargetCandidate& rhs) {
+        if (lhs.absLongitudinalGap != rhs.absLongitudinalGap) {
+            return lhs.absLongitudinalGap < rhs.absLongitudinalGap;
+        }
+        return lhs.stationId < rhs.stationId;
+    };
+
+    std::vector<MergeTargetCandidate> behind;
+    std::vector<MergeTargetCandidate> ahead;
+    for (const auto& candidate : candidates) {
+        if (candidate.signedLongitudinalGap < 0.0) {
+            behind.push_back(candidate);
+        } else {
+            ahead.push_back(candidate);
+        }
+    }
+    std::sort(behind.begin(), behind.end(), closerToGap);
+    std::sort(ahead.begin(), ahead.end(), closerToGap);
+    std::sort(candidates.begin(), candidates.end(), closerToGap);
+
+    uint32_t target1 = 0;
+    uint32_t target2 = 0;
+    if (!behind.empty() && !ahead.empty()) {
+        target1 = behind.front().stationId;
+        target2 = ahead.front().stationId;
+    } else if (!candidates.empty()) {
+        target1 = candidates.front().stationId;
+        if (candidates.size() > 1) {
+            target2 = candidates[1].stationId;
         }
     }
 
+    EV_INFO << "[MCM-MERGE-TARGET]"
+        << " t=" << now
+        << " event=selection-summary"
+        << " rvStation=" << mEgoContext.stationId
+        << " latestStations=" << latestByStation.size()
+        << " considered=" << considered
+        << " skippedBusy=" << skippedBusy
+        << " skippedStale=" << skippedStale
+        << " skippedLane=" << skippedLane
+        << " skippedTrajectory=" << skippedTrajectory
+        << " gapCandidates=" << candidates.size()
+        << " legacyPointConflicts=" << legacyPointConflicts
+        << " target1=" << target1
+        << " target2=" << target2
+        << '\n';
+
     EV_INFO << "McApplication route_merging_1 considered " << considered
-        << " received planned trajectories; conflicts=" << conflicts << '\n';
+        << " latest planned trajectories; gapCandidates=" << candidates.size()
+        << " legacyPointConflicts=" << legacyPointConflicts << '\n';
 
     if (target1 == 0) {
         return;
@@ -3333,6 +3518,8 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
     mPendingMcmCommand = command;
     mMcmSubtype = mcmSubtype::Accept;
     mCoordinationProgressCV = coordinationProgressCV::SendAccept;
+    mCvLastAcceptQueuedAt = received.receivedAt;
+    mHasCvLastAcceptQueuedAt = true;
 
     if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
         EV_INFO << "[MCM-LC-STATE]"
