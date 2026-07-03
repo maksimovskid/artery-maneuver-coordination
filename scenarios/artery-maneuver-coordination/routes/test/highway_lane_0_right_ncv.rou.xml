@@ -8,6 +8,10 @@
    <!-- shortened routes -->  
     <route edges="266507545 266507540 27392720  27392724 266507546 266507536" color="yellow" id="route_highway_0_right_ncv"/>
 
+   <!-- Emergency-lane-change validation background traffic.
+        These right-lane vehicles make the intended left lane change toward
+        route_highway_2 unambiguous. They are SUMO background vehicles, not
+        target CVs for MCM negotiation. -->
    	<vehicle id="car_ncv_right_1" type="car_hl" route="route_highway_0_right_ncv" depart="1.2" departLane="0" departSpeed="max" color="blue"/>  
    	<vehicle id="car_ncv_right_2" type="car_hl" route="route_highway_0_right_ncv" depart="3.4" departLane="0" departSpeed="max" color="blue"/>  
  	<vehicle id="car_ncv_right_3" type="car_hl" route="route_highway_0_right_ncv" depart="5.6" departLane="0" departSpeed="max" color="blue"/>     

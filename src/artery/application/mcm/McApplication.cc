@@ -1,6 +1,7 @@
 #include "artery/application/mcm/McApplication.h"
 
 #include "artery/application/VehicleDataProvider.h"
+#include "artery/application/mcm/McScenarioConfig.h"
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
@@ -20,28 +21,29 @@ namespace mcm
 
 namespace
 {
-constexpr const char* scMergingRouteId = "route_merging_1";
-constexpr const char* scEmergencyVehicleId = "car_hl0_Emergency";
-constexpr const char* scSafetyCriticalLaneChangeRouteId = "route_highway_1";
-constexpr const char* scTargetLaneChangeRouteId = "route_highway_2";
-constexpr double scEmergencyStartTime = 12.0;
-constexpr double scEmergencyBroadcastDuration = 15.0;
-constexpr double scEmergencyBroadcastInterval = 0.1;
-constexpr double scEmergencyMaxSpeed = 0.1;
-constexpr double scNormalHighwaySpeed = 27.77;
-constexpr double scLaneChangeShiftX = 3.0;
-constexpr double scSafetyCriticalTimeGap = 1.0;
-constexpr double scEmergencyCoordinationTimeGap = 1.5;
-constexpr double scInitialPaperTimeGap = 1.22;
-constexpr double scMergeStartX = 216554.0;
-constexpr double scMergeStartY = 452461.0;
-constexpr double scHighwayLane0MinY = 452474.0;
-constexpr double scHighwayLane0MaxY = 452574.0;
-constexpr double scMergingTimeGap = 1.2;
-constexpr int scRequestTrajectorySteps = 20;
-constexpr double scRequestTrajectoryDt = 0.25;
-constexpr std::size_t scMaxReceivedMcmCache = 256;
-constexpr double scMergeTargetMaxSnapshotAge = 0.6;
+using scenario::scEmergencyBroadcastDuration;
+using scenario::scEmergencyBroadcastInterval;
+using scenario::scEmergencyCoordinationTimeGap;
+using scenario::scEmergencyMaxSpeed;
+using scenario::scEmergencyStartTime;
+using scenario::scEmergencyVehicleId;
+using scenario::scHighwayLane0MaxY;
+using scenario::scHighwayLane0MinY;
+using scenario::scHighwayMergingRouteId;
+using scenario::scInitialPaperTimeGap;
+using scenario::scLaneChangeShiftX;
+using scenario::scMaxReceivedMcmCache;
+using scenario::scMergeStartX;
+using scenario::scMergeStartY;
+using scenario::scMergeTargetMaxSnapshotAge;
+using scenario::scMergingRouteId;
+using scenario::scMergingTimeGap;
+using scenario::scNormalHighwaySpeed;
+using scenario::scRequestTrajectoryDt;
+using scenario::scRequestTrajectorySteps;
+using scenario::scSafetyCriticalLaneChangeRouteId;
+using scenario::scSafetyCriticalTimeGap;
+using scenario::scTargetLaneChangeRouteId;
 
 priorityMcmCategory priorityFromMcm(long priority)
 {
@@ -109,9 +111,65 @@ const char* operationModeName(operationMode mode)
 
 bool isHighwayMergingCvRoute(const std::string& routeId)
 {
-    return routeId == "route_highway_0" ||
-        routeId == "route_highway_1" ||
-        routeId == "route_highway_2";
+    return routeId == scHighwayMergingRouteId ||
+        routeId == scSafetyCriticalLaneChangeRouteId ||
+        routeId == scTargetLaneChangeRouteId;
+}
+
+struct MergeTargetCandidate {
+    uint32_t stationId = 0;
+    double signedLongitudinalGap = 0.0;
+    double absLongitudinalGap = 0.0;
+    double euclideanDistance = 0.0;
+    double rvY = 0.0;
+    double cvY = 0.0;
+    omnetpp::SimTime age = omnetpp::SimTime::ZERO;
+    bool legacyPointConflict = false;
+};
+
+struct MergeTargetSelection {
+    uint32_t target1 = 0;
+    uint32_t target2 = 0;
+};
+
+// RV-side medium-priority merging helper. The RV selects the closest
+// lead/follow pair around its predicted merge point from current idle MCM
+// snapshots. This keeps the validation dynamic; the known vehicle pairs emerge
+// from SUMO timing and trajectories, not from fixed station IDs.
+MergeTargetSelection selectMergeGapTargets(std::vector<MergeTargetCandidate> candidates)
+{
+    auto closerToGap = [](const MergeTargetCandidate& lhs, const MergeTargetCandidate& rhs) {
+        if (lhs.absLongitudinalGap != rhs.absLongitudinalGap) {
+            return lhs.absLongitudinalGap < rhs.absLongitudinalGap;
+        }
+        return lhs.stationId < rhs.stationId;
+    };
+
+    std::vector<MergeTargetCandidate> behind;
+    std::vector<MergeTargetCandidate> ahead;
+    for (const auto& candidate : candidates) {
+        if (candidate.signedLongitudinalGap < 0.0) {
+            behind.push_back(candidate);
+        } else {
+            ahead.push_back(candidate);
+        }
+    }
+    std::sort(behind.begin(), behind.end(), closerToGap);
+    std::sort(ahead.begin(), ahead.end(), closerToGap);
+    std::sort(candidates.begin(), candidates.end(), closerToGap);
+
+    MergeTargetSelection selection;
+    if (!behind.empty() && !ahead.empty()) {
+        selection.target1 = behind.front().stationId;
+        selection.target2 = ahead.front().stationId;
+    } else if (!candidates.empty()) {
+        selection.target1 = candidates.front().stationId;
+        if (candidates.size() > 1) {
+            selection.target2 = candidates[1].stationId;
+        }
+    }
+
+    return selection;
 }
 
 bool isSafetyCriticalLaneChangeScenarioVehicle(const std::string& vehicleId)
@@ -1506,6 +1564,12 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
 
+    // RV-side medium-priority merging validation.
+    // route_merging_1 is a scenario route, not a protocol condition. Once the
+    // RV reaches the old trigger point, it chooses current idle highway CVs by
+    // trajectory/gap feasibility around the predicted merge point. The old
+    // pointwise conflict check is retained as supporting diagnostics; it is not
+    // a fixed vehicle-ID mapping.
     if (!mHasEgoContext || !mVehicleDataProvider || !mVehicleController ||
             mPendingMcmCommand || mMergingRequestQueuedOrSent ||
             mRvNegotiationTimedOut) {
@@ -1541,17 +1605,6 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         EV_WARN << "McApplication route_merging_1 trigger has no ego plannedTrajectory; cannot request coordination\n";
         return;
     }
-
-    struct MergeTargetCandidate {
-        uint32_t stationId = 0;
-        double signedLongitudinalGap = 0.0;
-        double absLongitudinalGap = 0.0;
-        double euclideanDistance = 0.0;
-        double rvY = 0.0;
-        double cvY = 0.0;
-        omnetpp::SimTime age = omnetpp::SimTime::ZERO;
-        bool legacyPointConflict = false;
-    };
 
     std::unordered_map<uint32_t, const ReceivedMcm*> latestByStation;
     for (const auto& received : mReceivedMcmCache) {
@@ -1680,37 +1733,9 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
             << '\n';
     }
 
-    auto closerToGap = [](const MergeTargetCandidate& lhs, const MergeTargetCandidate& rhs) {
-        if (lhs.absLongitudinalGap != rhs.absLongitudinalGap) {
-            return lhs.absLongitudinalGap < rhs.absLongitudinalGap;
-        }
-        return lhs.stationId < rhs.stationId;
-    };
-
-    std::vector<MergeTargetCandidate> behind;
-    std::vector<MergeTargetCandidate> ahead;
-    for (const auto& candidate : candidates) {
-        if (candidate.signedLongitudinalGap < 0.0) {
-            behind.push_back(candidate);
-        } else {
-            ahead.push_back(candidate);
-        }
-    }
-    std::sort(behind.begin(), behind.end(), closerToGap);
-    std::sort(ahead.begin(), ahead.end(), closerToGap);
-    std::sort(candidates.begin(), candidates.end(), closerToGap);
-
-    uint32_t target1 = 0;
-    uint32_t target2 = 0;
-    if (!behind.empty() && !ahead.empty()) {
-        target1 = behind.front().stationId;
-        target2 = ahead.front().stationId;
-    } else if (!candidates.empty()) {
-        target1 = candidates.front().stationId;
-        if (candidates.size() > 1) {
-            target2 = candidates[1].stationId;
-        }
-    }
+    const MergeTargetSelection selection = selectMergeGapTargets(candidates);
+    const uint32_t target1 = selection.target1;
+    const uint32_t target2 = selection.target2;
 
     EV_INFO << "[MCM-MERGE-TARGET]"
         << " t=" << now
@@ -2332,6 +2357,10 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
 
+    // Scenario-only emergency source for the high-priority lane-change
+    // validation. car_hl0_Emergency reproduces the old paper scenario by
+    // braking at a configured time and broadcasting EmergencyPriority execution
+    // MCMs for 15 s at 10 Hz. This is not generic protocol behavior.
     if (!mVehicleController || !mHasEgoContext ||
             mVehicleController->getVehicleId() != scEmergencyVehicleId) {
         return;

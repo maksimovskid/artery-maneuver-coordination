@@ -49,5 +49,6 @@ target_sources(core PRIVATE
     mcm/TrajectoryEnvironmentState.cc
     mcm/TrajectoryGeneration.cc
     mcm/TrajectoryPlanner.cc
+    mcm/McScenarioConfig.cc
     mcm/McApplication.cc
 )
