@@ -16,9 +16,19 @@ This repository extends Artery with a research prototype for V2X-based maneuver 
 
 The simulation stack uses Artery together with OMNeT++, INET, Vanetza, SUMO, and TraCI. The maneuver-coordination work is being refactored into clearer components while preserving the behavior of the currently validated scenarios.
 
+## Terminology
+
+The current maneuver-coordination scenarios distinguish between the following vehicle roles:
+
+* **Requesting Vehicle (RV):** The vehicle that initiates a maneuver coordination request, for example a merging vehicle or a vehicle that needs to change lanes because of an emergency ahead.
+* **Cooperating Vehicle (CV):** A connected and automated vehicle that receives a request and may adapt its trajectory to support the RV's maneuver.
+* **Non-Cooperating Vehicle (NCV):** A background or blocking vehicle that is part of the traffic scenario but does not participate in the MCM negotiation flow.
+
+In the current validation scenarios, RVs send Request messages, CVs respond with Offer/Accept messages depending on the negotiation phase, and NCVs are used to model surrounding traffic or blocking vehicles without active cooperation.
+
 ## What This Repository Adds
 
-This repository adds a Maneuver Coordination Service (MCS) / Maneuver Coordination Message (MCM)-style research prototype centered around `McService` and `McApplication`. `McService` integrates maneuver coordination into Artery's middleware service architecture, while `McApplication` contains the main RV/CV negotiation, trajectory, priority, retry, and execution-control logic.
+This repository adds a Maneuver Coordination Service (MCS) / Maneuver Coordination Message (MCM)-style research prototype centered around `McService` and `McApplication`. `McService` integrates maneuver coordination into Artery's middleware service architecture, while `McApplication` contains the main Requesting Vehicle (RV) / Cooperating Vehicle (CV) negotiation, trajectory, priority, retry, and execution-control logic.
 
 `McService` connects the application logic to Artery's service lifecycle, middleware, packet handling, and scheduling. The implementation includes message generation and reception for Request, Offer, Confirm, Accept, Execute, Complete, and Cancel handling.
 
@@ -90,7 +100,7 @@ For two-CV cooperative merging, the current high-level flow is:
 Request -> Offer(s) -> Confirm -> Accept(s) -> Execute -> Complete
 ```
 
-The requesting vehicle, or RV, sends a Request. Cooperating vehicles, or CVs, evaluate trajectory feasibility and cooperation cost. CVs send Offer messages, the RV sends Confirm after receiving the required Offer messages, CVs send Accept, and the RV sends Execute. Participants reset after Complete. Cancel and timeout paths return participants to intent sharing or an idle coordination state.
+The Requesting Vehicle (RV) sends a Request. Cooperating Vehicles (CVs) evaluate trajectory feasibility and cooperation cost. CVs send Offer messages, the RV sends Confirm after receiving the required Offer messages, CVs send Accept, and the RV sends Execute. Participants reset after Complete. Cancel and timeout paths return participants to intent sharing or an idle coordination state.
 
 One-CV and two-CV flows are handled separately. Retry and timeout handling exists for the Request, Confirm, Offer, and Accept phases. This is currently a research implementation, and the message handling is still being refactored and documented.
 
@@ -124,6 +134,7 @@ Loaded route files:
 Expected behavior:
 
 * Three sequential merging maneuvers.
+* Merging vehicles act as RVs and selected highway-lane vehicles act as CVs.
 * Dynamic target/gap selection.
 * No emergency vehicle.
 * No emergency broadcast.
@@ -166,8 +177,9 @@ Expected behavior:
 
 * Emergency vehicle brakes and broadcasts emergency MCMs.
 * Following lane-1 vehicles trigger High-priority lane-change negotiation.
+* Lane-1 vehicles affected by the emergency act as RVs and selected lane-2 vehicles act as CVs.
 * Cooperating CVs are selected from lane 2.
-* Right-lane NCVs act as background blockers / non-cooperative vehicles.
+* Right-lane Non-Cooperating Vehicles (NCVs) act as background blockers / non-cooperative vehicles.
 * No merging vehicles are present.
 
 For the current validation route, the expected target pairs are:
