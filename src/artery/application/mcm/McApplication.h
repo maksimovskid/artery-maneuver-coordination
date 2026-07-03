@@ -267,6 +267,13 @@ private:
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
     CvCooperationDecision evaluateCvCooperationDecision(const ReceivedMcm&);
+    bool isNegotiationMessageForActiveRequest(const McmSnapshot&, mcmSubtype, uint8_t requestId) const;
+    bool isSnapshotTargetingEgo(const McmSnapshot&) const;
+    bool markRvResponseFromExpectedCv(uint32_t senderStationId, bool& fromTarget1, bool& fromTarget2) const;
+    PendingMcmCommand makeRvFollowupCommand(mcmSubtype, long cooperationType = 0) const;
+    PendingMcmCommand makeCvAcceptCommand(const McmSnapshot&) const;
+    void resetRvCoordinationStateAfterComplete();
+    void resetCvCoordinationStateAfterComplete();
     void handleReceivedCancelAsCv(const ReceivedMcm&);
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
