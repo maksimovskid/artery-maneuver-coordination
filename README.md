@@ -24,6 +24,8 @@ This repository adds a Maneuver Coordination Service (MCS) / Maneuver Coordinati
 
 The current research prototype supports one-CV and two-CV negotiation flows, Medium-priority cooperative merging validation, and High-priority emergency lane-change validation. It also contains dynamic trajectory/gap-based target selection, CV cooperation decision and feasibility checks, retry and timeout handling, and SUMO execution control through TraCI.
 
+Communication/QoS configuration hooks from the earlier research implementation are being reintroduced in a cleaner form. These hooks cover intent MCM generation conditions, coordination MCM generation conditions, DCC profile mapping, adaptive generation-rule flags, and future congested-scenario validation. This work is staged; the presence of a configuration option does not imply that the full old behavior has already been reimplemented.
+
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 
 ## Main Source Files
@@ -34,6 +36,7 @@ Vehicle IDs shown in this README are validation expectations for the current rou
   * Owns the service-level connection between Artery middleware and the MCM application logic.
   * Connects `McApplication` to the Artery service lifecycle, packet generation/reception, middleware callbacks, and scheduling.
   * Handles service-facing MCM packet flow while keeping the main maneuver behavior in `McApplication`.
+  * Owns the staged MCM generation/QoS configuration hooks, including intent/coordination triggering policy names and DCC profile selection.
 
 * `src/artery/application/McService.ned`
 
@@ -283,6 +286,7 @@ Related peer-reviewed publications and research outputs are available through th
 * The combined 19-CAV scenario is not the primary correctness validation target because mixing merging and emergency lane-change use cases can create SUMO side effects.
 * GUI/SUMO shutdown behavior may differ from headless Cmdenv; headless validation is the main regression check.
 * More refactoring and documentation are ongoing.
+* Communication/QoS options for DCC profile selection and adaptive generation are being restored incrementally; defaults preserve the current validation behavior unless explicitly changed.
 
 ## Cleanup
 

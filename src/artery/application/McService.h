@@ -9,6 +9,7 @@
 #include <omnetpp/simtime.h>
 #include <vanetza/asn1/mcm.hpp>
 #include <vanetza/btp/data_interface.hpp>
+#include <vanetza/dcc/profile.hpp>
 #include <vanetza/units/angle.hpp>
 #include <vanetza/units/velocity.hpp>
 
@@ -24,6 +25,8 @@ namespace artery
 namespace mcm
 {
 class McApplication;
+enum class operationMode;
+enum class priorityMcmCategory;
 struct PendingMcmCommand;
 }
 
@@ -43,13 +46,68 @@ public:
     void indicate(const vanetza::btp::DataIndication&, std::unique_ptr<vanetza::UpPacket>) override;
     void trigger() override;
 
+    // Typed representation of old MCM generation/QoS NED strings. These are
+    // public type names only; McService still owns all configuration behavior.
+    enum class IntentTriggeringCondition {
+        SameAsCam,
+        SameAsCamReduced2Hz,
+        SameAsCamReduced1Hz,
+        PeriodicFixed,
+        PeriodicFixedHalfHz,
+        PeriodicFixed1Hz,
+        PeriodicFixed2Hz,
+        PeriodicFixed3Hz,
+        PeriodicFixed5Hz
+    };
+
+    enum class CoordinationTriggeringCondition {
+        SameAsCam,
+        PeriodicFixed,
+        PeriodicFixedNoDcc
+    };
+
+    enum class McmTimeSource {
+        DataProvider,
+        CurrentTime
+    };
+
+    struct McmCommunicationConfig {
+        IntentTriggeringCondition intentTrigger = IntentTriggeringCondition::SameAsCam;
+        CoordinationTriggeringCondition coordinationTrigger = CoordinationTriggeringCondition::SameAsCam;
+        bool withDccRestriction = false;
+        omnetpp::SimTime minInterval;
+        omnetpp::SimTime maxInterval;
+        bool fixedRate = true;
+        omnetpp::SimTime fixedRateInterval;
+        omnetpp::SimTime fixedInterval;
+        omnetpp::SimTime maxIntervalNegMcm;
+        omnetpp::SimTime negotiationRetryInterval;
+        omnetpp::SimTime negotiationLimitMerging;
+        omnetpp::SimTime negotiationLimitLaneChange;
+        bool dccProfiles = false;
+        bool dccOnlyMcm = false;
+        McmTimeSource timeSource = McmTimeSource::DataProvider;
+        bool newGenMcmRules = false;
+        bool newGenMcmRulesIntent = false;
+        bool newGenMcmRulesIntent1HzMco = false;
+    };
+
 private:
     // CA-service-style MCM generation rules
     void checkTriggeringConditions(const omnetpp::SimTime&);
+    bool shouldGenerateIntentMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval);
+    bool shouldGenerateCoordinationMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval) const;
+    omnetpp::SimTime intervalForIntentTriggeringCondition(IntentTriggeringCondition) const;
+    omnetpp::SimTime intervalForCoordinationTriggeringCondition(CoordinationTriggeringCondition) const;
     bool checkHeadingDelta() const;
     bool checkPositionDelta() const;
     bool checkSpeedDelta() const;
     omnetpp::SimTime genMcmDcc();
+    vanetza::dcc::Profile selectMcmDccProfile(
+        mcm::operationMode,
+        mcm::priorityMcmCategory) const;
+    void loadCommunicationConfig();
+    void logCommunicationConfig() const;
 
     // MCM transmission
     void sendMcm(const omnetpp::SimTime&);
@@ -138,6 +196,7 @@ private:
 
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;
+    McmCommunicationConfig mCommunicationConfig;
 
     bool mUsePrerecordedIntentTrajectory = false;
     std::string mPrerecordedTrajectoryCsv;

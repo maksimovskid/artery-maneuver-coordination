@@ -106,6 +106,89 @@ long priorityToAsnPriority(mcm::priorityMcmCategory priority)
     return PriorityManeuver_low;
 }
 
+McService::IntentTriggeringCondition parseIntentTriggeringCondition(const std::string& value)
+{
+    if (value == "SameAsCAMreduced2Hz") {
+        return McService::IntentTriggeringCondition::SameAsCamReduced2Hz;
+    }
+    if (value == "SameAsCAMreduced1Hz") {
+        return McService::IntentTriggeringCondition::SameAsCamReduced1Hz;
+    }
+    if (value == "PeriodicFixed") {
+        return McService::IntentTriggeringCondition::PeriodicFixed;
+    }
+    if (value == "PeriodicFixed0.5Hz") {
+        return McService::IntentTriggeringCondition::PeriodicFixedHalfHz;
+    }
+    if (value == "PeriodicFixed1Hz") {
+        return McService::IntentTriggeringCondition::PeriodicFixed1Hz;
+    }
+    if (value == "PeriodicFixed2Hz") {
+        return McService::IntentTriggeringCondition::PeriodicFixed2Hz;
+    }
+    if (value == "PeriodicFixed3Hz") {
+        return McService::IntentTriggeringCondition::PeriodicFixed3Hz;
+    }
+    if (value == "PeriodicFixed5Hz") {
+        return McService::IntentTriggeringCondition::PeriodicFixed5Hz;
+    }
+    return McService::IntentTriggeringCondition::SameAsCam;
+}
+
+McService::CoordinationTriggeringCondition parseCoordinationTriggeringCondition(const std::string& value)
+{
+    if (value == "PeriodicFixed") {
+        return McService::CoordinationTriggeringCondition::PeriodicFixed;
+    }
+    if (value == "PeriodicFixedNoDCC") {
+        return McService::CoordinationTriggeringCondition::PeriodicFixedNoDcc;
+    }
+    return McService::CoordinationTriggeringCondition::SameAsCam;
+}
+
+McService::McmTimeSource parseMcmTimeSource(const std::string& value)
+{
+    if (value == "CurrentTime") {
+        return McService::McmTimeSource::CurrentTime;
+    }
+    return McService::McmTimeSource::DataProvider;
+}
+
+const char* intentTriggeringConditionName(McService::IntentTriggeringCondition condition)
+{
+    switch (condition) {
+        case McService::IntentTriggeringCondition::SameAsCam: return "SameAsCAM";
+        case McService::IntentTriggeringCondition::SameAsCamReduced2Hz: return "SameAsCAMreduced2Hz";
+        case McService::IntentTriggeringCondition::SameAsCamReduced1Hz: return "SameAsCAMreduced1Hz";
+        case McService::IntentTriggeringCondition::PeriodicFixed: return "PeriodicFixed";
+        case McService::IntentTriggeringCondition::PeriodicFixedHalfHz: return "PeriodicFixed0.5Hz";
+        case McService::IntentTriggeringCondition::PeriodicFixed1Hz: return "PeriodicFixed1Hz";
+        case McService::IntentTriggeringCondition::PeriodicFixed2Hz: return "PeriodicFixed2Hz";
+        case McService::IntentTriggeringCondition::PeriodicFixed3Hz: return "PeriodicFixed3Hz";
+        case McService::IntentTriggeringCondition::PeriodicFixed5Hz: return "PeriodicFixed5Hz";
+    }
+    return "SameAsCAM";
+}
+
+const char* coordinationTriggeringConditionName(McService::CoordinationTriggeringCondition condition)
+{
+    switch (condition) {
+        case McService::CoordinationTriggeringCondition::SameAsCam: return "SameAsCAM";
+        case McService::CoordinationTriggeringCondition::PeriodicFixed: return "PeriodicFixed";
+        case McService::CoordinationTriggeringCondition::PeriodicFixedNoDcc: return "PeriodicFixedNoDCC";
+    }
+    return "SameAsCAM";
+}
+
+const char* mcmTimeSourceName(McService::McmTimeSource source)
+{
+    switch (source) {
+        case McService::McmTimeSource::DataProvider: return "DataProvider";
+        case McService::McmTimeSource::CurrentTime: return "CurrentTime";
+    }
+    return "DataProvider";
+}
+
 const char* mcmSubtypeName(mcm::mcmSubtype subtype)
 {
     switch (subtype) {
@@ -337,6 +420,51 @@ McService::McService() :
 
 McService::~McService() = default;
 
+void McService::loadCommunicationConfig()
+{
+    mCommunicationConfig.intentTrigger =
+        parseIntentTriggeringCondition(par("triggeringCondition").stdstringValue());
+    mCommunicationConfig.coordinationTrigger =
+        parseCoordinationTriggeringCondition(par("triggeringConditionCoordination").stdstringValue());
+    mCommunicationConfig.withDccRestriction = par("withDccRestriction").boolValue();
+    mCommunicationConfig.minInterval = par("minInterval");
+    mCommunicationConfig.maxInterval = par("maxInterval");
+    mCommunicationConfig.fixedRate = par("fixedRate").boolValue();
+    mCommunicationConfig.fixedRateInterval = par("fixedRateInterval");
+    mCommunicationConfig.fixedInterval = par("fixedInterval");
+    mCommunicationConfig.maxIntervalNegMcm = par("maxIntervalNegMcm");
+    mCommunicationConfig.negotiationRetryInterval = par("negotiationRetryInterval");
+    mCommunicationConfig.negotiationLimitMerging = par("negotiationLimitMerging");
+    mCommunicationConfig.negotiationLimitLaneChange = par("negotiationLimitLaneChange");
+    mCommunicationConfig.dccProfiles = par("dccProfiles").boolValue();
+    mCommunicationConfig.dccOnlyMcm = par("dccOnlyMcm").boolValue();
+    mCommunicationConfig.timeSource = parseMcmTimeSource(par("timeGenMcm").stdstringValue());
+    mCommunicationConfig.newGenMcmRules = par("newGenMcmRules").boolValue();
+    mCommunicationConfig.newGenMcmRulesIntent = par("newGenMcmRulesIntent").boolValue();
+    mCommunicationConfig.newGenMcmRulesIntent1HzMco = par("newGenMcmRulesIntent1Hz_MCO").boolValue();
+}
+
+void McService::logCommunicationConfig() const
+{
+    EV_INFO << "[MCM-QOS-CONFIG]"
+        << " triggeringCondition=" << intentTriggeringConditionName(mCommunicationConfig.intentTrigger)
+        << " triggeringConditionCoordination=" << coordinationTriggeringConditionName(mCommunicationConfig.coordinationTrigger)
+        << " withDccRestriction=" << mCommunicationConfig.withDccRestriction
+        << " minInterval=" << mCommunicationConfig.minInterval
+        << " maxInterval=" << mCommunicationConfig.maxInterval
+        << " fixedRate=" << mCommunicationConfig.fixedRate
+        << " fixedRateInterval=" << mCommunicationConfig.fixedRateInterval
+        << " fixedInterval=" << mCommunicationConfig.fixedInterval
+        << " maxIntervalNegMcm=" << mCommunicationConfig.maxIntervalNegMcm
+        << " dccProfiles=" << mCommunicationConfig.dccProfiles
+        << " dccOnlyMcm=" << mCommunicationConfig.dccOnlyMcm
+        << " timeGenMcm=" << mcmTimeSourceName(mCommunicationConfig.timeSource)
+        << " newGenMcmRules=" << mCommunicationConfig.newGenMcmRules
+        << " newGenMcmRulesIntent=" << mCommunicationConfig.newGenMcmRulesIntent
+        << " newGenMcmRulesIntent1Hz_MCO=" << mCommunicationConfig.newGenMcmRulesIntent1HzMco
+        << " note=configuration-hooks-active-behavior-staged\n";
+}
+
 void McService::initialize()
 {
     ItsG5BaseService::initialize();
@@ -352,19 +480,22 @@ void McService::initialize()
         }
     }
 
+    loadCommunicationConfig();
+    logCommunicationConfig();
+
     mLastMcmTimestamp = simTime();
-    mGenMcmMin = par("minInterval");
-    mGenMcmMax = par("maxInterval");
+    mGenMcmMin = mCommunicationConfig.minInterval;
+    mGenMcmMax = mCommunicationConfig.maxInterval;
     mGenMcm = mGenMcmMax;
     mHeadingDelta = vanetza::units::Angle { par("headingDelta").doubleValue() * vanetza::units::degree };
     mPositionDelta = par("positionDelta").doubleValue() * vanetza::units::si::meter;
     mSpeedDelta = par("speedDelta").doubleValue() * vanetza::units::si::meter_per_second;
-    mDccRestriction = par("withDccRestriction");
-    mFixedRate = par("fixedRate");
-    mFixedRateInterval = par("fixedRateInterval");
-    mNegotiationRetryInterval = par("negotiationRetryInterval");
-    mNegotiationLimitMerging = par("negotiationLimitMerging");
-    mNegotiationLimitLaneChange = par("negotiationLimitLaneChange");
+    mDccRestriction = mCommunicationConfig.withDccRestriction;
+    mFixedRate = mCommunicationConfig.fixedRate;
+    mFixedRateInterval = mCommunicationConfig.fixedRateInterval;
+    mNegotiationRetryInterval = mCommunicationConfig.negotiationRetryInterval;
+    mNegotiationLimitMerging = mCommunicationConfig.negotiationLimitMerging;
+    mNegotiationLimitLaneChange = mCommunicationConfig.negotiationLimitLaneChange;
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
     mUsePrerecordedIntentTrajectory = par("usePrerecordedIntentTrajectory").boolValue();
     mPrerecordedTrajectoryCsv = par("prerecordedTrajectoryCsv").stdstringValue();
@@ -416,30 +547,94 @@ void McService::trigger()
 
 void McService::checkTriggeringConditions(const SimTime& T_now)
 {
-    SimTime& T_GenMcm = mGenMcm;
-    const SimTime& T_GenMcmMin = mGenMcmMin;
-    const SimTime& T_GenMcmMax = mGenMcmMax;
-    const SimTime T_GenMcmDcc = mDccRestriction ? genMcmDcc() : T_GenMcmMin;
-    const SimTime T_elapsed = T_now - mLastMcmTimestamp;
-    const SimTime fixedInterval = mFixedRateInterval > SIMTIME_ZERO ? mFixedRateInterval : T_GenMcmMin;
+    const SimTime dccInterval = mDccRestriction ? genMcmDcc() : mGenMcmMin;
+    if (shouldGenerateIntentMcm(T_now, dccInterval)) {
+        sendMcm(T_now);
+    }
+}
 
-    if (T_elapsed >= T_GenMcmDcc) {
-        if (mFixedRate) {
-            if (T_elapsed >= fixedInterval) {
-                sendMcm(T_now);
-            }
-        } else if (!mHasLastMcmKinematics) {
-            sendMcm(T_now);
-        } else if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
-            sendMcm(T_now);
-            T_GenMcm = std::min(T_elapsed, T_GenMcmMax);
-            mGenMcmLowDynamicsCounter = 0;
-        } else if (T_elapsed >= T_GenMcm) {
-            sendMcm(T_now);
-            if (++mGenMcmLowDynamicsCounter >= mGenMcmLowDynamicsLimit) {
-                T_GenMcm = T_GenMcmMax;
-            }
+bool McService::shouldGenerateIntentMcm(const SimTime& now, SimTime dccInterval)
+{
+    // First-step generation-rule separation. With the current defaults this is
+    // behavior-equivalent to the previous fixed-rate check. The named old
+    // intent policies are parsed into McmCommunicationConfig and will be
+    // activated incrementally after congested-scenario validation is added.
+    const SimTime elapsed = now - mLastMcmTimestamp;
+    const SimTime fixedInterval = mFixedRateInterval > SIMTIME_ZERO ? mFixedRateInterval : mGenMcmMin;
+
+    if (elapsed < dccInterval) {
+        return false;
+    }
+
+    if (mFixedRate) {
+        return elapsed >= fixedInterval;
+    }
+
+    if (!mHasLastMcmKinematics) {
+        return true;
+    }
+
+    if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
+        mGenMcm = std::min(elapsed, mGenMcmMax);
+        mGenMcmLowDynamicsCounter = 0;
+        return true;
+    }
+
+    if (elapsed >= mGenMcm) {
+        if (++mGenMcmLowDynamicsCounter >= mGenMcmLowDynamicsLimit) {
+            mGenMcm = mGenMcmMax;
         }
+        return true;
+    }
+
+    return false;
+}
+
+bool McService::shouldGenerateCoordinationMcm(const SimTime& now, SimTime dccInterval) const
+{
+    // Coordination/negotiation generation is deliberately kept side-effect free.
+    // The old checkTriggeringConditionsCoordination mixed this decision with
+    // Request/Confirm/Offer/Accept/Complete state changes. Current state
+    // transitions remain in McApplication::handleSentMcm; this helper is a
+    // staged hook for future coordination-specific generation rules.
+    const SimTime elapsed = now - mLastMcmTimestamp;
+    return elapsed >= dccInterval &&
+        elapsed >= intervalForCoordinationTriggeringCondition(mCommunicationConfig.coordinationTrigger);
+}
+
+SimTime McService::intervalForIntentTriggeringCondition(IntentTriggeringCondition condition) const
+{
+    switch (condition) {
+        case IntentTriggeringCondition::PeriodicFixedHalfHz:
+            return SimTime { 2.0 };
+        case IntentTriggeringCondition::SameAsCamReduced1Hz:
+        case IntentTriggeringCondition::PeriodicFixed1Hz:
+            return SimTime { 1.0 };
+        case IntentTriggeringCondition::SameAsCamReduced2Hz:
+        case IntentTriggeringCondition::PeriodicFixed2Hz:
+            return SimTime { 0.5 };
+        case IntentTriggeringCondition::PeriodicFixed3Hz:
+            return SimTime { 0.33 };
+        case IntentTriggeringCondition::PeriodicFixed5Hz:
+            return SimTime { 0.2 };
+        case IntentTriggeringCondition::SameAsCam:
+        case IntentTriggeringCondition::PeriodicFixed:
+        default:
+            return mGenMcmMin;
+    }
+}
+
+SimTime McService::intervalForCoordinationTriggeringCondition(CoordinationTriggeringCondition condition) const
+{
+    switch (condition) {
+        case CoordinationTriggeringCondition::PeriodicFixed:
+        case CoordinationTriggeringCondition::PeriodicFixedNoDcc:
+            return mCommunicationConfig.maxIntervalNegMcm > SIMTIME_ZERO ?
+                mCommunicationConfig.maxIntervalNegMcm :
+                mGenMcmMin;
+        case CoordinationTriggeringCondition::SameAsCam:
+        default:
+            return mGenMcmMin;
     }
 }
 
@@ -458,17 +653,100 @@ bool McService::checkSpeedDelta() const
     return abs(mLastMcmSpeed - mVehicleDataProvider->speed()) > mSpeedDelta;
 }
 
+vanetza::dcc::Profile McService::selectMcmDccProfile(
+    mcm::operationMode mode,
+    mcm::priorityMcmCategory priority) const
+{
+    using vanetza::dcc::Profile;
+
+    // Keep current behavior unless the old differentiated DCC profile mapping
+    // is explicitly enabled. The current implementation has used DP2 for all
+    // MCMs, so dccProfiles=false must continue returning DP2.
+    if (!mCommunicationConfig.dccProfiles) {
+        return Profile::DP2;
+    }
+
+    // Old MCM logic gave negotiation a higher DCC priority than execution
+    // because Request/Offer/Confirm/Accept messages unblock cooperative
+    // maneuver decisions, while execution messages can tolerate slightly lower
+    // priority except for emergency execution.
+    if (mCommunicationConfig.dccOnlyMcm) {
+        if (mode == mcm::operationMode::ManeuverNegotiationMode) {
+            if (priority == mcm::priorityMcmCategory::HighPriority) {
+                return Profile::DP0;
+            }
+            if (priority == mcm::priorityMcmCategory::MediumPriority) {
+                return Profile::DP1;
+            }
+            if (priority == mcm::priorityMcmCategory::LowPriority) {
+                return Profile::DP2;
+            }
+        }
+
+        if (mode == mcm::operationMode::ManeuverExecutionMode) {
+            if (priority == mcm::priorityMcmCategory::EmergencyPriority) {
+                return Profile::DP0;
+            }
+            if (priority == mcm::priorityMcmCategory::HighPriority) {
+                return Profile::DP1;
+            }
+            if (priority == mcm::priorityMcmCategory::MediumPriority) {
+                return Profile::DP2;
+            }
+            if (priority == mcm::priorityMcmCategory::LowPriority) {
+                return Profile::DP3;
+            }
+        }
+
+        return Profile::DP3;
+    }
+
+    if (mode == mcm::operationMode::ManeuverNegotiationMode) {
+        if (priority == mcm::priorityMcmCategory::HighPriority) {
+            return Profile::DP0;
+        }
+        if (priority == mcm::priorityMcmCategory::MediumPriority ||
+                priority == mcm::priorityMcmCategory::LowPriority) {
+            return Profile::DP1;
+        }
+    }
+
+    if (mode == mcm::operationMode::ManeuverExecutionMode) {
+        if (priority == mcm::priorityMcmCategory::EmergencyPriority) {
+            return Profile::DP0;
+        }
+        if (priority == mcm::priorityMcmCategory::HighPriority) {
+            return Profile::DP1;
+        }
+        if (priority == mcm::priorityMcmCategory::MediumPriority ||
+                priority == mcm::priorityMcmCategory::LowPriority) {
+            return Profile::DP2;
+        }
+    }
+
+    return Profile::DP2;
+}
+
 void McService::sendMcm(const SimTime& T_now)
 {
-    uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
+    uint16_t generationDeltaTime = 0;
+    if (mCommunicationConfig.timeSource == McmTimeSource::CurrentTime) {
+        generationDeltaTime = countTaiMilliseconds(mTimer->getCurrentTime());
+    } else {
+        generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
+    }
 
     if (mApplication) {
         mApplication->prepareMcmGeneration(T_now);
     }
 
     auto command = mApplication->consumePendingCommand();
+    mcm::operationMode generatedMode = mcm::operationMode::IntentionSharingMode;
+    mcm::priorityMcmCategory generatedPriority = mcm::priorityMcmCategory::NoPriority;
     auto mcmMessage = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
     if (command && command->kind == mcm::PendingMcmCommand::Kind::Negotiation) {
+        generatedMode = mcm::operationMode::ManeuverNegotiationMode;
+        generatedPriority = command->priority;
         addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider, *command);
         std::string error;
         if (!mcmMessage.validate(error)) {
@@ -482,6 +760,8 @@ void McService::sendMcm(const SimTime& T_now)
             << " target2=" << command->targetVehicle2
             << " requestedTrajectoryPoints=" << command->requestedTrajectory.size() << '\n';
     } else if (command && command->kind == mcm::PendingMcmCommand::Kind::Execution) {
+        generatedMode = mcm::operationMode::ManeuverExecutionMode;
+        generatedPriority = command->priority;
         addManeuverExecutionContainer(mcmMessage, *mVehicleDataProvider, *command);
         // The generated MCMextra CooperationID descriptor has no constraint
         // callback, so asn_check_constraints() dereferences null for execution
@@ -510,7 +790,8 @@ void McService::sendMcm(const SimTime& T_now)
     request.gn.its_aid = scExperimentalMcmAid;
     request.gn.transport_type = geonet::TransportType::SHB;
     request.gn.maximum_lifetime = geonet::Lifetime { geonet::Lifetime::Base::One_Second, 1 };
-    request.gn.traffic_class.tc_id(static_cast<unsigned>(dcc::Profile::DP2));
+    const auto dccProfile = selectMcmDccProfile(generatedMode, generatedPriority);
+    request.gn.traffic_class.tc_id(static_cast<unsigned>(dccProfile));
     request.gn.communication_profile = geonet::CommunicationProfile::ITS_G5;
 
     McObject obj(std::move(mcmMessage));
@@ -854,7 +1135,10 @@ SimTime McService::genMcmDcc()
         throw cRuntimeError("No DCC TRC found for MC's primary channel %i", mPrimaryChannel);
     }
 
-    static const vanetza::dcc::TransmissionLite mc_tx(vanetza::dcc::Profile::DP2, 0);
+    const auto profile = selectMcmDccProfile(
+        mcm::operationMode::IntentionSharingMode,
+        mcm::priorityMcmCategory::NoPriority);
+    const vanetza::dcc::TransmissionLite mc_tx(profile, 0);
     vanetza::Clock::duration interval = trc->interval(mc_tx);
     SimTime dcc { std::chrono::duration_cast<std::chrono::milliseconds>(interval).count(), SIMTIME_MS };
     return std::min(mGenMcmMax, std::max(mGenMcmMin, dcc));
