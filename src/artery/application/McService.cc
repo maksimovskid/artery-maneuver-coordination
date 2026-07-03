@@ -190,6 +190,16 @@ const char* mcmTimeSourceName(McService::McmTimeSource source)
     return "DataProvider";
 }
 
+const char* frequencyReduceStateName(McService::McmFrequencyReduceState state)
+{
+    switch (state) {
+        case McService::McmFrequencyReduceState::None: return "None";
+        case McService::McmFrequencyReduceState::Intent: return "Intent";
+        case McService::McmFrequencyReduceState::Negotiation: return "Negotiation";
+    }
+    return "None";
+}
+
 const char* mcmSubtypeName(mcm::mcmSubtype subtype)
 {
     switch (subtype) {
@@ -517,6 +527,7 @@ void McService::initialize()
     mNegotiationRetryInterval = mCommunicationConfig.negotiationRetryInterval;
     mNegotiationLimitMerging = mCommunicationConfig.negotiationLimitMerging;
     mNegotiationLimitLaneChange = mCommunicationConfig.negotiationLimitLaneChange;
+    mEffectiveIntentTrigger = mCommunicationConfig.intentTrigger;
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
     mUsePrerecordedIntentTrajectory = par("usePrerecordedIntentTrajectory").boolValue();
     mPrerecordedTrajectoryCsv = par("prerecordedTrajectoryCsv").stdstringValue();
@@ -586,18 +597,26 @@ void McService::checkTriggeringConditions(const SimTime& T_now)
 
 bool McService::shouldGenerateIntentMcm(const SimTime& now, SimTime dccInterval)
 {
-    // First-step generation-rule separation. With the current defaults this is
-    // behavior-equivalent to the previous fixed-rate check. The named old
-    // intent policies are parsed into McmCommunicationConfig and will be
-    // activated incrementally after congested-scenario validation is added.
+    updateAdaptiveIntentFrequency(now);
+
     const SimTime elapsed = now - mLastMcmTimestamp;
     const SimTime fixedInterval = mFixedRateInterval > SIMTIME_ZERO ? mFixedRateInterval : mGenMcmMin;
+    const IntentTriggeringCondition trigger = mEffectiveIntentTrigger;
 
     if (elapsed < dccInterval) {
         return false;
     }
 
-    if (mFixedRate) {
+    if (trigger == IntentTriggeringCondition::PeriodicFixed ||
+            trigger == IntentTriggeringCondition::PeriodicFixedHalfHz ||
+            trigger == IntentTriggeringCondition::PeriodicFixed1Hz ||
+            trigger == IntentTriggeringCondition::PeriodicFixed2Hz ||
+            trigger == IntentTriggeringCondition::PeriodicFixed3Hz ||
+            trigger == IntentTriggeringCondition::PeriodicFixed5Hz) {
+        return elapsed >= intervalForIntentTriggeringCondition(trigger);
+    }
+
+    if (trigger == IntentTriggeringCondition::SameAsCam && mFixedRate) {
         return elapsed >= fixedInterval;
     }
 
@@ -605,7 +624,13 @@ bool McService::shouldGenerateIntentMcm(const SimTime& now, SimTime dccInterval)
         return true;
     }
 
+    const SimTime reducedInterval = intervalForIntentTriggeringCondition(trigger);
     if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
+        if ((trigger == IntentTriggeringCondition::SameAsCamReduced1Hz ||
+                trigger == IntentTriggeringCondition::SameAsCamReduced2Hz) &&
+                elapsed < reducedInterval) {
+            return false;
+        }
         mGenMcm = std::min(elapsed, mGenMcmMax);
         mGenMcmLowDynamicsCounter = 0;
         return true;
@@ -619,6 +644,64 @@ bool McService::shouldGenerateIntentMcm(const SimTime& now, SimTime dccInterval)
     }
 
     return false;
+}
+
+bool McService::adaptiveIntentRulesEnabled() const
+{
+    return mCommunicationConfig.newGenMcmRules &&
+        mCommunicationConfig.newGenMcmRulesIntent &&
+        !mCommunicationConfig.newGenMcmRulesIntent1HzMco;
+}
+
+void McService::updateAdaptiveIntentFrequency(const SimTime& now)
+{
+    if (!adaptiveIntentRulesEnabled()) {
+        return;
+    }
+
+    // TODO: The old service exempted "important" intent sharing from adaptive
+    // reduction. The current McService does not expose an equivalent state yet,
+    // so this rule is limited to normal Intent MCM generation and does not
+    // touch negotiation/execution containers.
+    const double enterThreshold = mCommunicationConfig.dccOnlyMcm ?
+        mCommunicationConfig.freqReduceCbrMax :
+        mCommunicationConfig.freqReduceCbrMin;
+    const double recoverThreshold = enterThreshold;
+
+    if (mFrequencyReduceState == McmFrequencyReduceState::None &&
+            mEffectiveIntentTrigger == IntentTriggeringCondition::SameAsCam &&
+            mLocalCbr > enterThreshold) {
+        mEffectiveIntentTrigger = IntentTriggeringCondition::PeriodicFixed1Hz;
+        mFrequencyReduceState = McmFrequencyReduceState::Intent;
+        mFrequencyReducedIntentAt = now;
+        mFrequencyReduceIntentRecoveryDelay = SimTime {
+            mCommunicationConfig.dccOnlyMcm ? uniform(0.5, 1.5) : uniform(1.0, 2.0)
+        };
+        EV_INFO << "[MCM-QOS-ADAPT] reducing Intent MCM generation to "
+            << intentTriggeringConditionName(mEffectiveIntentTrigger)
+            << " localCbr=" << mLocalCbr
+            << " threshold=" << enterThreshold
+            << " recoveryDelay=" << mFrequencyReduceIntentRecoveryDelay
+            << " state=" << frequencyReduceStateName(mFrequencyReduceState)
+            << '\n';
+        return;
+    }
+
+    if (mFrequencyReduceState == McmFrequencyReduceState::Intent &&
+            mEffectiveIntentTrigger == IntentTriggeringCondition::PeriodicFixed1Hz &&
+            mLocalCbr < recoverThreshold &&
+            now - mFrequencyReducedIntentAt > mFrequencyReduceIntentRecoveryDelay) {
+        mEffectiveIntentTrigger = mCommunicationConfig.intentTrigger;
+        mFrequencyReduceState = McmFrequencyReduceState::None;
+        mFrequencyReducedIntentAt = SIMTIME_ZERO;
+        mFrequencyReduceIntentRecoveryDelay = SIMTIME_ZERO;
+        EV_INFO << "[MCM-QOS-ADAPT] restoring Intent MCM generation to "
+            << intentTriggeringConditionName(mEffectiveIntentTrigger)
+            << " localCbr=" << mLocalCbr
+            << " threshold=" << recoverThreshold
+            << " state=" << frequencyReduceStateName(mFrequencyReduceState)
+            << '\n';
+    }
 }
 
 bool McService::shouldGenerateCoordinationMcm(const SimTime& now, SimTime dccInterval) const

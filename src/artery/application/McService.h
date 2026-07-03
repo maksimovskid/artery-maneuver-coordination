@@ -76,6 +76,12 @@ public:
         CurrentTime
     };
 
+    enum class McmFrequencyReduceState {
+        None,
+        Intent,
+        Negotiation
+    };
+
     struct McmCommunicationConfig {
         IntentTriggeringCondition intentTrigger = IntentTriggeringCondition::SameAsCam;
         CoordinationTriggeringCondition coordinationTrigger = CoordinationTriggeringCondition::SameAsCam;
@@ -106,6 +112,8 @@ private:
     void checkTriggeringConditions(const omnetpp::SimTime&);
     bool shouldGenerateIntentMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval);
     bool shouldGenerateCoordinationMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval) const;
+    void updateAdaptiveIntentFrequency(const omnetpp::SimTime& now);
+    bool adaptiveIntentRulesEnabled() const;
     omnetpp::SimTime intervalForIntentTriggeringCondition(IntentTriggeringCondition) const;
     omnetpp::SimTime intervalForCoordinationTriggeringCondition(CoordinationTriggeringCondition) const;
     bool checkHeadingDelta() const;
@@ -210,6 +218,10 @@ private:
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;
     McmCommunicationConfig mCommunicationConfig;
+    IntentTriggeringCondition mEffectiveIntentTrigger = IntentTriggeringCondition::SameAsCam;
+    McmFrequencyReduceState mFrequencyReduceState = McmFrequencyReduceState::None;
+    omnetpp::SimTime mFrequencyReducedIntentAt = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime mFrequencyReduceIntentRecoveryDelay = omnetpp::SimTime::ZERO;
 
     bool mUsePrerecordedIntentTrajectory = false;
     std::string mPrerecordedTrajectoryCsv;
