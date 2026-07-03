@@ -674,6 +674,195 @@ void McApplication::resetCvCoordinationStateAfterComplete()
     mCvStoppedDecelerationForRvLogged = false;
 }
 
+bool McApplication::isHighPriorityLaneChangeRequestActive() const
+{
+    return mLaneChangeRequestQueuedOrSent &&
+        mPriorityMcmCategory == priorityMcmCategory::HighPriority;
+}
+
+bool McApplication::isRvNegotiationRequestActive() const
+{
+    return mMergingRequestQueuedOrSent || isHighPriorityLaneChangeRequestActive();
+}
+
+bool McApplication::haveAllExpectedRvOffers() const
+{
+    return mRvNumberOfVehicles > 1 ?
+        (mRvOfferReceived1 && mRvOfferReceived2) :
+        mRvOfferReceived1;
+}
+
+bool McApplication::haveAllExpectedRvAccepts() const
+{
+    return mRvNumberOfVehicles > 1 ?
+        (mRvAcceptReceived1 && mRvAcceptReceived2) :
+        mRvAcceptReceived1;
+}
+
+omnetpp::SimTime McApplication::activeRvNegotiationLimit() const
+{
+    return isHighPriorityLaneChangeRequestActive() ?
+        mNegotiationLimitLaneChange :
+        mNegotiationLimitMerging;
+}
+
+bool McApplication::hasRvNegotiationTimedOut(
+    omnetpp::SimTime now,
+    omnetpp::SimTime limit) const
+{
+    return mHasRvNegotiationStartedAt &&
+        now - mRvNegotiationStartedAt >= limit;
+}
+
+bool McApplication::hasCvNegotiationTimedOut(omnetpp::SimTime now) const
+{
+    return mHasCvNegotiationStartedAt &&
+        now - mCvNegotiationStartedAt >= mNegotiationLimitMerging;
+}
+
+bool McApplication::shouldRetryAfter(
+    omnetpp::SimTime now,
+    omnetpp::SimTime lastQueuedAt,
+    bool hasLastQueuedAt) const
+{
+    return !hasLastQueuedAt || now - lastQueuedAt >= mNegotiationRetryInterval;
+}
+
+// RV-side Request retransmission. The Request keeps the original target set
+// and request ID; one-CV and two-CV behavior is decided by mRvNumberOfVehicles.
+PendingMcmCommand McApplication::makeRvRequestRetryCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Request;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mActiveNegotiatedTrajectory;
+    return command;
+}
+
+// RV-side Confirm retransmission. Confirm uses the fixed negotiated trajectory
+// when present, otherwise the current ego trajectory, matching the previous
+// retry behavior.
+PendingMcmCommand McApplication::makeRvConfirmRetryCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Confirm;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mActiveNegotiatedTrajectory.empty()
+        ? mEgoContext.plannedTrajectory
+        : mActiveNegotiatedTrajectory;
+    return command;
+}
+
+// CV-side Offer retransmission while waiting for Confirm. The offer trajectory
+// still comes from the selected CV maneuver if one was computed.
+PendingMcmCommand McApplication::makeCvOfferRetryCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Offer;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = 1;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
+    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
+        ? mActiveNegotiatedTrajectory
+        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    command.offeredTrajectory = mHasCvSelectedTrajectory
+        ? mCvSelectedTrajectory
+        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+    return command;
+}
+
+// CV-side Accept retransmission while waiting for Execute. This intentionally
+// preserves the response vehicle count from the original Request path.
+PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Accept;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = mCvResponseNumberOfVehicles;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
+    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
+        ? mActiveNegotiatedTrajectory
+        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    return command;
+}
+
+// RV timeout reset for unsuccessful medium-priority merging negotiations.
+// High-priority lane-change timeouts use the emergency fallback brake instead,
+// so this helper preserves the old merging-only reset semantics.
+void McApplication::resetRvNegotiationAfterTimeout()
+{
+    mMergingRequestQueuedOrSent = false;
+    mRvOfferReceived1 = false;
+    mRvOfferReceived2 = false;
+    mRvConfirmQueuedOrSent = false;
+    mRvAcceptReceived1 = false;
+    mRvAcceptReceived2 = false;
+    mRvExecuteQueuedOrSent = false;
+    mRvNegotiationTimedOut = true;
+
+    mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
+    mHasRvLastRequestQueuedAt = false;
+    mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
+    mHasRvLastConfirmQueuedAt = false;
+    mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    mHasRvNegotiationStartedAt = false;
+
+    mActiveNegotiatedTrajectory.clear();
+    mHasActiveNegotiatedTrajectory = false;
+
+    mOperationMode = operationMode::IntentionSharingMode;
+    mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
+}
+
+// CV timeout reset for Offer/Accept retries. It clears only the negotiation
+// bookkeeping that the old timeout paths cleared; execution/control flags are
+// left untouched to avoid changing participant state outside negotiation.
+void McApplication::resetCvNegotiationAfterTimeout()
+{
+    mPendingMcmCommand.reset();
+    mCoordinationProgressCV = coordinationProgressCV::NoRequest;
+    mOperationMode = operationMode::IntentionSharingMode;
+    mMcmSubtype = mcmSubtype::Regular;
+    mCooperatingVehicleType = cooperatingVehicleType::NCV;
+    mCvResponseQueuedOrSent = false;
+    mCvRvStationId = 0;
+    mCvRequestId = 0;
+    mCvResponseNumberOfVehicles = 1;
+    mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
+    mHasCvLastOfferQueuedAt = false;
+    mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
+    mHasCvLastAcceptQueuedAt = false;
+    mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    mHasCvNegotiationStartedAt = false;
+    mCvSelectedTrajectory.clear();
+    mHasCvSelectedTrajectory = false;
+}
+
 void McApplication::clearCommand()
 {
     mPendingCommand = CommandKind::None;
@@ -1922,10 +2111,11 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 
 void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
 {
-    const bool laneChangeRequestActive = mLaneChangeRequestQueuedOrSent &&
-        mPriorityMcmCategory == priorityMcmCategory::HighPriority;
-    const bool requestActive = mMergingRequestQueuedOrSent || laneChangeRequestActive;
-    if (!requestActive) {
+    // RV-side Request retry while waiting for Offer messages. Two-CV
+    // negotiations require both Offers; one-CV high-priority lane-change
+    // requests may complete directly with Accept, so that legacy path is kept.
+    const bool laneChangeRequestActive = isHighPriorityLaneChangeRequestActive();
+    if (!isRvNegotiationRequestActive()) {
         return;
     }
 
@@ -1933,15 +2123,13 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
         return;
     }
 
-    const omnetpp::SimTime negotiationLimit =
-        laneChangeRequestActive ? mNegotiationLimitLaneChange : mNegotiationLimitMerging;
+    const omnetpp::SimTime negotiationLimit = activeRvNegotiationLimit();
 
     if (mRvNumberOfVehicles < 2) {
         if (laneChangeRequestActive &&
                 mCoordinationProgressRV == coordinationProgressRV::RequestSent &&
                 !mRvAcceptReceived1 &&
-                mHasRvNegotiationStartedAt &&
-                now - mRvNegotiationStartedAt >= negotiationLimit) {
+                hasRvNegotiationTimedOut(now, negotiationLimit)) {
             EV_STATICCONTEXT;
             EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
                 << " t=" << now
@@ -1963,15 +2151,11 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
         return;
     }
 
-    const bool allExpectedOffersReceived =
-        mRvOfferReceived1 && mRvOfferReceived2;
-
-    if (allExpectedOffersReceived) {
+    if (haveAllExpectedRvOffers()) {
         return;
     }
 
-    if (mHasRvNegotiationStartedAt &&
-        now - mRvNegotiationStartedAt >= negotiationLimit) {
+    if (hasRvNegotiationTimedOut(now, negotiationLimit)) {
         EV_STATICCONTEXT;
         EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
             << " t=" << now
@@ -2010,49 +2194,15 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
             return;
         }
 
-        mMergingRequestQueuedOrSent = false;
-        mRvOfferReceived1 = false;
-        mRvOfferReceived2 = false;
-        mRvConfirmQueuedOrSent = false;
-        mRvAcceptReceived1 = false;
-        mRvAcceptReceived2 = false;
-        mRvExecuteQueuedOrSent = false;
-        mRvNegotiationTimedOut = true;
-
-        mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
-        mHasRvLastRequestQueuedAt = false;
-        mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
-        mHasRvLastConfirmQueuedAt = false;
-        mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-        mHasRvNegotiationStartedAt = false;
-
-        mActiveNegotiatedTrajectory.clear();
-        mHasActiveNegotiatedTrajectory = false;
-
-        mOperationMode = operationMode::IntentionSharingMode;
-        mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
-
+        resetRvNegotiationAfterTimeout();
         return;
     }
 
-    if (mHasRvLastRequestQueuedAt &&
-            now - mRvLastRequestQueuedAt < mNegotiationRetryInterval) {
+    if (!shouldRetryAfter(now, mRvLastRequestQueuedAt, mHasRvLastRequestQueuedAt)) {
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Request;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mRvRequestId;
-    command.numberOfVehicles = mRvNumberOfVehicles;
-    command.targetVehicle1 = mRvTargetVehicle1;
-    command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
-    command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mActiveNegotiatedTrajectory;
-
-    mPendingMcmCommand = command;
+    mPendingMcmCommand = makeRvRequestRetryCommand();
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;
 
@@ -2086,10 +2236,11 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
 
 void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
 {
-    const bool laneChangeRequestActive = mLaneChangeRequestQueuedOrSent &&
-        mPriorityMcmCategory == priorityMcmCategory::HighPriority;
-    const bool requestActive = mMergingRequestQueuedOrSent || laneChangeRequestActive;
-    if (!requestActive) {
+    // RV-side Confirm retry while waiting for Accept messages. The old flow
+    // only resends Confirm for two-CV negotiation; one-CV Accept handling stays
+    // on the direct Request->Accept path.
+    const bool laneChangeRequestActive = isHighPriorityLaneChangeRequestActive();
+    if (!isRvNegotiationRequestActive()) {
         return;
     }
 
@@ -2105,18 +2256,13 @@ void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
         return;
     }
 
-    const bool allExpectedAcceptsReceived =
-        mRvAcceptReceived1 && mRvAcceptReceived2;
-
-    if (allExpectedAcceptsReceived) {
+    if (haveAllExpectedRvAccepts()) {
         return;
     }
 
-    const omnetpp::SimTime negotiationLimit =
-        laneChangeRequestActive ? mNegotiationLimitLaneChange : mNegotiationLimitMerging;
+    const omnetpp::SimTime negotiationLimit = activeRvNegotiationLimit();
 
-    if (mHasRvNegotiationStartedAt &&
-            now - mRvNegotiationStartedAt >= negotiationLimit) {
+    if (hasRvNegotiationTimedOut(now, negotiationLimit)) {
         EV_STATICCONTEXT;
         EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
             << " t=" << now
@@ -2155,51 +2301,15 @@ void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
             return;
         }
 
-        mMergingRequestQueuedOrSent = false;
-        mRvOfferReceived1 = false;
-        mRvOfferReceived2 = false;
-        mRvConfirmQueuedOrSent = false;
-        mRvAcceptReceived1 = false;
-        mRvAcceptReceived2 = false;
-        mRvExecuteQueuedOrSent = false;
-        mRvNegotiationTimedOut = true;
-
-        mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
-        mHasRvLastRequestQueuedAt = false;
-        mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
-        mHasRvLastConfirmQueuedAt = false;
-        mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-        mHasRvNegotiationStartedAt = false;
-
-        mActiveNegotiatedTrajectory.clear();
-        mHasActiveNegotiatedTrajectory = false;
-
-        mOperationMode = operationMode::IntentionSharingMode;
-        mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
-
+        resetRvNegotiationAfterTimeout();
         return;
     }
 
-    if (mHasRvLastConfirmQueuedAt &&
-            now - mRvLastConfirmQueuedAt < mNegotiationRetryInterval) {
+    if (!shouldRetryAfter(now, mRvLastConfirmQueuedAt, mHasRvLastConfirmQueuedAt)) {
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Confirm;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mRvRequestId;
-    command.numberOfVehicles = mRvNumberOfVehicles;
-    command.targetVehicle1 = mRvTargetVehicle1;
-    command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
-    command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mActiveNegotiatedTrajectory.empty()
-        ? mEgoContext.plannedTrajectory
-        : mActiveNegotiatedTrajectory;
-
-    mPendingMcmCommand = command;
+    mPendingMcmCommand = makeRvConfirmRetryCommand();
     mRvLastConfirmQueuedAt = now;
     mHasRvLastConfirmQueuedAt = true;
 
@@ -2233,6 +2343,9 @@ void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
 
 void McApplication::evaluateCvOfferRetry(omnetpp::SimTime now)
 {
+    // CV-side Offer retry while waiting for Confirm. This uses the merging
+    // negotiation limit currently shared by CV negotiation paths and keeps
+    // resending the same Offer content until Confirm or timeout.
     if (mCooperatingVehicleType != cooperatingVehicleType::CV) {
         return;
     }
@@ -2249,8 +2362,7 @@ void McApplication::evaluateCvOfferRetry(omnetpp::SimTime now)
         return;
     }
 
-    if (mHasCvNegotiationStartedAt &&
-            now - mCvNegotiationStartedAt >= mNegotiationLimitMerging) {
+    if (hasCvNegotiationTimedOut(now)) {
         EV_STATICCONTEXT;
         EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
             << " t=" << now
@@ -2275,50 +2387,15 @@ void McApplication::evaluateCvOfferRetry(omnetpp::SimTime now)
             << " limit=" << mNegotiationLimitMerging
             << std::endl;
 
-        mPendingMcmCommand.reset();
-        mCoordinationProgressCV = coordinationProgressCV::NoRequest;
-        mOperationMode = operationMode::IntentionSharingMode;
-        mMcmSubtype = mcmSubtype::Regular;
-        mCooperatingVehicleType = cooperatingVehicleType::NCV;
-        mCvResponseQueuedOrSent = false;
-        mCvRvStationId = 0;
-        mCvRequestId = 0;
-        mCvResponseNumberOfVehicles = 1;
-        mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
-        mHasCvLastOfferQueuedAt = false;
-        mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
-        mHasCvLastAcceptQueuedAt = false;
-        mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-        mHasCvNegotiationStartedAt = false;
-        mCvSelectedTrajectory.clear();
-        mHasCvSelectedTrajectory = false;
-
+        resetCvNegotiationAfterTimeout();
         return;
     }
 
-    if (now - mCvLastOfferQueuedAt < mNegotiationRetryInterval) {
+    if (!shouldRetryAfter(now, mCvLastOfferQueuedAt, mHasCvLastOfferQueuedAt)) {
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Offer;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mCvRequestId;
-    command.numberOfVehicles = 1;
-    command.targetVehicle1 = mCvRvStationId;
-    command.hasTargetVehicle2 = false;
-    command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
-        ? mActiveNegotiatedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
-    command.offeredTrajectory = mHasCvSelectedTrajectory
-        ? mCvSelectedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
-    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
-
-    mPendingMcmCommand = command;
+    mPendingMcmCommand = makeCvOfferRetryCommand();
     mCvLastOfferQueuedAt = now;
     mHasCvLastOfferQueuedAt = true;
 
@@ -2346,6 +2423,9 @@ void McApplication::evaluateCvOfferRetry(omnetpp::SimTime now)
 
 void McApplication::evaluateCvAcceptRetry(omnetpp::SimTime now)
 {
+    // CV-side Accept retry while waiting for Execute. Accept retry starts only
+    // after the sent-message handler marks AcceptSent, preserving duplicate
+    // tolerance and the recent Accept timestamp bookkeeping fix.
     if (mCooperatingVehicleType != cooperatingVehicleType::CV) {
         return;
     }
@@ -2362,8 +2442,7 @@ void McApplication::evaluateCvAcceptRetry(omnetpp::SimTime now)
         return;
     }
 
-    if (mHasCvNegotiationStartedAt &&
-            now - mCvNegotiationStartedAt >= mNegotiationLimitMerging) {
+    if (hasCvNegotiationTimedOut(now)) {
         EV_STATICCONTEXT;
         EV_INFO << "[MCM-NEGOTIATION-TIMEOUT]"
             << " t=" << now
@@ -2388,46 +2467,15 @@ void McApplication::evaluateCvAcceptRetry(omnetpp::SimTime now)
             << " limit=" << mNegotiationLimitMerging
             << std::endl;
 
-        mPendingMcmCommand.reset();
-        mCoordinationProgressCV = coordinationProgressCV::NoRequest;
-        mOperationMode = operationMode::IntentionSharingMode;
-        mMcmSubtype = mcmSubtype::Regular;
-        mCooperatingVehicleType = cooperatingVehicleType::NCV;
-        mCvResponseQueuedOrSent = false;
-        mCvRvStationId = 0;
-        mCvRequestId = 0;
-        mCvResponseNumberOfVehicles = 1;
-        mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
-        mHasCvLastOfferQueuedAt = false;
-        mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
-        mHasCvLastAcceptQueuedAt = false;
-        mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-        mHasCvNegotiationStartedAt = false;
-        mCvSelectedTrajectory.clear();
-        mHasCvSelectedTrajectory = false;
-
+        resetCvNegotiationAfterTimeout();
         return;
     }
 
-    if (now - mCvLastAcceptQueuedAt < mNegotiationRetryInterval) {
+    if (!shouldRetryAfter(now, mCvLastAcceptQueuedAt, mHasCvLastAcceptQueuedAt)) {
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Accept;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mCvRequestId;
-    command.numberOfVehicles = mCvResponseNumberOfVehicles;
-    command.targetVehicle1 = mCvRvStationId;
-    command.hasTargetVehicle2 = false;
-    command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
-        ? mActiveNegotiatedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
-
-    mPendingMcmCommand = command;
+    mPendingMcmCommand = makeCvAcceptRetryCommand();
     mCvLastAcceptQueuedAt = now;
     mHasCvLastAcceptQueuedAt = true;
 
