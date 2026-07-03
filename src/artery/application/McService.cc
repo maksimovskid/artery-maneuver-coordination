@@ -10,6 +10,7 @@
 #include "artery/application/mcm/McApplication.h"
 #include "artery/application/mcm/TrajectoryCsv.h"
 #include "artery/envmod/LocalEnvironmentModel.h"
+#include "artery/nic/RadioDriverBase.h"
 #include "artery/utility/round.h"
 #include "artery/traci/VehicleController.h"
 
@@ -442,6 +443,10 @@ void McService::loadCommunicationConfig()
     mCommunicationConfig.newGenMcmRules = par("newGenMcmRules").boolValue();
     mCommunicationConfig.newGenMcmRulesIntent = par("newGenMcmRulesIntent").boolValue();
     mCommunicationConfig.newGenMcmRulesIntent1HzMco = par("newGenMcmRulesIntent1Hz_MCO").boolValue();
+    mCommunicationConfig.freqReduceCbrMin = par("freqReduceCBRmin").doubleValue();
+    mCommunicationConfig.freqReduceCbrMedium = par("freqReduceCBRmedium").doubleValue();
+    mCommunicationConfig.freqReduceCbrMax = par("freqReduceCBRmax").doubleValue();
+    mCommunicationConfig.freqReduceCbrMco = par("freqReduceCBRmco").doubleValue();
 }
 
 void McService::logCommunicationConfig() const
@@ -462,6 +467,10 @@ void McService::logCommunicationConfig() const
         << " newGenMcmRules=" << mCommunicationConfig.newGenMcmRules
         << " newGenMcmRulesIntent=" << mCommunicationConfig.newGenMcmRulesIntent
         << " newGenMcmRulesIntent1Hz_MCO=" << mCommunicationConfig.newGenMcmRulesIntent1HzMco
+        << " freqReduceCBRmin=" << mCommunicationConfig.freqReduceCbrMin
+        << " freqReduceCBRmedium=" << mCommunicationConfig.freqReduceCbrMedium
+        << " freqReduceCBRmax=" << mCommunicationConfig.freqReduceCbrMax
+        << " freqReduceCBRmco=" << mCommunicationConfig.freqReduceCbrMco
         << " note=configuration-hooks-active-behavior-staged\n";
 }
 
@@ -475,6 +484,18 @@ void McService::initialize()
     mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(scExperimentalMcmAid);
     mVehicleController = getFacilities().get_mutable_ptr<traci::VehicleController>();
     if (auto* host = findHost()) {
+        cModule* radioDriver = host->getSubmodule("radioDriver");
+        if (!radioDriver) {
+            radioDriver = host->getSubmodule("radioDriver", 0);
+        }
+        if (radioDriver) {
+            radioDriver->subscribe(RadioDriverBase::ChannelLoadSignal, this);
+            EV_INFO << "[MCM-QOS-CONFIG] subscribed channel-load signal from "
+                << radioDriver->getFullPath() << '\n';
+        } else {
+            EV_WARN << "[MCM-QOS-CONFIG] radioDriver module not found; local CBR will remain at default 0\n";
+        }
+
         if (auto* environmentModelModule = host->getSubmodule("environmentModel")) {
             mLocalEnvironmentModel = static_cast<const LocalEnvironmentModel*>(environmentModelModule);
         }
@@ -535,6 +556,16 @@ void McService::initialize()
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,
         mNegotiationLimitLaneChange);
+}
+
+void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)
+{
+    if (signal != RadioDriverBase::ChannelLoadSignal) {
+        return;
+    }
+
+    ASSERT(value >= 0.0 && value <= 1.0);
+    mLocalCbr = std::max(0.0, std::min(1.0, value));
 }
 
 void McService::trigger()

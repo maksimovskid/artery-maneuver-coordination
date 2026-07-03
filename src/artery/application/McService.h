@@ -44,6 +44,11 @@ public:
 
     void initialize() override;
     void indicate(const vanetza::btp::DataIndication&, std::unique_ptr<vanetza::UpPacket>) override;
+    void receiveSignal(
+        omnetpp::cComponent*,
+        omnetpp::simsignal_t,
+        double,
+        omnetpp::cObject*) override;
     void trigger() override;
 
     // Typed representation of old MCM generation/QoS NED strings. These are
@@ -90,6 +95,10 @@ public:
         bool newGenMcmRules = false;
         bool newGenMcmRulesIntent = false;
         bool newGenMcmRulesIntent1HzMco = false;
+        double freqReduceCbrMin = 0.5;
+        double freqReduceCbrMedium = 0.6;
+        double freqReduceCbrMax = 0.65;
+        double freqReduceCbrMco = 0.5;
     };
 
 private:
@@ -189,6 +198,10 @@ private:
 
     bool mDccRestriction = false;
     bool mFixedRate = false;
+    // Local channel busy ratio is staged input for future adaptive MCM
+    // generation rules. It is observed and logged/configured now, but it does
+    // not alter triggering conditions or message timing in this step.
+    double mLocalCbr = 0.0;
     omnetpp::SimTime mFixedRateInterval;
     omnetpp::SimTime mNegotiationRetryInterval;
     omnetpp::SimTime mNegotiationLimitMerging;

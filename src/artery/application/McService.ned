@@ -43,6 +43,10 @@ simple McService like ItsG5Service
         bool newGenMcmRules = default(false);
         bool newGenMcmRulesIntent = default(false);
         bool newGenMcmRulesIntent1Hz_MCO = default(false);
+        double freqReduceCBRmin = default(0.5); // future adaptive-frequency threshold hook; inactive by default
+        double freqReduceCBRmedium = default(0.6); // future adaptive-frequency threshold hook; inactive by default
+        double freqReduceCBRmax = default(0.65); // future adaptive-frequency threshold hook; inactive by default
+        double freqReduceCBRmco = default(0.5); // future MCO 1 Hz intent threshold hook; inactive by default
 
         bool usePrerecordedIntentTrajectory = default(false);
         string prerecordedTrajectoryCsv = default("");
