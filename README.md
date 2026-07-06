@@ -53,6 +53,18 @@ Experimental 200-CAV and 500-CAV QoS validation configs are available for the ex
 
 These configs remain WIP evaluation scaffolding, not final benchmark results. The designated 19 maneuver-coordination vehicles remain the intended coordination participants. The additional CAVs are background/load vehicles that transmit regular Intent MCMs, using the existing fallback trajectory columns where applicable (`others_x/others_y = 1/1`), and in the two-service envmod configuration may also transmit CAMs. Background MCMs and CAMs are communication-load traffic and are not intended to make those vehicles negotiation participants.
 
+### MCM/QoS Result Summary
+
+The lightweight helper `tools/analyze_mcm_qos_results.py` summarizes selected MCM/QoS scalar and statistic output from OMNeT++ `.sca` files into CSV for comparing the baseline, adaptive Intent, MCO 1 Hz, and DCC-profile QoS configs:
+
+```bash
+python3 tools/analyze_mcm_qos_results.py \
+  --input scenarios/artery-maneuver-coordination/results \
+  --output scenarios/artery-maneuver-coordination/results/mcm_qos_summary.csv
+```
+
+The generated CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields.
+
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 
 ## Main Source Files
