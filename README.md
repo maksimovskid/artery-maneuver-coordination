@@ -36,6 +36,12 @@ The current research prototype supports one-CV and two-CV negotiation flows, Med
 
 Communication/QoS configuration hooks from the earlier research implementation are being reintroduced in a cleaner form. These hooks cover intent MCM generation conditions, coordination MCM generation conditions, DCC profile mapping, adaptive generation-rule flags, local CBR input for frequency-reduction rules, and future congested-scenario validation. Intent MCM frequency reduction can be enabled experimentally with `newGenMcmRules=true` and `newGenMcmRulesIntent=true`; it switches regular Intent MCM generation between `SameAsCAM` and `PeriodicFixed1Hz` based on local CBR. MCO-specific 1 Hz Intent MCM reduction is also available experimentally behind `newGenMcmRulesIntent1Hz_MCO`; it uses local CBR and `freqReduceCBRmco` to switch regular Intent MCM generation between `SameAsCAM` and 1 Hz. These adaptive paths remain disabled by default and still need congested-scenario validation. Negotiation-related adaptive reduction is still not implemented.
 
+## Measurements and Statistics
+
+The current implementation exposes a staged core subset of the old research measurement infrastructure through OMNeT++ signals/statistics. `McService` records MCM sent/received counters, subtype counters for Intent, Negotiation, Execution, and Emergency Execution MCMs, received message size, end-to-end delay where the MCM generation timestamp can be reconstructed, DCC wait time when DCC interval calculation is active, local CBR samples at MCM send time, and negotiation/execution counters where current state transitions are exposed cleanly.
+
+This is not a full restoration of every old signal. Additional priority-planner, trajectory-cost, per-second rate, delayed-message, and detailed cooperative update metrics remain staged for future congested 200-CAV/500-CAV validation work.
+
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 
 ## Main Source Files

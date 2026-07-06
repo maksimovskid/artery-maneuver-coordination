@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace traci { class VehicleController; }
@@ -125,6 +126,14 @@ private:
         mcm::priorityMcmCategory) const;
     void loadCommunicationConfig();
     void logCommunicationConfig() const;
+    void emitCurrentOperatingModeIfChanged();
+    void emitSentMeasurements(
+        const MCM_t&,
+        mcm::operationMode modeBeforeHandleSent);
+    void emitReceivedMeasurements(
+        const MCM_t&,
+        const vanetza::asn1::Mcm&,
+        const omnetpp::SimTime&);
 
     // MCM transmission
     void sendMcm(const omnetpp::SimTime&);
@@ -222,6 +231,12 @@ private:
     McmFrequencyReduceState mFrequencyReduceState = McmFrequencyReduceState::None;
     omnetpp::SimTime mFrequencyReducedIntentAt = omnetpp::SimTime::ZERO;
     omnetpp::SimTime mFrequencyReduceIntentRecoveryDelay = omnetpp::SimTime::ZERO;
+    bool mHasLastEmittedOperatingMode = false;
+    mcm::operationMode mLastEmittedOperatingMode;
+    std::set<long> mMeasuredNegotiationStartedRequestIds;
+    std::set<long> mMeasuredExecutionStartedRequestIds;
+    std::set<long> mMeasuredExecutionCompletedRequestIds;
+    std::set<long> mMeasuredRejectedRequestIds;
 
     bool mUsePrerecordedIntentTrajectory = false;
     std::string mPrerecordedTrajectoryCsv;

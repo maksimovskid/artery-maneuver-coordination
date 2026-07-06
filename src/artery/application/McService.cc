@@ -41,6 +41,33 @@ using namespace omnetpp;
 
 static const simsignal_t scSignalMcmReceived = cComponent::registerSignal("McmReceived");
 static const simsignal_t scSignalMcmSent = cComponent::registerSignal("McmSent");
+static const simsignal_t scSignalMcmReceivedCounter = cComponent::registerSignal("McmReceivedCounter");
+static const simsignal_t scSignalMcmSentCounter = cComponent::registerSignal("McmSentCounter");
+static const simsignal_t scSignalMcmIntentionReceivedCounter = cComponent::registerSignal("McmIntentionReceivedCounter");
+static const simsignal_t scSignalMcmIntentionSentCounter = cComponent::registerSignal("McmIntentionSentCounter");
+static const simsignal_t scSignalMcmNegotiationReceivedCounter = cComponent::registerSignal("McmNegotiationReceivedCounter");
+static const simsignal_t scSignalMcmNegotiationSentCounter = cComponent::registerSignal("McmNegotiationSentCounter");
+static const simsignal_t scSignalMcmExecutionReceivedCounter = cComponent::registerSignal("McmExecutionReceivedCounter");
+static const simsignal_t scSignalMcmExecutionSentCounter = cComponent::registerSignal("McmExecutionSentCounter");
+static const simsignal_t scSignalMcmExecutionEmergencyReceivedCounter = cComponent::registerSignal("McmExecutionEmergencyReceivedCounter");
+static const simsignal_t scSignalMcmExecutionEmergencySentCounter = cComponent::registerSignal("McmExecutionEmergencySentCounter");
+
+static const simsignal_t scSignalMessageSizeMcmReceived = cComponent::registerSignal("msgsizeReceived");
+static const simsignal_t scSignalEteDelayMcm = cComponent::registerSignal("EteDelayMcm");
+static const simsignal_t scSignalEteDelayMcmNegotiation = cComponent::registerSignal("EteDelayMcmNegotiation");
+static const simsignal_t scSignalEteDelayMcmExecution = cComponent::registerSignal("EteDelayMcmExecution");
+static const simsignal_t scSignalEteDelayMcmEmergency = cComponent::registerSignal("EteDelayMcmEmergency");
+static const simsignal_t scSignalDccTimeWaitNextMcm = cComponent::registerSignal("dccTimeWaitNextMcm");
+static const simsignal_t scSignalCoopCbr = cComponent::registerSignal("coopCBR");
+
+static const simsignal_t scSignalNegotiationStartedCounter = cComponent::registerSignal("NegotiationStartedCounter");
+static const simsignal_t scSignalNegotiationCompletedCounter = cComponent::registerSignal("NegotiationCompletedCounter");
+static const simsignal_t scSignalExecutionStartedCounter = cComponent::registerSignal("ExecutionStartedCounter");
+static const simsignal_t scSignalExecutionCompletedCounter = cComponent::registerSignal("ExecutionCompletedCounter");
+static const simsignal_t scSignalCounterNegotiationRejected = cComponent::registerSignal("CounterNegotiationRejected");
+static const simsignal_t scSignalCounterNegotiationTwoVehicles = cComponent::registerSignal("CounterNegotiationTwoVehicles");
+static const simsignal_t scSignalCounterNegotiationThreeVehicles = cComponent::registerSignal("CounterNegotiationThreeVehicles");
+static const simsignal_t scSignalCurrentMcsOperatingMode = cComponent::registerSignal("currentMCSoperatingMode");
 
 namespace
 {
@@ -246,6 +273,13 @@ struct McmOperationMetadata {
     uint32_t cooperationVehicleId2 = 0;
 };
 
+enum class McmMeasurementCategory {
+    Intent,
+    Negotiation,
+    Execution,
+    EmergencyExecution
+};
+
 McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
 {
     McmOperationMetadata metadata;
@@ -287,6 +321,43 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
     }
 
     return metadata;
+}
+
+McmMeasurementCategory classifyMcmForMeasurement(const MCM_t& message)
+{
+    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+    if (metadata.hasExecutionContainer) {
+        if (metadata.priorityManeuver == PriorityManeuver_emergency) {
+            return McmMeasurementCategory::EmergencyExecution;
+        }
+        return McmMeasurementCategory::Execution;
+    }
+    if (metadata.hasNegotiationContainer) {
+        return McmMeasurementCategory::Negotiation;
+    }
+    return McmMeasurementCategory::Intent;
+}
+
+double operatingModeMeasurementValue(mcm::operationMode mode)
+{
+    switch (mode) {
+        case mcm::operationMode::IntentionSharingMode: return 1.0;
+        case mcm::operationMode::ManeuverNegotiationMode: return 2.0;
+        case mcm::operationMode::ManeuverExecutionMode: return 3.0;
+        case mcm::operationMode::Unknown:
+        default: return 0.0;
+    }
+}
+
+long messageRequestKey(const McmOperationMetadata& metadata)
+{
+    if (metadata.hasExecutionContainer) {
+        return metadata.cooperationId;
+    }
+    if (metadata.hasNegotiationContainer) {
+        return metadata.requestId;
+    }
+    return -1;
 }
 
 mcm::TrajectoryPlanner::Trajectory extractTrajectory(const TrajectoryMCM_t& trajectory)
@@ -484,6 +555,132 @@ void McService::logCommunicationConfig() const
         << " note=configuration-hooks-active-behavior-staged\n";
 }
 
+void McService::emitCurrentOperatingModeIfChanged()
+{
+    if (!mApplication) {
+        return;
+    }
+
+    const mcm::operationMode mode = mApplication->currentOperationMode();
+    if (mHasLastEmittedOperatingMode && mode == mLastEmittedOperatingMode) {
+        return;
+    }
+
+    mHasLastEmittedOperatingMode = true;
+    mLastEmittedOperatingMode = mode;
+    emit(scSignalCurrentMcsOperatingMode, operatingModeMeasurementValue(mode));
+}
+
+void McService::emitSentMeasurements(
+    const MCM_t& message,
+    mcm::operationMode modeBeforeHandleSent)
+{
+    emit(scSignalMcmSentCounter, 1L);
+    emit(scSignalCoopCbr, mLocalCbr);
+
+    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+    switch (classifyMcmForMeasurement(message)) {
+        case McmMeasurementCategory::Intent:
+            emit(scSignalMcmIntentionSentCounter, 1L);
+            break;
+        case McmMeasurementCategory::Negotiation:
+            emit(scSignalMcmNegotiationSentCounter, 1L);
+            break;
+        case McmMeasurementCategory::Execution:
+            emit(scSignalMcmExecutionSentCounter, 1L);
+            break;
+        case McmMeasurementCategory::EmergencyExecution:
+            emit(scSignalMcmExecutionSentCounter, 1L);
+            emit(scSignalMcmExecutionEmergencySentCounter, 1L);
+            break;
+    }
+
+    const long key = messageRequestKey(metadata);
+    if (metadata.hasNegotiationContainer &&
+            metadata.mcmCategory == McmCategory_request &&
+            key >= 0 &&
+            mMeasuredNegotiationStartedRequestIds.insert(key).second) {
+        emit(scSignalNegotiationStartedCounter, 1L);
+        // Current MCM commands expose numberOfVehicles, not the old conflict
+        // count. Treat one/two-CV negotiations conservatively as the old
+        // "two vehicles" bucket and reserve "three vehicles" for larger sets.
+        if (metadata.numberOfVehicles > 2) {
+            emit(scSignalCounterNegotiationThreeVehicles, 1L);
+        } else {
+            emit(scSignalCounterNegotiationTwoVehicles, 1L);
+        }
+    }
+
+    if (metadata.hasNegotiationContainer &&
+            metadata.mcmCategory == McmCategory_reject &&
+            key >= 0 &&
+            mMeasuredRejectedRequestIds.insert(key).second) {
+        emit(scSignalCounterNegotiationRejected, 1L);
+    }
+
+    if (metadata.hasExecutionContainer &&
+            metadata.priorityManeuver != PriorityManeuver_emergency &&
+            key >= 0 &&
+            mMeasuredExecutionStartedRequestIds.insert(key).second) {
+        emit(scSignalNegotiationCompletedCounter, 1L);
+        emit(scSignalExecutionStartedCounter, 1L);
+    }
+
+    if (metadata.hasNegotiationContainer &&
+            metadata.mcmCategory == McmCategory_cancel &&
+            modeBeforeHandleSent == mcm::operationMode::ManeuverExecutionMode &&
+            key >= 0 &&
+            mMeasuredExecutionCompletedRequestIds.insert(key).second) {
+        emit(scSignalExecutionCompletedCounter, 1L);
+    }
+}
+
+void McService::emitReceivedMeasurements(
+    const MCM_t& message,
+    const vanetza::asn1::Mcm& decoded,
+    const SimTime& now)
+{
+    emit(scSignalMcmReceivedCounter, 1L);
+    emit(scSignalMessageSizeMcmReceived, static_cast<unsigned long>(decoded.size()));
+
+    const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+    switch (classifyMcmForMeasurement(message)) {
+        case McmMeasurementCategory::Intent:
+            emit(scSignalMcmIntentionReceivedCounter, 1L);
+            break;
+        case McmMeasurementCategory::Negotiation:
+            emit(scSignalMcmNegotiationReceivedCounter, 1L);
+            break;
+        case McmMeasurementCategory::Execution:
+            emit(scSignalMcmExecutionReceivedCounter, 1L);
+            break;
+        case McmMeasurementCategory::EmergencyExecution:
+            emit(scSignalMcmExecutionReceivedCounter, 1L);
+            emit(scSignalMcmExecutionEmergencyReceivedCounter, 1L);
+            break;
+    }
+
+    const SimTime generatedAt = mTimer->getTimeFor(
+        mTimer->reconstructMilliseconds(message.mcm.generationDeltaTime));
+    const SimTime eteDelay = now - generatedAt;
+    if (eteDelay < SIMTIME_ZERO) {
+        // TODO: Revisit generationDeltaTime reconstruction for cross-second
+        // wraparound edge cases before emitting negative E2E delay samples.
+        return;
+    }
+
+    emit(scSignalEteDelayMcm, eteDelay);
+    if (metadata.hasNegotiationContainer) {
+        emit(scSignalEteDelayMcmNegotiation, eteDelay);
+    }
+    if (metadata.hasExecutionContainer) {
+        emit(scSignalEteDelayMcmExecution, eteDelay);
+        if (metadata.priorityManeuver == PriorityManeuver_emergency) {
+            emit(scSignalEteDelayMcmEmergency, eteDelay);
+        }
+    }
+}
+
 void McService::initialize()
 {
     ItsG5BaseService::initialize();
@@ -584,6 +781,7 @@ void McService::trigger()
     Enter_Method("trigger");
     updateApplicationEgoContext(simTime());
     mApplication->tick(simTime());
+    emitCurrentOperatingModeIfChanged();
     checkTriggeringConditions(simTime());
 }
 
@@ -954,7 +1152,10 @@ void McService::sendMcm(const SimTime& T_now)
     McObject obj(std::move(mcmMessage));
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
+    const mcm::operationMode modeBeforeHandleSent = mApplication->currentOperationMode();
+    emitSentMeasurements(message, modeBeforeHandleSent);
     mApplication->handleSentMcm(makeSentMcm(message, T_now));
+    emitCurrentOperatingModeIfChanged();
     EV_DETAIL << "Sending minimal MCM for station " << obj.asn1()->header.stationID << " at " << T_now << '\n';
     mLastMcmPosition = mVehicleDataProvider->position();
     mLastMcmSpeed = mVehicleDataProvider->speed();
@@ -1298,6 +1499,7 @@ SimTime McService::genMcmDcc()
     const vanetza::dcc::TransmissionLite mc_tx(profile, 0);
     vanetza::Clock::duration interval = trc->interval(mc_tx);
     SimTime dcc { std::chrono::duration_cast<std::chrono::milliseconds>(interval).count(), SIMTIME_MS };
+    emit(scSignalDccTimeWaitNextMcm, dcc);
     return std::min(mGenMcmMax, std::max(mGenMcmMin, dcc));
 }
 
@@ -1332,6 +1534,7 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
 
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
+        emitReceivedMeasurements(message, *decodedMcm, simTime());
         if (!mLocalDynamicMapMCM) {
             mLocalDynamicMapMCM = getFacilities().get_mutable_ptr<LocalDynamicMapMCM>();
         }
@@ -1342,6 +1545,7 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         }
 
         mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
+        emitCurrentOperatingModeIfChanged();
     } catch (const std::exception& e) {
         EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';
     } catch (...) {

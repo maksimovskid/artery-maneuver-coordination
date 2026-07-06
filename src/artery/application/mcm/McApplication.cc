@@ -890,6 +890,11 @@ bool McApplication::hasActiveExecution() const
     return mExecutionState == ExecutionState::Pending || mExecutionState == ExecutionState::Executing;
 }
 
+operationMode McApplication::currentOperationMode() const
+{
+    return mOperationMode;
+}
+
 void McApplication::applyCommand()
 {
     // TODO: later use VehicleController hooks for DecelerateTo and RestoreNormalSpeed commands.

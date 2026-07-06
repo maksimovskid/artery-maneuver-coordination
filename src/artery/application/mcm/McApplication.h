@@ -206,6 +206,7 @@ public:
     std::optional<PendingMcmCommand> consumePendingCommand();
     void clearCommand();
     bool hasActiveExecution() const;
+    operationMode currentOperationMode() const;
 
     // TODO: add negotiation strategy and maneuver state handling.
     // TODO: add scenario-specific maneuver coordination behavior.
