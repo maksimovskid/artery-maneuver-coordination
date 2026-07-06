@@ -655,6 +655,49 @@ bool McService::adaptiveIntentRulesEnabled() const
 
 void McService::updateAdaptiveIntentFrequency(const SimTime& now)
 {
+    // The MCO 1 Hz rule is intentionally enabled by its own flag, matching the
+    // old service's separate mNewGenMcmRulesIntent1Hz_MCO block. It takes
+    // precedence over the general newGenMcmRules/newGenMcmRulesIntent rule so
+    // both rules cannot update adaptive state in the same tick.
+    if (mCommunicationConfig.newGenMcmRulesIntent1HzMco) {
+        // TODO: Exclude Important Intent Sharing once the current implementation exposes
+        // an explicit important-intent state equivalent to the old implementation.
+        const double threshold = mCommunicationConfig.freqReduceCbrMco;
+
+        if (mFrequencyReduceState == McmFrequencyReduceState::None &&
+                mEffectiveIntentTrigger == IntentTriggeringCondition::SameAsCam &&
+                mLocalCbr > threshold) {
+            mEffectiveIntentTrigger = IntentTriggeringCondition::PeriodicFixed1Hz;
+            mFrequencyReduceState = McmFrequencyReduceState::Intent;
+            mFrequencyReducedIntentAt = now;
+            mFrequencyReduceIntentRecoveryDelay = SimTime {
+                mCommunicationConfig.dccOnlyMcm ? uniform(0.1, 1.0) : uniform(1.0, 2.0)
+            };
+            EV_INFO << "[MCM-QOS-ADAPT] MCO intent reduction: SameAsCAM -> PeriodicFixed1Hz"
+                << " localCbr=" << mLocalCbr
+                << " threshold=" << threshold
+                << " recoveryDelay=" << mFrequencyReduceIntentRecoveryDelay
+                << '\n';
+            return;
+        }
+
+        if (mFrequencyReduceState == McmFrequencyReduceState::Intent &&
+                mEffectiveIntentTrigger == IntentTriggeringCondition::PeriodicFixed1Hz &&
+                mLocalCbr < threshold &&
+                now - mFrequencyReducedIntentAt >= mFrequencyReduceIntentRecoveryDelay) {
+            mEffectiveIntentTrigger = IntentTriggeringCondition::SameAsCam;
+            mFrequencyReduceState = McmFrequencyReduceState::None;
+            mFrequencyReducedIntentAt = SIMTIME_ZERO;
+            mFrequencyReduceIntentRecoveryDelay = SIMTIME_ZERO;
+            EV_INFO << "[MCM-QOS-ADAPT] MCO intent recovery: PeriodicFixed1Hz -> SameAsCAM"
+                << " localCbr=" << mLocalCbr
+                << " threshold=" << threshold
+                << '\n';
+        }
+
+        return;
+    }
+
     if (!adaptiveIntentRulesEnabled()) {
         return;
     }

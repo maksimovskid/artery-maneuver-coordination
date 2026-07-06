@@ -34,7 +34,7 @@ This repository adds a Maneuver Coordination Service (MCS) / Maneuver Coordinati
 
 The current research prototype supports one-CV and two-CV negotiation flows, Medium-priority cooperative merging validation, and High-priority emergency lane-change validation. It also contains dynamic trajectory/gap-based target selection, CV cooperation decision and feasibility checks, retry and timeout handling, and SUMO execution control through TraCI.
 
-Communication/QoS configuration hooks from the earlier research implementation are being reintroduced in a cleaner form. These hooks cover intent MCM generation conditions, coordination MCM generation conditions, DCC profile mapping, adaptive generation-rule flags, local CBR input for frequency-reduction rules, and future congested-scenario validation. Intent MCM frequency reduction can be enabled experimentally with `newGenMcmRules=true` and `newGenMcmRulesIntent=true`; it switches regular Intent MCM generation between `SameAsCAM` and `PeriodicFixed1Hz` based on local CBR. This remains disabled by default and still needs congested-scenario validation. MCO-specific and negotiation-related reduction rules are not implemented yet.
+Communication/QoS configuration hooks from the earlier research implementation are being reintroduced in a cleaner form. These hooks cover intent MCM generation conditions, coordination MCM generation conditions, DCC profile mapping, adaptive generation-rule flags, local CBR input for frequency-reduction rules, and future congested-scenario validation. Intent MCM frequency reduction can be enabled experimentally with `newGenMcmRules=true` and `newGenMcmRulesIntent=true`; it switches regular Intent MCM generation between `SameAsCAM` and `PeriodicFixed1Hz` based on local CBR. MCO-specific 1 Hz Intent MCM reduction is also available experimentally behind `newGenMcmRulesIntent1Hz_MCO`; it uses local CBR and `freqReduceCBRmco` to switch regular Intent MCM generation between `SameAsCAM` and 1 Hz. These adaptive paths remain disabled by default and still need congested-scenario validation. Negotiation-related adaptive reduction is still not implemented.
 
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 
@@ -298,7 +298,7 @@ Related peer-reviewed publications and research outputs are available through th
 * The combined 19-CAV scenario is not the primary correctness validation target because mixing merging and emergency lane-change use cases can create SUMO side effects.
 * GUI/SUMO shutdown behavior may differ from headless Cmdenv; headless validation is the main regression check.
 * More refactoring and documentation are ongoing.
-* Communication/QoS options for DCC profile selection and adaptive generation are being restored incrementally. Local CBR is available to `McService`, and regular Intent MCM frequency reduction is available behind disabled-by-default flags. MCO-specific and negotiation-related adaptive rules remain staged/WIP.
+* Communication/QoS options for DCC profile selection and adaptive generation are being restored incrementally. Local CBR is available to `McService`, regular Intent MCM frequency reduction is available behind disabled-by-default flags, and MCO-specific 1 Hz Intent reduction is available experimentally behind `newGenMcmRulesIntent1Hz_MCO` using `freqReduceCBRmco`. Negotiation-related adaptive reduction remains staged/WIP.
 
 ## Cleanup
 
