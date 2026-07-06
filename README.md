@@ -55,15 +55,16 @@ These configs remain WIP evaluation scaffolding, not final benchmark results. Th
 
 ### MCM/QoS Result Summary
 
-The lightweight helper `tools/analyze_mcm_qos_results.py` summarizes selected MCM/QoS scalar and statistic output from OMNeT++ `.sca` files into CSV for comparing the baseline, adaptive Intent, MCO 1 Hz, and DCC-profile QoS configs:
+The lightweight helper `tools/analyze_mcm_qos_results.py` summarizes selected MCM/QoS scalar and statistic output from OMNeT++ `.sca` files into CSV for comparing the baseline, adaptive Intent, MCO 1 Hz, and DCC-profile QoS configs. It can also write an aggregate CSV across repeated runs/seeds:
 
 ```bash
 python3 tools/analyze_mcm_qos_results.py \
   --input scenarios/artery-maneuver-coordination/results \
-  --output scenarios/artery-maneuver-coordination/results/mcm_qos_summary.csv
+  --output scenarios/artery-maneuver-coordination/results/mcm_qos_summary.csv \
+  --aggregate-output scenarios/artery-maneuver-coordination/results/mcm_qos_aggregate.csv
 ```
 
-The generated CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields.
+The flat CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields. The aggregate CSV groups by config, metric, and module by default; pass `--group-without-module` to produce config/metric-level summaries.
 
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 

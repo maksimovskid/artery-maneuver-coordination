@@ -5,6 +5,8 @@ import argparse
 import csv
 import math
 import re
+import statistics
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -51,6 +53,28 @@ FIELDNAMES = [
     "value",
 ]
 
+AGGREGATE_FIELDNAMES = [
+    "config",
+    "metric",
+    "module",
+    "rows",
+    "runs",
+    "seeds",
+    "value_mean",
+    "value_stddev",
+    "value_min",
+    "value_max",
+    "count_sum",
+    "mean_mean",
+    "mean_stddev",
+    "mean_min",
+    "mean_max",
+    "sum_mean",
+    "sum_stddev",
+    "sum_min",
+    "sum_max",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -67,6 +91,16 @@ def parse_args():
         type=Path,
         default=DEFAULT_OUTPUT,
         help=f"CSV output path (default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "--aggregate-output",
+        type=Path,
+        help="Optional CSV output path for aggregate summaries across runs/seeds.",
+    )
+    parser.add_argument(
+        "--group-without-module",
+        action="store_true",
+        help="Aggregate by config and metric only instead of config, metric, and module.",
     )
     return parser.parse_args()
 
@@ -90,18 +124,20 @@ def clean_number(value):
 def filename_defaults(path):
     match = re.match(r"(?P<config>.+?)(?:-seed=(?P<seed>[^-]+))?(?:-#(?P<run>\d+))?$", path.stem)
     if not match:
-        return path.stem, ""
+        return path.stem, "", ""
     run = f"#{match.group('run')}" if match.group("run") is not None else ""
     seed = match.group("seed")
     if seed:
         run = f"seed={seed} {run}".strip()
-    return match.group("config"), run
+    return match.group("config"), run, seed or ""
 
 
-def empty_row(config, run, path, metric, module):
+def empty_row(config, run, seed, path, metric, module):
     return {
         "config": config,
         "run": run,
+        "_seed": seed,
+        "_run_key": run or path.stem,
         "file": str(path),
         "metric": metric,
         "module": module,
@@ -116,9 +152,11 @@ def empty_row(config, run, path, metric, module):
 
 
 def parse_sca(path):
-    config, run = filename_defaults(path)
+    config, run, seed = filename_defaults(path)
     rows = []
     current_stat = None
+    runnumber = ""
+    replication = ""
 
     def finish_stat():
         nonlocal current_stat
@@ -136,10 +174,21 @@ def parse_sca(path):
                 config = line.split(None, 2)[2]
                 continue
             if line.startswith("attr runnumber "):
-                run = line.split(None, 2)[2]
+                runnumber = line.split(None, 2)[2]
                 continue
-            if line.startswith("attr replication ") and not run:
-                run = line.split(None, 2)[2]
+            if line.startswith("attr replication "):
+                replication = line.split(None, 2)[2]
+                continue
+            if line.startswith("itervar seed "):
+                seed = line.split(None, 2)[2]
+                run_parts = []
+                if seed:
+                    run_parts.append(f"seed={seed}")
+                if replication:
+                    run_parts.append(replication)
+                elif runnumber:
+                    run_parts.append(runnumber)
+                run = " ".join(run_parts)
                 continue
 
             if line.startswith("scalar "):
@@ -152,7 +201,7 @@ def parse_sca(path):
                 if metric not in METRICS:
                     continue
 
-                row = empty_row(config, run, path, metric, module)
+                row = empty_row(config, run, seed, path, metric, module)
                 value = clean_number(value)
                 if name.endswith(":count"):
                     row["count"] = value
@@ -168,7 +217,7 @@ def parse_sca(path):
                 _, module, name = parts
                 metric = metric_base(name)
                 if metric in METRICS:
-                    current_stat = empty_row(config, run, path, metric, module)
+                    current_stat = empty_row(config, run, seed, path, metric, module)
                 continue
 
             if current_stat is not None and line.startswith("field "):
@@ -183,6 +232,95 @@ def parse_sca(path):
     return rows
 
 
+def numeric_value(value):
+    if value == "":
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    if math.isnan(number):
+        return None
+    return number
+
+
+def format_number(value):
+    if value is None:
+        return ""
+    return f"{value:.12g}"
+
+
+def value_stats(values):
+    if not values:
+        return "", "", "", ""
+    if len(values) > 1:
+        stddev = statistics.stdev(values)
+    else:
+        stddev = None
+    return (
+        format_number(statistics.mean(values)),
+        format_number(stddev),
+        format_number(min(values)),
+        format_number(max(values)),
+    )
+
+
+def aggregate_rows(rows, group_without_module=False):
+    groups = defaultdict(list)
+    for row in rows:
+        module = "" if group_without_module else row["module"]
+        groups[(row["config"], row["metric"], module)].append(row)
+
+    aggregate = []
+    for (config, metric, module), group in sorted(groups.items()):
+        value_values = [numeric_value(row["value"]) for row in group]
+        value_values = [value for value in value_values if value is not None]
+        mean_values = [numeric_value(row["mean"]) for row in group]
+        mean_values = [value for value in mean_values if value is not None]
+        sum_values = [numeric_value(row["sum"]) for row in group]
+        sum_values = [value for value in sum_values if value is not None]
+        count_values = [numeric_value(row["count"]) for row in group]
+        count_values = [value for value in count_values if value is not None]
+
+        value_mean, value_stddev, value_min, value_max = value_stats(value_values)
+        mean_mean, mean_stddev, mean_min, mean_max = value_stats(mean_values)
+        sum_mean, sum_stddev, sum_min, sum_max = value_stats(sum_values)
+
+        seeds = {row["_seed"] for row in group if row["_seed"]}
+        runs = {row["_run_key"] or row["file"] for row in group}
+
+        aggregate.append({
+            "config": config,
+            "metric": metric,
+            "module": module,
+            "rows": len(group),
+            "runs": len(runs),
+            "seeds": len(seeds),
+            "value_mean": value_mean,
+            "value_stddev": value_stddev,
+            "value_min": value_min,
+            "value_max": value_max,
+            "count_sum": format_number(sum(count_values)) if count_values else "",
+            "mean_mean": mean_mean,
+            "mean_stddev": mean_stddev,
+            "mean_min": mean_min,
+            "mean_max": mean_max,
+            "sum_mean": sum_mean,
+            "sum_stddev": sum_stddev,
+            "sum_min": sum_min,
+            "sum_max": sum_max,
+        })
+    return aggregate
+
+
+def write_csv(path, fieldnames, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def main():
     args = parse_args()
     sca_files = sorted(args.input.rglob("*.sca"))
@@ -190,13 +328,13 @@ def main():
     for path in sca_files:
         rows.extend(parse_sca(path))
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_csv(args.output, FIELDNAMES, rows)
 
     print(f"Scanned {len(sca_files)} .sca file(s); wrote {len(rows)} row(s) to {args.output}")
+    if args.aggregate_output:
+        aggregate = aggregate_rows(rows, group_without_module=args.group_without_module)
+        write_csv(args.aggregate_output, AGGREGATE_FIELDNAMES, aggregate)
+        print(f"Wrote {len(aggregate)} aggregate row(s) to {args.aggregate_output}")
 
 
 if __name__ == "__main__":
