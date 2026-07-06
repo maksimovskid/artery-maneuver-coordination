@@ -18,6 +18,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace traci { class VehicleController; }
 
@@ -30,6 +31,7 @@ class McApplication;
 enum class operationMode;
 enum class priorityMcmCategory;
 struct PendingMcmCommand;
+struct PlannerMeasurement;
 }
 
 class VehicleDataProvider;
@@ -53,7 +55,7 @@ public:
         omnetpp::cObject*) override;
     void trigger() override;
 
-    // Typed representation of old MCM generation/QoS NED strings. These are
+    // Typed representation of MCM generation/QoS NED strings. These are
     // public type names only; McService still owns all configuration behavior.
     enum class IntentTriggeringCondition {
         SameAsCam,
@@ -136,6 +138,7 @@ private:
         const MCM_t&,
         const vanetza::asn1::Mcm&,
         const omnetpp::SimTime&);
+    void emitPlannerMeasurements(const std::vector<mcm::PlannerMeasurement>&);
 
     // MCM transmission
     void sendMcm(const omnetpp::SimTime&);

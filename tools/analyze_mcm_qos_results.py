@@ -39,7 +39,26 @@ METRICS = {
     "negotiationTime",
     "ExecutionStartedCounter",
     "ExecutionCompletedCounter",
+    "TrajectoryCost",
+    "CounterCoordPossiblePriorityLow",
+    "CounterCoordPossiblePriorityMedium",
+    "CounterCoordPossiblePriorityHigh",
+    "CounterTrajectoryType0",
+    "CounterTrajectoryType1",
+    "CounterTrajectoryType2",
+    "CounterTrajectoryType4",
+    "CounterTrajectoryType5",
+    "CounterTrajectoryType6",
     "currentMCSoperatingMode",
+}
+
+TRAJECTORY_TYPE_LABELS = {
+    "CounterTrajectoryType0": ("constant speed / no adaptation / normal time gap", "0", "0"),
+    "CounterTrajectoryType1": ("deceleration / speed reduction", "1", "1"),
+    "CounterTrajectoryType2": ("lane change", "2", "2"),
+    "CounterTrajectoryType4": ("constant speed / no adaptation / reduced time gap", "3", "4"),
+    "CounterTrajectoryType5": ("acceleration / normal time gap", "4", "5"),
+    "CounterTrajectoryType6": ("acceleration / reduced time gap", "5", "6"),
 }
 
 FIELDNAMES = [
@@ -55,6 +74,9 @@ FIELDNAMES = [
     "stddev",
     "sum",
     "value",
+    "metric_label",
+    "trajectory_category",
+    "raw_trajectory_type",
 ]
 
 AGGREGATE_FIELDNAMES = [
@@ -88,6 +110,9 @@ AGGREGATE_FIELDNAMES = [
     "coop_cbr_percent_min",
     "negotiation_mcms_per_completed_negotiation",
     "negotiation_mcms_sent_per_started_negotiation",
+    "metric_label",
+    "trajectory_category",
+    "raw_trajectory_type",
 ]
 
 
@@ -148,6 +173,7 @@ def filename_defaults(path):
 
 
 def empty_row(config, run, seed, path, metric, module):
+    metric_label, trajectory_category, raw_trajectory_type = trajectory_type_label_fields(metric)
     return {
         "config": config,
         "run": run,
@@ -163,6 +189,9 @@ def empty_row(config, run, seed, path, metric, module):
         "stddev": "",
         "sum": "",
         "value": "",
+        "metric_label": metric_label,
+        "trajectory_category": trajectory_category,
+        "raw_trajectory_type": raw_trajectory_type,
     }
 
 
@@ -265,6 +294,10 @@ def format_number(value):
     return f"{value:.12g}"
 
 
+def trajectory_type_label_fields(metric):
+    return TRAJECTORY_TYPE_LABELS.get(metric, ("", "", ""))
+
+
 def value_stats(values):
     if not values:
         return "", "", "", ""
@@ -314,6 +347,7 @@ def aggregate_rows(rows, group_without_module=False):
 
     aggregate = []
     for (config, metric, module), group in sorted(groups.items()):
+        metric_label, trajectory_category, raw_trajectory_type = trajectory_type_label_fields(metric)
         value_values = [numeric_value(row["value"]) for row in group]
         value_values = [value for value in value_values if value is not None]
         mean_values = [numeric_value(row["mean"]) for row in group]
@@ -392,6 +426,9 @@ def aggregate_rows(rows, group_without_module=False):
             "coop_cbr_percent_min": coop_cbr_percent_min,
             "negotiation_mcms_per_completed_negotiation": mcms_per_completed,
             "negotiation_mcms_sent_per_started_negotiation": mcms_per_started,
+            "metric_label": metric_label,
+            "trajectory_category": trajectory_category,
+            "raw_trajectory_type": raw_trajectory_type,
         })
     return aggregate
 

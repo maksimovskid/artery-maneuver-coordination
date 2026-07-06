@@ -69,6 +69,16 @@ static const simsignal_t scSignalExecutionCompletedCounter = cComponent::registe
 static const simsignal_t scSignalCounterNegotiationRejected = cComponent::registerSignal("CounterNegotiationRejected");
 static const simsignal_t scSignalCounterNegotiationTwoVehicles = cComponent::registerSignal("CounterNegotiationTwoVehicles");
 static const simsignal_t scSignalCounterNegotiationThreeVehicles = cComponent::registerSignal("CounterNegotiationThreeVehicles");
+static const simsignal_t scSignalTrajectoryCost = cComponent::registerSignal("TrajectoryCost");
+static const simsignal_t scSignalCounterCoordPossiblePriorityLow = cComponent::registerSignal("CounterCoordPossiblePriorityLow");
+static const simsignal_t scSignalCounterCoordPossiblePriorityMedium = cComponent::registerSignal("CounterCoordPossiblePriorityMedium");
+static const simsignal_t scSignalCounterCoordPossiblePriorityHigh = cComponent::registerSignal("CounterCoordPossiblePriorityHigh");
+static const simsignal_t scSignalCounterTrajectoryType0 = cComponent::registerSignal("CounterTrajectoryType0");
+static const simsignal_t scSignalCounterTrajectoryType1 = cComponent::registerSignal("CounterTrajectoryType1");
+static const simsignal_t scSignalCounterTrajectoryType2 = cComponent::registerSignal("CounterTrajectoryType2");
+static const simsignal_t scSignalCounterTrajectoryType4 = cComponent::registerSignal("CounterTrajectoryType4");
+static const simsignal_t scSignalCounterTrajectoryType5 = cComponent::registerSignal("CounterTrajectoryType5");
+static const simsignal_t scSignalCounterTrajectoryType6 = cComponent::registerSignal("CounterTrajectoryType6");
 static const simsignal_t scSignalCurrentMcsOperatingMode = cComponent::registerSignal("currentMCSoperatingMode");
 
 namespace
@@ -619,8 +629,8 @@ void McService::emitSentMeasurements(
             mMeasuredNegotiationStartedRequestIds.insert(key).second) {
         emit(scSignalNegotiationStartedCounter, 1L);
         mNegotiationStartedAtByRequestId.emplace(key, simTime());
-        // Current MCM commands expose numberOfVehicles, not the old conflict
-        // count. Treat one/two-CV negotiations conservatively as the old
+        // Current MCM commands expose numberOfVehicles, not a separate conflict
+        // count. Treat one/two-CV negotiations conservatively as the
         // "two vehicles" bucket and reserve "three vehicles" for larger sets.
         if (metadata.numberOfVehicles > 2) {
             emit(scSignalCounterNegotiationThreeVehicles, 1L);
@@ -649,6 +659,44 @@ void McService::emitSentMeasurements(
             key >= 0 &&
             mMeasuredExecutionCompletedRequestIds.insert(key).second) {
         emit(scSignalExecutionCompletedCounter, 1L);
+    }
+}
+
+void McService::emitPlannerMeasurements(const std::vector<mcm::PlannerMeasurement>& measurements)
+{
+    for (const auto& measurement : measurements) {
+        switch (measurement.metric) {
+            case mcm::PlannerMeasurementMetric::TrajectoryCost:
+                emit(scSignalTrajectoryCost, measurement.value);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterCoordPossiblePriorityLow:
+                emit(scSignalCounterCoordPossiblePriorityLow, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterCoordPossiblePriorityMedium:
+                emit(scSignalCounterCoordPossiblePriorityMedium, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterCoordPossiblePriorityHigh:
+                emit(scSignalCounterCoordPossiblePriorityHigh, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType0:
+                emit(scSignalCounterTrajectoryType0, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType1:
+                emit(scSignalCounterTrajectoryType1, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType2:
+                emit(scSignalCounterTrajectoryType2, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType4:
+                emit(scSignalCounterTrajectoryType4, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType5:
+                emit(scSignalCounterTrajectoryType5, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::CounterTrajectoryType6:
+                emit(scSignalCounterTrajectoryType6, 1L);
+                break;
+        }
     }
 }
 
@@ -801,6 +849,7 @@ void McService::trigger()
     Enter_Method("trigger");
     updateApplicationEgoContext(simTime());
     mApplication->tick(simTime());
+    emitPlannerMeasurements(mApplication->consumePlannerMeasurements());
     emitCurrentOperatingModeIfChanged();
     checkTriggeringConditions(simTime());
 }
@@ -878,13 +927,12 @@ bool McService::adaptiveIntentRulesEnabled() const
 
 void McService::updateAdaptiveIntentFrequency(const SimTime& now)
 {
-    // The MCO 1 Hz rule is intentionally enabled by its own flag, matching the
-    // old service's separate mNewGenMcmRulesIntent1Hz_MCO block. It takes
+    // The MCO 1 Hz rule is intentionally enabled by its own flag. It takes
     // precedence over the general newGenMcmRules/newGenMcmRulesIntent rule so
     // both rules cannot update adaptive state in the same tick.
     if (mCommunicationConfig.newGenMcmRulesIntent1HzMco) {
-        // TODO: Exclude Important Intent Sharing once the current implementation exposes
-        // an explicit important-intent state equivalent to the old implementation.
+        // TODO: Exclude Important Intent Sharing once an explicit
+        // important-intent state is available.
         const double threshold = mCommunicationConfig.freqReduceCbrMco;
 
         if (mFrequencyReduceState == McmFrequencyReduceState::None &&
@@ -925,10 +973,9 @@ void McService::updateAdaptiveIntentFrequency(const SimTime& now)
         return;
     }
 
-    // TODO: The old service exempted "important" intent sharing from adaptive
-    // reduction. The current McService does not expose an equivalent state yet,
-    // so this rule is limited to normal Intent MCM generation and does not
-    // touch negotiation/execution containers.
+    // TODO: Exempt Important Intent Sharing once McService exposes an explicit
+    // important-intent state. Until then, this rule is limited to normal Intent
+    // MCM generation and does not touch negotiation/execution containers.
     const double enterThreshold = mCommunicationConfig.dccOnlyMcm ?
         mCommunicationConfig.freqReduceCbrMax :
         mCommunicationConfig.freqReduceCbrMin;
@@ -1078,7 +1125,7 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
 {
     using vanetza::dcc::Profile;
 
-    // Keep current behavior unless the old differentiated DCC profile mapping
+    // Keep current behavior unless differentiated DCC profile mapping
     // is explicitly enabled. The current implementation has used DP2 for all
     // MCMs, so dccProfiles=false must continue returning DP2.
     if (!mCommunicationConfig.dccProfiles) {
@@ -1186,7 +1233,7 @@ void McService::sendMcm(const SimTime& T_now)
         // The generated MCMextra CooperationID descriptor has no constraint
         // callback, so asn_check_constraints() dereferences null for execution
         // containers. Keep validation for minimal/negotiation MCMs, but skip it
-        // here to preserve the legacy execution-container emergency workaround.
+        // here to preserve the execution-container emergency workaround.
         EV_INFO << "McService serialized " << mcmSubtypeName(command->subtype)
             << " execution MCM: cooperationId="
             << static_cast<int>(command->requestId)
@@ -1610,6 +1657,7 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         }
 
         mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
+        emitPlannerMeasurements(mApplication->consumePlannerMeasurements());
         if (auto completedRequestId = mApplication->consumeCompletedRvNegotiationRequestId()) {
             const long completedKey = static_cast<long>(*completedRequestId);
             if (mMeasuredNegotiationCompletedRequestIds.insert(completedKey).second) {

@@ -151,6 +151,24 @@ struct SentMcm {
     omnetpp::SimTime sentAt;
 };
 
+enum class PlannerMeasurementMetric {
+    TrajectoryCost,
+    CounterCoordPossiblePriorityLow,
+    CounterCoordPossiblePriorityMedium,
+    CounterCoordPossiblePriorityHigh,
+    CounterTrajectoryType0,
+    CounterTrajectoryType1,
+    CounterTrajectoryType2,
+    CounterTrajectoryType4,
+    CounterTrajectoryType5,
+    CounterTrajectoryType6
+};
+
+struct PlannerMeasurement {
+    PlannerMeasurementMetric metric = PlannerMeasurementMetric::TrajectoryCost;
+    double value = 1.0;
+};
+
 struct McEgoContext {
     omnetpp::SimTime now;
     uint32_t stationId = 0;
@@ -206,6 +224,7 @@ public:
     std::optional<PendingMcmCommand> consumePendingCommand();
     bool hasPendingCoordinationCommand() const;
     std::optional<uint8_t> consumeCompletedRvNegotiationRequestId();
+    std::vector<PlannerMeasurement> consumePlannerMeasurements();
     void clearCommand();
     bool hasActiveExecution() const;
     operationMode currentOperationMode() const;
@@ -284,6 +303,8 @@ private:
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
     CvCooperationDecision evaluateCvCooperationDecision(const ReceivedMcm&);
+    void recordCvPlannerEvaluation(double trajectoryCost, int trajectoryType, int possiblePriorityLevel);
+    void enqueuePlannerMeasurement(PlannerMeasurementMetric, double value = 1.0);
     bool isNegotiationMessageForActiveRequest(const McmSnapshot&, mcmSubtype, uint8_t requestId) const;
     bool isExecuteEvidenceForActiveRvRequest(const McmSnapshot&) const;
     bool isSnapshotTargetingEgo(const McmSnapshot&) const;
@@ -394,7 +415,7 @@ private:
     bool mCvRestoreNormalSpeedSkippedLogged = false;
     bool mCvStoppedDecelerationForRvLogged = false;
 
-    // High-priority lane-change RV execution state. The old scenario uses ten
+    // High-priority lane-change RV execution state. The scenario uses ten
     // small moveToXY steps, so the state must survive across service ticks.
     bool mSafetyCriticalLaneChangeExecutionActive = false;
     int mLaneChangeMoveStepCounter = 0;
@@ -402,7 +423,7 @@ private:
     omnetpp::SimTime mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
 
     // Emergency V0 broadcasts an execution-container Abort at 10 Hz for 15 s.
-    // This preserves the old emergency-MCM workaround and yields about 150 MCMs.
+    // This preserves the emergency-MCM workaround and yields about 150 MCMs.
     bool mEmergencyBrakeApplied = false;
     bool mEmergencyMcmQueued = false;
     bool mEmergencyBroadcastStarted = false;
@@ -424,6 +445,7 @@ private:
     double mEmergencyDistanceGap = 0.0;
     double mEmergencyTimeGap = 0.0;
     double mEmergencyReactionWindow = 0.0;
+    std::vector<PlannerMeasurement> mPendingPlannerMeasurements;
 
     // Diagnostic-only route_merging_1 RV/CV gap tracking.
     bool mMergingGapDiagActive = false;

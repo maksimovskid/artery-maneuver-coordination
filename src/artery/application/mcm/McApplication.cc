@@ -13,6 +13,7 @@
 #include <iostream> // temporary MCM_DEBUG prints
 #include <limits>
 #include <unordered_map>
+#include <utility>
 
 namespace artery
 {
@@ -124,7 +125,7 @@ struct MergeTargetCandidate {
     double rvY = 0.0;
     double cvY = 0.0;
     omnetpp::SimTime age = omnetpp::SimTime::ZERO;
-    bool legacyPointConflict = false;
+    bool diagnosticPointConflict = false;
 };
 
 struct MergeTargetSelection {
@@ -464,6 +465,13 @@ std::optional<uint8_t> McApplication::consumeCompletedRvNegotiationRequestId()
     return requestId;
 }
 
+std::vector<PlannerMeasurement> McApplication::consumePlannerMeasurements()
+{
+    auto measurements = std::move(mPendingPlannerMeasurements);
+    mPendingPlannerMeasurements.clear();
+    return measurements;
+}
+
 void McApplication::logNegotiationTrace(
     const char* action,
     const McmSnapshot& snapshot,
@@ -529,7 +537,7 @@ void McApplication::logNegotiationTrace(
         << std::endl;
 }
 
-// Shared message guard used by RV and CV handlers. It preserves the old retry
+// Shared message guard used by RV and CV handlers. It preserves retry
 // behavior by accepting duplicate messages for the active request while
 // filtering unrelated subtypes/request IDs before any state transition.
 bool McApplication::isNegotiationMessageForActiveRequest(
@@ -607,7 +615,7 @@ PendingMcmCommand McApplication::makeRvFollowupCommand(
 }
 
 // CV-side Accept builder after Confirm. The selected CV trajectory is reused
-// when available; this keeps old cooperation-cost decisions intact and only
+// when available; this keeps cooperation-cost decisions intact and only
 // centralizes the message construction.
 PendingMcmCommand McApplication::makeCvAcceptCommand(const McmSnapshot& snapshot) const
 {
@@ -628,7 +636,7 @@ PendingMcmCommand McApplication::makeCvAcceptCommand(const McmSnapshot& snapshot
     return command;
 }
 
-// RV-side completion reset. This is reached after the legacy Complete-as-Cancel
+// RV-side completion reset. This is reached after the Complete-as-Cancel
 // workaround is sent, so retry timestamps, received-response flags, execution
 // state, and scenario diagnostics are cleared together.
 void McApplication::resetRvCoordinationStateAfterComplete()
@@ -669,7 +677,7 @@ void McApplication::resetRvCoordinationStateAfterComplete()
 }
 
 // CV-side completion reset for the normal Complete-as-Cancel path. Early
-// Cancel rollback reuses the same cleanup but restores the legacy NoRequest
+// Cancel rollback reuses the same cleanup but restores the NoRequest
 // progress state afterwards.
 void McApplication::resetCvCoordinationStateAfterComplete()
 {
@@ -843,7 +851,7 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
 
 // RV timeout reset for unsuccessful medium-priority merging negotiations.
 // High-priority lane-change timeouts use the emergency fallback brake instead,
-// so this helper preserves the old merging-only reset semantics.
+// so this helper preserves the merging-only reset semantics.
 void McApplication::resetRvNegotiationAfterTimeout()
 {
     mMergingRequestQueuedOrSent = false;
@@ -872,7 +880,7 @@ void McApplication::resetRvNegotiationAfterTimeout()
 }
 
 // CV timeout reset for Offer/Accept retries. It clears only the negotiation
-// bookkeeping that the old timeout paths cleared; execution/control flags are
+// bookkeeping used by timeout paths; execution/control flags are
 // left untouched to avoid changing participant state outside negotiation.
 void McApplication::resetCvNegotiationAfterTimeout()
 {
@@ -1228,9 +1236,9 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
         return;
     }
 
-    // Old safety-critical lane-change execution is a scenario-specific
+    // Safety-critical lane-change execution is a scenario-specific
     // positive-X shift: 3.2 m lane width over 10 ticks, so 0.32 m each step.
-    // The longitudinal step follows the old y -= speed / 10 pattern.
+    // The longitudinal step follows the scenario's y -= speed / 10 pattern.
     const double targetX = currentX + 0.32;
     const double targetY = currentY - currentSpeed / 10.0;
 
@@ -1324,8 +1332,7 @@ void McApplication::applyCvDecelerationControl()
 
     const std::string& vehicleId = mVehicleController->getVehicleId();
 
-    // The old CV deceleration path initially used speedMode 0. For this narrow
-    // execution milestone we keep SUMO safety checks enabled with speedMode 31;
+    // The CV deceleration path keeps SUMO safety checks enabled with speedMode 31;
     // speedMode 0 remains reserved for the route_merging_1 RV right-of-way case.
     mVehicleController->setSpeedMode(vehicleId, 31);
     mVehicleController->slowDown(vehicleId, mTargetSpeed, mCommandDuration);
@@ -1641,8 +1648,8 @@ void McApplication::monitorCvExecutionControl()
 
         if (rvSnapshot && rvSameLane && rvAhead && rvSpeed > currentSpeed &&
                 !mCvStoppedDecelerationForRvLogged) {
-            // Once the RV is in front and faster, the old behavior stops
-            // unnecessary CV deceleration, but only if the CV's own leader
+            // Once the RV is in front and faster, CV deceleration is no longer
+            // needed, but only if the CV's own leader
             // constraints allow a safe return toward normal speed.
             if (canRestoreNormalSpeedFromLeader(scNormalHighwaySpeed)) {
                 try {
@@ -1835,6 +1842,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     const double trajectoryCost = std::get<3>(result);
     const int trajectoryType = std::get<4>(result);
     const int possiblePriorityLevel = std::get<5>(result);
+    recordCvPlannerEvaluation(trajectoryCost, trajectoryType, possiblePriorityLevel);
 
     if (plannedValues.lane_change) {
         mControlManeuver = controlManeuver::ChangeLane;
@@ -1892,8 +1900,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 
     // RV-side medium-priority merging validation.
     // route_merging_1 is a scenario route, not a protocol condition. Once the
-    // RV reaches the old trigger point, it chooses current idle highway CVs by
-    // trajectory/gap feasibility around the predicted merge point. The old
+    // RV reaches the configured trigger point, it chooses current idle highway CVs by
+    // trajectory/gap feasibility around the predicted merge point. The
     // pointwise conflict check is retained as supporting diagnostics; it is not
     // a fixed vehicle-ID mapping.
     if (!mHasEgoContext || !mVehicleDataProvider || !mVehicleController ||
@@ -1919,7 +1927,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     if (mCoordinationProgressRV == coordinationProgressRV::NoCoordination &&
             distanceToStartingPoint <= desiredDistanceGap) {
         mCoordinationProgressRV = coordinationProgressRV::CheckForCoordination;
-        EV_INFO << "McApplication route_merging_1 old trigger condition reached for station "
+        EV_INFO << "McApplication route_merging_1 trigger condition reached for station "
             << mEgoContext.stationId << '\n';
     }
 
@@ -1950,7 +1958,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     unsigned skippedStale = 0;
     unsigned skippedLane = 0;
     unsigned skippedTrajectory = 0;
-    unsigned legacyPointConflicts = 0;
+    unsigned diagnosticPointConflicts = 0;
     std::vector<MergeTargetCandidate> candidates;
 
     for (const auto& item : latestByStation) {
@@ -2005,7 +2013,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
             continue;
         }
 
-        const bool legacyPointConflict = mTrajectoryPlanner.check_traj_conflict_merging(
+        const bool diagnosticPointConflict = mTrajectoryPlanner.check_traj_conflict_merging(
             mEgoContext.plannedTrajectory,
             snapshot.plannedTrajectory,
             scMergingTimeGap,
@@ -2028,7 +2036,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         candidate.rvY = rvPoint.mY;
         candidate.cvY = cvPoint.mY;
         candidate.age = age;
-        candidate.legacyPointConflict = legacyPointConflict;
+        candidate.diagnosticPointConflict = diagnosticPointConflict;
 
         const double mergeGapWindow =
             std::max(desiredDistanceGap, scMergingTimeGap * std::max(mEgoContext.speed, 1.0) * 2.5);
@@ -2037,8 +2045,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         }
 
         candidates.push_back(candidate);
-        if (legacyPointConflict) {
-            ++legacyPointConflicts;
+        if (diagnosticPointConflict) {
+            ++diagnosticPointConflicts;
         }
 
         EV_INFO << "[MCM-MERGE-TARGET]"
@@ -2055,7 +2063,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
             << " absLongitudinalGap=" << candidate.absLongitudinalGap
             << " euclideanDistance=" << candidate.euclideanDistance
             << " mergeGapWindow=" << mergeGapWindow
-            << " legacyPointConflict=" << candidate.legacyPointConflict
+            << " diagnosticPointConflict=" << candidate.diagnosticPointConflict
             << '\n';
     }
 
@@ -2074,14 +2082,14 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         << " skippedLane=" << skippedLane
         << " skippedTrajectory=" << skippedTrajectory
         << " gapCandidates=" << candidates.size()
-        << " legacyPointConflicts=" << legacyPointConflicts
+        << " diagnosticPointConflicts=" << diagnosticPointConflicts
         << " target1=" << target1
         << " target2=" << target2
         << '\n';
 
     EV_INFO << "McApplication route_merging_1 considered " << considered
         << " latest planned trajectories; gapCandidates=" << candidates.size()
-        << " legacyPointConflicts=" << legacyPointConflicts << '\n';
+        << " diagnosticPointConflicts=" << diagnosticPointConflicts << '\n';
 
     if (target1 == 0) {
         return;
@@ -2152,7 +2160,7 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
 {
     // RV-side Request retry while waiting for Offer messages. Two-CV
     // negotiations require both Offers; one-CV high-priority lane-change
-    // requests may complete directly with Accept, so that legacy path is kept.
+    // requests may complete directly with Accept, so that direct path is kept.
     const bool laneChangeRequestActive = isHighPriorityLaneChangeRequestActive();
     if (!isRvNegotiationRequestActive()) {
         return;
@@ -2275,7 +2283,7 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
 
 void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
 {
-    // RV-side Confirm retry while waiting for Accept messages. The old flow
+    // RV-side Confirm retry while waiting for Accept messages. Two-CV flow
     // only resends Confirm for two-CV negotiation; one-CV Accept handling stays
     // on the direct Request->Accept path.
     const bool laneChangeRequestActive = isHighPriorityLaneChangeRequestActive();
@@ -2545,8 +2553,8 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     EV_STATICCONTEXT;
 
     // Scenario-only emergency source for the high-priority lane-change
-    // validation. car_hl0_Emergency reproduces the old paper scenario by
-    // braking at a configured time and broadcasting EmergencyPriority execution
+    // validation. car_hl0_Emergency brakes at a configured time and
+    // broadcasts EmergencyPriority execution
     // MCMs for 15 s at 10 Hz. This is not generic protocol behavior.
     if (!mVehicleController || !mHasEgoContext ||
             mVehicleController->getVehicleId() != scEmergencyVehicleId) {
@@ -2630,7 +2638,7 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
         PendingMcmCommand command;
         command.kind = PendingMcmCommand::Kind::Execution;
         // Complete emergency semantics are not available in the current MCM
-        // model, so the old implementation's Abort + EmergencyPriority
+        // model, so the Abort + EmergencyPriority
         // execution-container workaround is preserved here.
         command.subtype = mcmSubtype::Abort;
         command.priority = priorityMcmCategory::EmergencyPriority;
@@ -3224,6 +3232,11 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
         } else {
             decision.reason = "planner-found-feasible-trajectory";
         }
+
+        recordCvPlannerEvaluation(
+            decision.cooperationCost,
+            decision.trajectoryType,
+            decision.possiblePriorityLevel);
     }
 
     EV_INFO << "[MCM-CV-DECISION]"
@@ -3254,6 +3267,61 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
         << '\n';
 
     return decision;
+}
+
+void McApplication::recordCvPlannerEvaluation(
+    double trajectoryCost,
+    int trajectoryType,
+    int possiblePriorityLevel)
+{
+    enqueuePlannerMeasurement(PlannerMeasurementMetric::TrajectoryCost, trajectoryCost);
+
+    // The raw OMNeT++ counter names are non-contiguous, so the analysis
+    // helper adds contiguous public trajectory_category labels for readability.
+    // The raw signal names remain stable for existing result files.
+    switch (trajectoryType) {
+        case 0:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType0);
+            break;
+        case 1:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType1);
+            break;
+        case 2:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType2);
+            break;
+        case 3:
+            break;
+        case 4:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType4);
+            break;
+        case 5:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType5);
+            break;
+        case 6:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType6);
+            break;
+        default:
+            break;
+    }
+
+    switch (possiblePriorityLevel) {
+        case 0:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterCoordPossiblePriorityLow);
+            break;
+        case 1:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterCoordPossiblePriorityMedium);
+            break;
+        case 2:
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterCoordPossiblePriorityHigh);
+            break;
+        default:
+            break;
+    }
+}
+
+void McApplication::enqueuePlannerMeasurement(PlannerMeasurementMetric metric, double value)
+{
+    mPendingPlannerMeasurements.push_back(PlannerMeasurement { metric, value });
 }
 
 void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
@@ -3424,7 +3492,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
             << static_cast<int>(command.requestId)
             << " from RV " << mCvRvStationId
             << " because numberOfVehicles=" << snapshot.numberOfVehicles
-            << " matches old two-CV Offer path"
+            << " matches two-CV Offer path"
             << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size()
             << " offeredTrajectoryPoints=" << command.offeredTrajectory.size() << '\n';
 
@@ -3447,7 +3515,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
             << static_cast<int>(command.requestId)
             << " from RV " << mCvRvStationId
             << " because numberOfVehicles=" << snapshot.numberOfVehicles
-            << " matches old one-CV Accept path"
+            << " matches one-CV Accept path"
             << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size() << '\n';
 
         // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
@@ -3496,7 +3564,7 @@ void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
     }
 
     // This rollback path is only for early CV speed control that was applied
-    // before Execute. During execution the legacy ASN.1 uses Cancel as the
+    // before Execute. During execution the current ASN.1 workaround uses Cancel as the
     // normal Complete workaround too, so execution-phase Cancel needs a later
     // explicit abort-vs-complete distinction before it can be consumed here.
     if (mOperationMode != operationMode::ManeuverNegotiationMode) {
@@ -4073,8 +4141,8 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         return;
     }
 
-    // These old conflict checks are logged for comparison with the thesis
-    // behavior, but they are not a hard gate for arming the safety-critical RV.
+    // These conflict checks are logged as diagnostics, but they are not a hard
+    // gate for arming the safety-critical RV.
     const omnetpp::SimTime eteDelay =
         std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
     const bool conflictAtMinimumGap = mTrajectoryPlanner.check_traj_conflict(
@@ -4282,7 +4350,7 @@ void McApplication::evaluateRvExecutionProgress()
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = mcmSubtype::Cancel;
     // TODO: temporary Complete workaround.
-    // The legacy ASN.1/model used Cancel here because Complete was not available.
+    // The current ASN.1/model uses Cancel here because Complete is not available.
     // Semantically this means: maneuver execution completed after reaching/passing
     // the final point of the saved negotiated trajectory.
     command.priority = mPriorityMcmCategory;
@@ -4335,7 +4403,7 @@ void McApplication::evaluateCvExecutionProgress()
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = mcmSubtype::Cancel;
     // TODO: temporary Complete workaround.
-    // The legacy ASN.1/model used Cancel here because Complete was not available.
+    // The current ASN.1/model uses Cancel here because Complete is not available.
     // Semantically this means: CV maneuver execution completed after reaching/passing
     // the final point of the saved negotiated trajectory.
     command.priority = mPriorityMcmCategory;

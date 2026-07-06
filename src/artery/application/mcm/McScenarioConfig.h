@@ -30,7 +30,7 @@ extern const double scEmergencyMaxSpeed;
 extern const double scNormalHighwaySpeed;
 
 // Safety-critical lane-change validation knobs. The lane shift is tied to the
-// current SUMO lane geometry; the time gaps preserve the old implementation's
+// current SUMO lane geometry; the time gaps preserve the calibrated scenario
 // high-priority/emergency thresholds.
 extern const double scLaneChangeShiftX;
 extern const double scSafetyCriticalTimeGap;

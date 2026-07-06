@@ -3,10 +3,10 @@ package artery.application;
 simple McService like ItsG5Service
 {
     parameters:
-        // Disabled-by-default legacy test hook for emitting negotiation containers.
+        // Disabled-by-default test hook for emitting negotiation containers.
         bool sendNegotiationTestMcm = default(false);
 
-        // MCM generation-rule hooks restored from the old research service.
+        // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate
         // behavior; the named policies will be implemented incrementally.
         string triggeringCondition = default("SameAsCAM"); // intent sharing: SameAsCAM, SameAsCAMreduced2Hz, SameAsCAMreduced1Hz, PeriodicFixed*
@@ -20,7 +20,7 @@ simple McService like ItsG5Service
         double maxInterval @unit(s) = default(1.0s);
         bool fixedRate = default(true);
         double fixedRateInterval @unit(s) = default(0.1s);
-        double fixedInterval @unit(s) = default(0.1s); // compatibility alias for old NED configs; not active by default
+        double fixedInterval @unit(s) = default(0.1s); // compatibility alias; not active by default
         double maxIntervalNegMcm @unit(s) = default(0.1s); // coordination/negotiation max interval hook
 
         // Negotiation retry limits consumed by McApplication.
@@ -29,16 +29,16 @@ simple McService like ItsG5Service
         double negotiationLimitLaneChange @unit(s) = default(1.0s);
 
         // DCC profile mapping hooks. dccProfiles=false preserves the current
-        // DP2 traffic class. dccOnlyMcm affects the old profile mapping once
+        // DP2 traffic class. dccOnlyMcm affects profile mapping once
         // profile selection is activated.
         bool dccProfiles = default(false);
         bool dccOnlyMcm = default(false);
 
         // Generation timestamp source hook. DataProvider preserves current
-        // behavior; CurrentTime exists for old-configuration compatibility.
+        // behavior; CurrentTime is available for timestamp-sensitive MCMs.
         string timeGenMcm = default("DataProvider");
 
-        // Adaptive generation-rule hooks from the old congested-scenario code.
+        // Adaptive generation-rule hooks for congested-scenario experiments.
         // They are parsed and logged but behavior is intentionally staged.
         bool newGenMcmRules = default(false);
         bool newGenMcmRulesIntent = default(false);
@@ -84,6 +84,16 @@ simple McService like ItsG5Service
         @signal[CounterNegotiationRejected](type=long);
         @signal[CounterNegotiationTwoVehicles](type=long);
         @signal[CounterNegotiationThreeVehicles](type=long);
+        @signal[TrajectoryCost](type=double);
+        @signal[CounterCoordPossiblePriorityLow](type=long);
+        @signal[CounterCoordPossiblePriorityMedium](type=long);
+        @signal[CounterCoordPossiblePriorityHigh](type=long);
+        @signal[CounterTrajectoryType0](type=long);
+        @signal[CounterTrajectoryType1](type=long);
+        @signal[CounterTrajectoryType2](type=long);
+        @signal[CounterTrajectoryType4](type=long);
+        @signal[CounterTrajectoryType5](type=long);
+        @signal[CounterTrajectoryType6](type=long);
         @signal[currentMCSoperatingMode](type=double);
 
         @statistic[reception](source=McmReceived;record=count,vector(mcmStationId)?,vector(mcmGenerationDeltaTime)?);
@@ -114,5 +124,15 @@ simple McService like ItsG5Service
         @statistic[CounterNegotiationRejected](source=CounterNegotiationRejected;record=count,vector?);
         @statistic[CounterNegotiationTwoVehicles](source=CounterNegotiationTwoVehicles;record=count,vector?);
         @statistic[CounterNegotiationThreeVehicles](source=CounterNegotiationThreeVehicles;record=count,vector?);
+        @statistic[TrajectoryCost](source=TrajectoryCost;record=stats,vector);
+        @statistic[CounterCoordPossiblePriorityLow](source=CounterCoordPossiblePriorityLow;record=count,vector?);
+        @statistic[CounterCoordPossiblePriorityMedium](source=CounterCoordPossiblePriorityMedium;record=count,vector?);
+        @statistic[CounterCoordPossiblePriorityHigh](source=CounterCoordPossiblePriorityHigh;record=count,vector?);
+        @statistic[CounterTrajectoryType0](source=CounterTrajectoryType0;record=count,vector?);
+        @statistic[CounterTrajectoryType1](source=CounterTrajectoryType1;record=count,vector?);
+        @statistic[CounterTrajectoryType2](source=CounterTrajectoryType2;record=count,vector?);
+        @statistic[CounterTrajectoryType4](source=CounterTrajectoryType4;record=count,vector?);
+        @statistic[CounterTrajectoryType5](source=CounterTrajectoryType5;record=count,vector?);
+        @statistic[CounterTrajectoryType6](source=CounterTrajectoryType6;record=count,vector?);
         @statistic[currentMCSoperatingMode](source=currentMCSoperatingMode;record=stats,vector);
 }
