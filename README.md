@@ -42,6 +42,17 @@ The current implementation exposes a staged core subset of the old research meas
 
 This is not a full restoration of every old signal. Additional priority-planner, trajectory-cost, per-second rate, delayed-message, and detailed cooperative update metrics remain staged for future congested 200-CAV/500-CAV validation work.
 
+## Congested QoS Validation Configs
+
+Experimental 200-CAV and 500-CAV QoS validation configs are available for the existing congested scenario assets. The Free Space path loss variants use `*.radioMedium.pathLossType = "FreeSpacePathLoss"` to exercise higher channel-load conditions and keep comparison cases separated:
+
+* baseline Free Space congestion,
+* adaptive Intent reduction,
+* MCO-specific 1 Hz Intent reduction,
+* DCC profile mapping.
+
+These configs remain WIP evaluation scaffolding, not final benchmark results. The designated 19 maneuver-coordination vehicles remain the intended coordination participants. The additional CAVs are background/load vehicles that transmit regular Intent MCMs, using the existing fallback trajectory columns where applicable (`others_x/others_y = 1/1`), and in the two-service envmod configuration may also transmit CAMs. Background MCMs and CAMs are communication-load traffic and are not intended to make those vehicles negotiation participants.
+
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 
 ## Main Source Files
