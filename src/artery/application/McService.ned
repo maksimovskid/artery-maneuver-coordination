@@ -77,6 +77,7 @@ simple McService like ItsG5Service
         @signal[coopCBR](type=double);
         @signal[NegotiationStartedCounter](type=long);
         @signal[NegotiationCompletedCounter](type=long);
+        @signal[negotiationTime](type=simtime_t);
         @signal[ExecutionStartedCounter](type=long);
         @signal[ExecutionCompletedCounter](type=long);
         @signal[CounterNegotiationRejected](type=long);
@@ -105,6 +106,7 @@ simple McService like ItsG5Service
         @statistic[coopCBR](source=coopCBR;record=stats,vector);
         @statistic[NegotiationStartedCounter](source=NegotiationStartedCounter;record=count,vector?);
         @statistic[NegotiationCompletedCounter](source=NegotiationCompletedCounter;record=count,vector?);
+        @statistic[negotiationTime](source=negotiationTime;record=stats,vector);
         @statistic[ExecutionStartedCounter](source=ExecutionStartedCounter;record=count,vector?);
         @statistic[ExecutionCompletedCounter](source=ExecutionCompletedCounter;record=count,vector?);
         @statistic[CounterNegotiationRejected](source=CounterNegotiationRejected;record=count,vector?);

@@ -14,6 +14,7 @@
 #include <vanetza/units/velocity.hpp>
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -112,7 +113,8 @@ private:
     // CA-service-style MCM generation rules
     void checkTriggeringConditions(const omnetpp::SimTime&);
     bool shouldGenerateIntentMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval);
-    bool shouldGenerateCoordinationMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval) const;
+    bool shouldGenerateCoordinationMcm(const omnetpp::SimTime& now, omnetpp::SimTime dccInterval);
+    bool hasPendingCoordinationMcm() const;
     void updateAdaptiveIntentFrequency(const omnetpp::SimTime& now);
     bool adaptiveIntentRulesEnabled() const;
     omnetpp::SimTime intervalForIntentTriggeringCondition(IntentTriggeringCondition) const;
@@ -234,9 +236,11 @@ private:
     bool mHasLastEmittedOperatingMode = false;
     mcm::operationMode mLastEmittedOperatingMode;
     std::set<long> mMeasuredNegotiationStartedRequestIds;
+    std::set<long> mMeasuredNegotiationCompletedRequestIds;
     std::set<long> mMeasuredExecutionStartedRequestIds;
     std::set<long> mMeasuredExecutionCompletedRequestIds;
     std::set<long> mMeasuredRejectedRequestIds;
+    std::map<long, omnetpp::SimTime> mNegotiationStartedAtByRequestId;
 
     bool mUsePrerecordedIntentTrajectory = false;
     std::string mPrerecordedTrajectoryCsv;

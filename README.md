@@ -40,6 +40,8 @@ Communication/QoS configuration hooks from the earlier research implementation a
 
 The current implementation exposes a staged core subset of the old research measurement infrastructure through OMNeT++ signals/statistics. `McService` records MCM sent/received counters, subtype counters for Intent, Negotiation, Execution, and Emergency Execution MCMs, received message size, end-to-end delay where the MCM generation timestamp can be reconstructed, DCC wait time when DCC interval calculation is active, local CBR samples at MCM send time, and negotiation/execution counters where current state transitions are exposed cleanly.
 
+`negotiationTime` is emitted once for each successful RV-side negotiation. It measures from the first Request MCM sent by the RV to receipt of the final required Accept MCM. If a required Accept is missing but the RV later receives or observes the first Execute from that missing expected CV, that Execute is treated as acceptance evidence and ends the negotiation-time sample. The metric excludes the RV's own Execute send time and maneuver execution time. Under uncongested default 10 Hz MCM generation, this should normally stay around or below 0.1-0.2 s: one-CV negotiations are usually near or below 100 ms with scheduling margin, and two-CV negotiations are usually below 200 ms. Congestion, DCC restrictions, packet loss, retransmissions, missing-Accept fallback to CV Execute evidence, adaptive MCM generation, or current 10 Hz scheduling alignment that triggers Request/Confirm retries can increase this value; values above 0.2 s should be interpreted by checking the message trace before treating them as endpoint bugs. These numbers are sanity-check guidance only, not hard-coded pass/fail criteria. The result helper can derive `negotiation_mcms_per_completed_negotiation` and `negotiation_mcms_sent_per_started_negotiation` from aggregate `McmNegotiationSentCounter`, `NegotiationCompletedCounter`, and `NegotiationStartedCounter` totals. Role-specific negotiation MCMs per cooperating vehicle are not restored yet; that requires explicit RV/CV sender-role counters instead of the old fixed three-vehicle assumption.
+
 This is not a full restoration of every old signal. Additional priority-planner, trajectory-cost, per-second rate, delayed-message, and detailed cooperative update metrics remain staged for future congested 200-CAV/500-CAV validation work.
 
 ## Congested QoS Validation Configs
@@ -65,6 +67,8 @@ python3 tools/analyze_mcm_qos_results.py \
 ```
 
 The flat CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields. The aggregate CSV groups by config, metric, and module by default; pass `--group-without-module` to produce config/metric-level summaries.
+
+Aggregate output also includes derived negotiation MCM ratios when the required counters are present, which is intended for comparing repeated runs/seeds of the baseline, adaptive Intent, MCO 1 Hz, and DCC-profile configs.
 
 Vehicle IDs shown in this README are validation expectations for the current route files. The application logic should not rely on hard-coded vehicle IDs or station IDs. The code is still being cleaned, documented, and reorganized.
 

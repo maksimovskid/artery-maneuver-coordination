@@ -306,6 +306,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedOfferAsRv(mcm);
     handleReceivedConfirmAsCv(mcm);
     handleReceivedAcceptAsRv(mcm);
+    handleReceivedExecuteEvidenceAsRv(mcm);
     handleReceivedRejectAsRv(mcm);
     handleReceivedExecuteAsCv(mcm);
     handleReceivedEmergencyAsFollower(mcm);
@@ -451,6 +452,18 @@ std::optional<PendingMcmCommand> McApplication::consumePendingCommand()
     return command;
 }
 
+bool McApplication::hasPendingCoordinationCommand() const
+{
+    return mPendingMcmCommand.has_value();
+}
+
+std::optional<uint8_t> McApplication::consumeCompletedRvNegotiationRequestId()
+{
+    auto requestId = mCompletedRvNegotiationRequestId;
+    mCompletedRvNegotiationRequestId.reset();
+    return requestId;
+}
+
 void McApplication::logNegotiationTrace(
     const char* action,
     const McmSnapshot& snapshot,
@@ -528,6 +541,21 @@ bool McApplication::isNegotiationMessageForActiveRequest(
         snapshot.mcmCategory == static_cast<long>(subtype) &&
         snapshot.requestId >= 0 &&
         static_cast<uint8_t>(snapshot.requestId) == requestId;
+}
+
+bool McApplication::isExecuteEvidenceForActiveRvRequest(const McmSnapshot& snapshot) const
+{
+    if (snapshot.hasNegotiationContainer &&
+            snapshot.mcmCategory == static_cast<long>(mcmSubtype::Execute) &&
+            snapshot.requestId >= 0 &&
+            static_cast<uint8_t>(snapshot.requestId) == mRvRequestId) {
+        return true;
+    }
+
+    return snapshot.hasExecutionContainer &&
+        snapshot.mcmCategory == static_cast<long>(mcmSubtype::Execute) &&
+        snapshot.cooperationId >= 0 &&
+        static_cast<uint8_t>(snapshot.cooperationId) == mRvRequestId;
 }
 
 // CV-side target guard for Confirm/Execute. Both one-CV and two-CV
@@ -625,6 +653,8 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mRvNegotiationCompletionReported = false;
+    mCompletedRvNegotiationRequestId.reset();
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -823,6 +853,8 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mRvNegotiationCompletionReported = false;
+    mCompletedRvNegotiationRequestId.reset();
     mRvNegotiationTimedOut = true;
 
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
@@ -2090,6 +2122,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mRvNegotiationCompletionReported = false;
+    mCompletedRvNegotiationRequestId.reset();
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -2968,6 +3002,8 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mRvNegotiationCompletionReported = false;
+    mCompletedRvNegotiationRequestId.reset();
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
@@ -3752,6 +3788,10 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
 
     mPendingMcmCommand = command;
+    if (!mRvNegotiationCompletionReported) {
+        mCompletedRvNegotiationRequestId = command.requestId;
+        mRvNegotiationCompletionReported = true;
+    }
     mRvExecuteQueuedOrSent = true;
     mLastExecuteQueuedAt = mEgoContext.now;
     mHasLastExecuteQueuedAt = true;
@@ -3792,6 +3832,47 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     //     << " after receiving Accepts from " << mRvTargetVehicle1
     //     << " and " << mRvTargetVehicle2
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
+}
+
+void McApplication::handleReceivedExecuteEvidenceAsRv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider ||
+            mRvNegotiationCompletionReported ||
+            mRvExecuteQueuedOrSent ||
+            mCooperatingVehicleType != cooperatingVehicleType::RV) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!isExecuteEvidenceForActiveRvRequest(snapshot)) {
+        return;
+    }
+
+    const uint32_t senderStationId = snapshot.stationId;
+    bool fromMissingTarget1 = false;
+    bool fromMissingTarget2 = false;
+    if (senderStationId == mRvTargetVehicle1 && !mRvAcceptReceived1) {
+        fromMissingTarget1 = true;
+    } else if (mRvNumberOfVehicles > 1 &&
+            senderStationId == mRvTargetVehicle2 &&
+            !mRvAcceptReceived2) {
+        fromMissingTarget2 = true;
+    } else {
+        return;
+    }
+
+    mCompletedRvNegotiationRequestId = mRvRequestId;
+    mRvNegotiationCompletionReported = true;
+
+    EV_INFO << "McApplication RV station " << mEgoContext.stationId
+        << " treated Execute from missing CV as negotiation completion evidence"
+        << ": requestId=" << static_cast<int>(mRvRequestId)
+        << " cvStation=" << senderStationId
+        << " missingAccept1=" << fromMissingTarget1
+        << " missingAccept2=" << fromMissingTarget2
+        << '\n';
 }
 
 void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)

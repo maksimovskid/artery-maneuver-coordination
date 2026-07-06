@@ -62,6 +62,7 @@ static const simsignal_t scSignalCoopCbr = cComponent::registerSignal("coopCBR")
 
 static const simsignal_t scSignalNegotiationStartedCounter = cComponent::registerSignal("NegotiationStartedCounter");
 static const simsignal_t scSignalNegotiationCompletedCounter = cComponent::registerSignal("NegotiationCompletedCounter");
+static const simsignal_t scSignalNegotiationTime = cComponent::registerSignal("negotiationTime");
 static const simsignal_t scSignalExecutionStartedCounter = cComponent::registerSignal("ExecutionStartedCounter");
 static const simsignal_t scSignalExecutionCompletedCounter = cComponent::registerSignal("ExecutionCompletedCounter");
 static const simsignal_t scSignalCounterNegotiationRejected = cComponent::registerSignal("CounterNegotiationRejected");
@@ -601,6 +602,7 @@ void McService::emitSentMeasurements(
             key >= 0 &&
             mMeasuredNegotiationStartedRequestIds.insert(key).second) {
         emit(scSignalNegotiationStartedCounter, 1L);
+        mNegotiationStartedAtByRequestId.emplace(key, simTime());
         // Current MCM commands expose numberOfVehicles, not the old conflict
         // count. Treat one/two-CV negotiations conservatively as the old
         // "two vehicles" bucket and reserve "three vehicles" for larger sets.
@@ -622,7 +624,6 @@ void McService::emitSentMeasurements(
             metadata.priorityManeuver != PriorityManeuver_emergency &&
             key >= 0 &&
             mMeasuredExecutionStartedRequestIds.insert(key).second) {
-        emit(scSignalNegotiationCompletedCounter, 1L);
         emit(scSignalExecutionStartedCounter, 1L);
     }
 
@@ -788,6 +789,11 @@ void McService::trigger()
 void McService::checkTriggeringConditions(const SimTime& T_now)
 {
     const SimTime dccInterval = mDccRestriction ? genMcmDcc() : mGenMcmMin;
+    if (shouldGenerateCoordinationMcm(T_now, dccInterval)) {
+        sendMcm(T_now);
+        return;
+    }
+
     if (shouldGenerateIntentMcm(T_now, dccInterval)) {
         sendMcm(T_now);
     }
@@ -945,16 +951,55 @@ void McService::updateAdaptiveIntentFrequency(const SimTime& now)
     }
 }
 
-bool McService::shouldGenerateCoordinationMcm(const SimTime& now, SimTime dccInterval) const
+bool McService::shouldGenerateCoordinationMcm(const SimTime& now, SimTime dccInterval)
 {
-    // Coordination/negotiation generation is deliberately kept side-effect free.
-    // The old checkTriggeringConditionsCoordination mixed this decision with
-    // Request/Confirm/Offer/Accept/Complete state changes. Current state
-    // transitions remain in McApplication::handleSentMcm; this helper is a
-    // staged hook for future coordination-specific generation rules.
+    if (!hasPendingCoordinationMcm()) {
+        return false;
+    }
+
     const SimTime elapsed = now - mLastMcmTimestamp;
-    return elapsed >= dccInterval &&
-        elapsed >= intervalForCoordinationTriggeringCondition(mCommunicationConfig.coordinationTrigger);
+    const auto trigger = mCommunicationConfig.coordinationTrigger;
+    const SimTime dccGate = trigger == CoordinationTriggeringCondition::PeriodicFixedNoDcc ?
+        mGenMcmMin :
+        dccInterval;
+
+    if (elapsed < dccGate) {
+        return false;
+    }
+
+    if (trigger == CoordinationTriggeringCondition::PeriodicFixed ||
+            trigger == CoordinationTriggeringCondition::PeriodicFixedNoDcc) {
+        return elapsed >= intervalForCoordinationTriggeringCondition(trigger);
+    }
+
+    if (mFixedRate) {
+        const SimTime fixedInterval = mFixedRateInterval > SIMTIME_ZERO ? mFixedRateInterval : mGenMcmMin;
+        return elapsed >= fixedInterval;
+    }
+
+    if (!mHasLastMcmKinematics) {
+        return true;
+    }
+
+    if (checkHeadingDelta() || checkPositionDelta() || checkSpeedDelta()) {
+        mGenMcm = std::min(elapsed, mGenMcmMax);
+        mGenMcmLowDynamicsCounter = 0;
+        return true;
+    }
+
+    if (elapsed >= mGenMcm) {
+        if (++mGenMcmLowDynamicsCounter >= mGenMcmLowDynamicsLimit) {
+            mGenMcm = mGenMcmMax;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool McService::hasPendingCoordinationMcm() const
+{
+    return mApplication && mApplication->hasPendingCoordinationCommand();
 }
 
 SimTime McService::intervalForIntentTriggeringCondition(IntentTriggeringCondition condition) const
@@ -1084,13 +1129,6 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
 
 void McService::sendMcm(const SimTime& T_now)
 {
-    uint16_t generationDeltaTime = 0;
-    if (mCommunicationConfig.timeSource == McmTimeSource::CurrentTime) {
-        generationDeltaTime = countTaiMilliseconds(mTimer->getCurrentTime());
-    } else {
-        generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
-    }
-
     if (mApplication) {
         mApplication->prepareMcmGeneration(T_now);
     }
@@ -1098,6 +1136,14 @@ void McService::sendMcm(const SimTime& T_now)
     auto command = mApplication->consumePendingCommand();
     mcm::operationMode generatedMode = mcm::operationMode::IntentionSharingMode;
     mcm::priorityMcmCategory generatedPriority = mcm::priorityMcmCategory::NoPriority;
+
+    uint16_t generationDeltaTime = 0;
+    if (command || mCommunicationConfig.timeSource == McmTimeSource::CurrentTime) {
+        generationDeltaTime = countTaiMilliseconds(mTimer->getCurrentTime());
+    } else {
+        generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
+    }
+
     auto mcmMessage = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
     if (command && command->kind == mcm::PendingMcmCommand::Kind::Negotiation) {
         generatedMode = mcm::operationMode::ManeuverNegotiationMode;
@@ -1545,6 +1591,22 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
         }
 
         mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
+        if (auto completedRequestId = mApplication->consumeCompletedRvNegotiationRequestId()) {
+            const long completedKey = static_cast<long>(*completedRequestId);
+            if (mMeasuredNegotiationCompletedRequestIds.insert(completedKey).second) {
+                emit(scSignalNegotiationCompletedCounter, 1L);
+                const auto startedAt = mNegotiationStartedAtByRequestId.find(completedKey);
+                if (startedAt != mNegotiationStartedAtByRequestId.end()) {
+                    // RV-side successful negotiation duration: first Request
+                    // sent until McApplication observes either the final
+                    // required Accept or, for a missing Accept, Execute from
+                    // the missing expected CV as acceptance evidence.
+                    // RV Execute send time and maneuver execution are excluded.
+                    emit(scSignalNegotiationTime, simTime() - startedAt->second);
+                    mNegotiationStartedAtByRequestId.erase(startedAt);
+                }
+            }
+        }
         emitCurrentOperatingModeIfChanged();
     } catch (const std::exception& e) {
         EV_WARN << "McService receive: exception while decoding or validating MCM: " << e.what() << '\n';

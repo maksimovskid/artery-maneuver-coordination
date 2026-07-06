@@ -204,6 +204,8 @@ public:
     void handleReceivedMcm(const ReceivedMcm&);
     void handleSentMcm(const SentMcm&);
     std::optional<PendingMcmCommand> consumePendingCommand();
+    bool hasPendingCoordinationCommand() const;
+    std::optional<uint8_t> consumeCompletedRvNegotiationRequestId();
     void clearCommand();
     bool hasActiveExecution() const;
     operationMode currentOperationMode() const;
@@ -283,6 +285,7 @@ private:
     void evaluateCvRequestResponse(const ReceivedMcm&);
     CvCooperationDecision evaluateCvCooperationDecision(const ReceivedMcm&);
     bool isNegotiationMessageForActiveRequest(const McmSnapshot&, mcmSubtype, uint8_t requestId) const;
+    bool isExecuteEvidenceForActiveRvRequest(const McmSnapshot&) const;
     bool isSnapshotTargetingEgo(const McmSnapshot&) const;
     bool markRvResponseFromExpectedCv(uint32_t senderStationId, bool& fromTarget1, bool& fromTarget2) const;
     PendingMcmCommand makeRvFollowupCommand(mcmSubtype, long cooperationType = 0) const;
@@ -293,6 +296,7 @@ private:
     void handleReceivedOfferAsRv(const ReceivedMcm&);
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
+    void handleReceivedExecuteEvidenceAsRv(const ReceivedMcm&);
     void handleReceivedRejectAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
     void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
@@ -367,6 +371,8 @@ private:
     bool mRvAcceptReceived1 = false;
     bool mRvAcceptReceived2 = false;
     bool mRvExecuteQueuedOrSent = false;
+    bool mRvNegotiationCompletionReported = false;
+    std::optional<uint8_t> mCompletedRvNegotiationRequestId;
 
     // Fixed trajectory agreed during negotiation.
     // During execution this is used only as the completion reference;

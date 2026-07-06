@@ -33,6 +33,7 @@ METRICS = {
     "coopCBR",
     "NegotiationStartedCounter",
     "NegotiationCompletedCounter",
+    "negotiationTime",
     "ExecutionStartedCounter",
     "ExecutionCompletedCounter",
     "currentMCSoperatingMode",
@@ -73,6 +74,8 @@ AGGREGATE_FIELDNAMES = [
     "sum_stddev",
     "sum_min",
     "sum_max",
+    "negotiation_mcms_per_completed_negotiation",
+    "negotiation_mcms_sent_per_started_negotiation",
 ]
 
 
@@ -271,6 +274,13 @@ def aggregate_rows(rows, group_without_module=False):
         module = "" if group_without_module else row["module"]
         groups[(row["config"], row["metric"], module)].append(row)
 
+    count_sums_by_context = defaultdict(dict)
+    for (config, metric, module), group in groups.items():
+        count_values = [numeric_value(row["count"]) for row in group]
+        count_values = [value for value in count_values if value is not None]
+        if count_values:
+            count_sums_by_context[(config, module)][metric] = sum(count_values)
+
     aggregate = []
     for (config, metric, module), group in sorted(groups.items()):
         value_values = [numeric_value(row["value"]) for row in group]
@@ -288,6 +298,22 @@ def aggregate_rows(rows, group_without_module=False):
 
         seeds = {row["_seed"] for row in group if row["_seed"]}
         runs = {row["_run_key"] or row["file"] for row in group}
+        counts = count_sums_by_context.get((config, module), {})
+        negotiation_sent = counts.get("McmNegotiationSentCounter")
+        negotiation_completed = counts.get("NegotiationCompletedCounter")
+        negotiation_started = counts.get("NegotiationStartedCounter")
+
+        # Derived aggregate ratios. These are totals within the active grouping
+        # context, so --group-without-module gives config-level ratios across
+        # all participating modules/runs. Missing or zero denominators are left
+        # blank rather than guessed.
+        mcms_per_completed = ""
+        if negotiation_sent is not None and negotiation_completed:
+            mcms_per_completed = format_number(negotiation_sent / negotiation_completed)
+
+        mcms_per_started = ""
+        if negotiation_sent is not None and negotiation_started:
+            mcms_per_started = format_number(negotiation_sent / negotiation_started)
 
         aggregate.append({
             "config": config,
@@ -309,6 +335,8 @@ def aggregate_rows(rows, group_without_module=False):
             "sum_stddev": sum_stddev,
             "sum_min": sum_min,
             "sum_max": sum_max,
+            "negotiation_mcms_per_completed_negotiation": mcms_per_completed,
+            "negotiation_mcms_sent_per_started_negotiation": mcms_per_started,
         })
     return aggregate
 
