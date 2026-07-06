@@ -73,6 +73,7 @@ simple McService like ItsG5Service
         @signal[EteDelayMcmNegotiation](type=simtime_t);
         @signal[EteDelayMcmExecution](type=simtime_t);
         @signal[EteDelayMcmEmergency](type=simtime_t);
+        @signal[CoopVehicleAgeOfInformation](type=simtime_t);
         @signal[dccTimeWaitNextMcm](type=simtime_t);
         @signal[coopCBR](type=double);
         @signal[NegotiationStartedCounter](type=long);
@@ -102,6 +103,7 @@ simple McService like ItsG5Service
         @statistic[EteDelayMcmNegotiation](source=EteDelayMcmNegotiation;record=stats,vector);
         @statistic[EteDelayMcmExecution](source=EteDelayMcmExecution;record=stats,vector);
         @statistic[EteDelayMcmEmergency](source=EteDelayMcmEmergency;record=stats,vector);
+        @statistic[CoopVehicleAgeOfInformation](source=CoopVehicleAgeOfInformation;record=stats,vector);
         @statistic[dccTimeWaitNextMcm](source=dccTimeWaitNextMcm;record=stats,vector);
         @statistic[coopCBR](source=coopCBR;record=stats,vector);
         @statistic[NegotiationStartedCounter](source=NegotiationStartedCounter;record=count,vector?);

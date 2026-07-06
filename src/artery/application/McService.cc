@@ -57,6 +57,7 @@ static const simsignal_t scSignalEteDelayMcm = cComponent::registerSignal("EteDe
 static const simsignal_t scSignalEteDelayMcmNegotiation = cComponent::registerSignal("EteDelayMcmNegotiation");
 static const simsignal_t scSignalEteDelayMcmExecution = cComponent::registerSignal("EteDelayMcmExecution");
 static const simsignal_t scSignalEteDelayMcmEmergency = cComponent::registerSignal("EteDelayMcmEmergency");
+static const simsignal_t scSignalCoopVehicleAgeOfInformation = cComponent::registerSignal("CoopVehicleAgeOfInformation");
 static const simsignal_t scSignalDccTimeWaitNextMcm = cComponent::registerSignal("dccTimeWaitNextMcm");
 static const simsignal_t scSignalCoopCbr = cComponent::registerSignal("coopCBR");
 
@@ -337,6 +338,21 @@ McmMeasurementCategory classifyMcmForMeasurement(const MCM_t& message)
         return McmMeasurementCategory::Negotiation;
     }
     return McmMeasurementCategory::Intent;
+}
+
+bool isCooperativeAoiMessageForStation(const McmOperationMetadata& metadata, uint32_t egoStationId)
+{
+    if (metadata.hasNegotiationContainer) {
+        return metadata.negotiationVehicleId1 == egoStationId ||
+            (metadata.hasNegotiationVehicleId2 && metadata.negotiationVehicleId2 == egoStationId);
+    }
+
+    if (metadata.hasExecutionContainer) {
+        return metadata.cooperationVehicleId1 == egoStationId ||
+            (metadata.hasCooperationVehicleId2 && metadata.cooperationVehicleId2 == egoStationId);
+    }
+
+    return false;
 }
 
 double operatingModeMeasurementValue(mcm::operationMode mode)
@@ -679,6 +695,9 @@ void McService::emitReceivedMeasurements(
         if (metadata.priorityManeuver == PriorityManeuver_emergency) {
             emit(scSignalEteDelayMcmEmergency, eteDelay);
         }
+    }
+    if (isCooperativeAoiMessageForStation(metadata, mVehicleDataProvider->station_id())) {
+        emit(scSignalCoopVehicleAgeOfInformation, eteDelay);
     }
 }
 

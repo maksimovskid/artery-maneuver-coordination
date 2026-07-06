@@ -30,6 +30,9 @@ METRICS = {
     "EteDelayMcmExecution",
     "EteDelayMcmEmergency",
     "dccTimeWaitNextMcm",
+    "ChannelLoad",
+    "packetErrorRate",
+    "CoopVehicleAgeOfInformation",
     "coopCBR",
     "NegotiationStartedCounter",
     "NegotiationCompletedCounter",
@@ -74,6 +77,15 @@ AGGREGATE_FIELDNAMES = [
     "sum_stddev",
     "sum_min",
     "sum_max",
+    "cbr_percent_mean",
+    "cbr_percent_max",
+    "cbr_percent_min",
+    "per_percent_mean",
+    "per_percent_max",
+    "per_percent_min",
+    "coop_cbr_percent_mean",
+    "coop_cbr_percent_max",
+    "coop_cbr_percent_min",
     "negotiation_mcms_per_completed_negotiation",
     "negotiation_mcms_sent_per_started_negotiation",
 ]
@@ -268,6 +280,25 @@ def value_stats(values):
     )
 
 
+def percent_summary(metric, value_values, mean_values):
+    if metric == "ChannelLoad":
+        values = value_values if value_values else mean_values
+    elif metric in {"packetErrorRate", "coopCBR"}:
+        values = mean_values if mean_values else value_values
+    else:
+        return "", "", ""
+
+    if not values:
+        return "", "", ""
+
+    percent_values = [value * 100.0 for value in values]
+    return (
+        format_number(statistics.mean(percent_values)),
+        format_number(max(percent_values)),
+        format_number(min(percent_values)),
+    )
+
+
 def aggregate_rows(rows, group_without_module=False):
     groups = defaultdict(list)
     for row in rows:
@@ -295,6 +326,21 @@ def aggregate_rows(rows, group_without_module=False):
         value_mean, value_stddev, value_min, value_max = value_stats(value_values)
         mean_mean, mean_stddev, mean_min, mean_max = value_stats(mean_values)
         sum_mean, sum_stddev, sum_min, sum_max = value_stats(sum_values)
+        percent_mean, percent_max, percent_min = percent_summary(metric, value_values, mean_values)
+
+        cbr_percent_mean = cbr_percent_max = cbr_percent_min = ""
+        per_percent_mean = per_percent_max = per_percent_min = ""
+        coop_cbr_percent_mean = coop_cbr_percent_max = coop_cbr_percent_min = ""
+        if metric == "ChannelLoad":
+            cbr_percent_mean, cbr_percent_max, cbr_percent_min = percent_mean, percent_max, percent_min
+        elif metric == "packetErrorRate":
+            per_percent_mean, per_percent_max, per_percent_min = percent_mean, percent_max, percent_min
+        elif metric == "coopCBR":
+            coop_cbr_percent_mean, coop_cbr_percent_max, coop_cbr_percent_min = (
+                percent_mean,
+                percent_max,
+                percent_min,
+            )
 
         seeds = {row["_seed"] for row in group if row["_seed"]}
         runs = {row["_run_key"] or row["file"] for row in group}
@@ -335,6 +381,15 @@ def aggregate_rows(rows, group_without_module=False):
             "sum_stddev": sum_stddev,
             "sum_min": sum_min,
             "sum_max": sum_max,
+            "cbr_percent_mean": cbr_percent_mean,
+            "cbr_percent_max": cbr_percent_max,
+            "cbr_percent_min": cbr_percent_min,
+            "per_percent_mean": per_percent_mean,
+            "per_percent_max": per_percent_max,
+            "per_percent_min": per_percent_min,
+            "coop_cbr_percent_mean": coop_cbr_percent_mean,
+            "coop_cbr_percent_max": coop_cbr_percent_max,
+            "coop_cbr_percent_min": coop_cbr_percent_min,
             "negotiation_mcms_per_completed_negotiation": mcms_per_completed,
             "negotiation_mcms_sent_per_started_negotiation": mcms_per_started,
         })

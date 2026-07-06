@@ -44,6 +44,8 @@ The current implementation exposes a staged core subset of the old research meas
 
 This is not a full restoration of every old signal. Additional priority-planner, trajectory-cost, per-second rate, delayed-message, and detailed cooperative update metrics remain staged for future congested 200-CAV/500-CAV validation work.
 
+Network/QoS result extraction also covers the old `scalarPrint.py` metrics: `ChannelLoad`/CBR from the radio receive path, `packetErrorRate`/PER from radio statistics, and `coopCBR` from the MCM service's local channel-load hook. These values are stored as fractions in OMNeT++ output and are usually presented as percentages. `CoopVehicleAgeOfInformation` is emitted for coordination-relevant MCMs received by a listed cooperating participant: negotiation MCMs where the local station appears in `negotiationVehicleID1/2`, and execution MCMs where it appears in `cooperationVehicleID1/2`. It is measured in simulation seconds as receive time minus the MCM generation timestamp and excludes unrelated Intent/background traffic.
+
 ## Congested QoS Validation Configs
 
 Experimental 200-CAV and 500-CAV QoS validation configs are available for the existing congested scenario assets. The Free Space path loss variants use `*.radioMedium.pathLossType = "FreeSpacePathLoss"` to exercise higher channel-load conditions and keep comparison cases separated:
@@ -66,7 +68,7 @@ python3 tools/analyze_mcm_qos_results.py \
   --aggregate-output scenarios/artery-maneuver-coordination/results/mcm_qos_aggregate.csv
 ```
 
-The flat CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields. The aggregate CSV groups by config, metric, and module by default; pass `--group-without-module` to produce config/metric-level summaries.
+The flat CSV includes one row per matching module/metric entry with available count, mean, min, max, standard deviation, sum, or scalar value fields. The aggregate CSV groups by config, metric, and module by default; pass `--group-without-module` to produce config/metric-level summaries. For `ChannelLoad`, `packetErrorRate`, and `coopCBR`, the aggregate CSV also includes percentage-derived columns (`cbr_percent_*`, `per_percent_*`, and `coop_cbr_percent_*`) matching the old result-processing convention.
 
 Aggregate output also includes derived negotiation MCM ratios when the required counters are present, which is intended for comparing repeated runs/seeds of the baseline, adaptive Intent, MCO 1 Hz, and DCC-profile configs.
 
