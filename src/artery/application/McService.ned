@@ -5,6 +5,10 @@ simple McService like ItsG5Service
     parameters:
         // Disabled-by-default test hook for emitting negotiation containers.
         bool sendNegotiationTestMcm = default(false);
+        // Disabled-by-default smoke-test hook for exercising one rejected
+        // high-priority lane-change Request followed by an RV second Request.
+        bool forceFirstCvRejectForSecondRequestSmoke = default(false);
+        int forceFirstCvRejectStationId = default(0);
 
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate

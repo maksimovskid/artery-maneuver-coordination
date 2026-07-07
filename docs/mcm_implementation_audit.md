@@ -13,7 +13,7 @@ The main remaining gaps are evaluation completeness and broader scenario coverag
 * negotiation-related adaptive frequency reduction is not implemented;
 * Important Intent Sharing needs an explicit current state before exemption rules can be implemented;
 * delayed-message counters, per-second rates, DCC transmitted/dropped packets by profile, and some detailed planner counters are deferred;
-* second-request/cascading negotiation support is represented in enums/helpers but is not a fully validated scenario feature;
+* second-request handling is available as a scoped high-priority lane-change retry path, while generalized cascading remains limited;
 * congested 200-CAV/500-CAV QoS configs exist as evaluation scaffolding and need full multi-seed validation before performance claims.
 
 ## 2. Implementation Status
@@ -51,7 +51,7 @@ The main remaining gaps are evaluation completeness and broader scenario coverag
 | Important Intent Sharing exemption | The adaptive path notes that an explicit important-intent state is needed before exemption rules can be implemented. | `updateAdaptiveIntentFrequency` TODO | Planned extension | Define the current important-intent state first. |
 | `PeriodicFixed0.5Hz` transitions | `PeriodicFixed0.5Hz` exists as a typed triggering condition, but the adaptive transition path does not currently use it. | `IntentTriggeringCondition::PeriodicFixedHalfHz` | Deferred | Keep deferred until congested validation identifies a need. |
 | `PeriodicFixedNoDCC` | Coordination mode can bypass DCC gating while using periodic timing. | `CoordinationTriggeringCondition::PeriodicFixedNoDcc`, `dccGate` logic | Partially validated | Add a targeted smoke validation with config override. |
-| Second request / cascading flows | Enums and planner helpers exist, but the repository does not present them as fully validated scenario behavior. | enums in `McApplication.h`, `TrajectoryPlanner::findSecondRequestTrajRV` | Limited | Define current use cases and scenario tests before broadening support. |
+| Second request / cascading flows | A rejected high-priority lane-change Request can trigger one RV-generated second Request using `TrajectoryPlanner::findSecondRequestTrajRV`; generalized cascading remains limited. | `McApplication::handleReceivedRejectAsRv`, `McApplication::makeRvSecondRequestCommand`, `TrajectoryPlanner::findSecondRequestTrajRV` | Scoped support | Add scenario coverage before broadening to additional negotiation policies. |
 | Reject/Cancel behavior | Reject and Cancel handlers exist for current flows; broader semantics need scenario coverage. | `handleReceivedRejectAsRv`, `handleReceivedCancelAsCv` | Partial | Add scenario tests before broadening Cancel/Reject behavior. |
 | Congested QoS configs | 200-CAV and 500-CAV configs are available for Free Space baseline/adaptive/MCO/DCC-profile evaluation. | `envmod-200CAVs-qos-*`, `envmod-500CAVs-qos-*` | Evaluation scaffolding | Run multi-seed validation before benchmark claims. |
 

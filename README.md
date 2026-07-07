@@ -55,7 +55,7 @@ Planner measurement is available for current CV-side planner evaluations. `Traje
 | 4 | `CounterTrajectoryType5` | acceleration with lane-change trajectory / normal time gap |
 | 5 | `CounterTrajectoryType6` | acceleration with lane-change trajectory / reduced time gap |
 
-`TrajectoryCostRV`, RV trajectory-type counters, second-request counters, and `CounterAffectedNonCoopVehicles` remain deferred because the current flow does not yet expose the corresponding RV-cost path or scenario-specific non-cooperating-vehicle affected state cleanly.
+`TrajectoryCostRV`, RV trajectory-type counters, second-request counters, and `CounterAffectedNonCoopVehicles` remain deferred as exported metrics. The focused second-request path computes RV-side trajectory cost internally, but it is not yet exposed in OMNeT++ scalar/vector output.
 
 Additional per-second rate, delayed-message, DCC transmitted/dropped packet, and detailed cooperative update metrics remain staged for future congested 200-CAV/500-CAV validation work.
 

@@ -252,6 +252,12 @@ void McApplication::setNegotiationLimits(
     mNegotiationLimitLaneChange = laneChangeLimit;
 }
 
+void McApplication::setSecondRequestSmokeReject(bool enabled, uint32_t stationId)
+{
+    mSecondRequestSmokeRejectEnabled = enabled;
+    mSecondRequestSmokeRejectStationId = stationId;
+}
+
 void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;
@@ -308,6 +314,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedConfirmAsCv(mcm);
     handleReceivedAcceptAsRv(mcm);
     handleReceivedExecuteEvidenceAsRv(mcm);
+    handleReceivedRejectAsCv(mcm);
     handleReceivedRejectAsRv(mcm);
     handleReceivedExecuteAsCv(mcm);
     handleReceivedEmergencyAsFollower(mcm);
@@ -325,7 +332,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
 
     if (mcm.data.hasNegotiationContainer &&
             mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Request) &&
-            mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired) {
+            (mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired ||
+                mCoordinationProgressRV == coordinationProgressRV::SecondRequest)) {
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
         if (mEgoContext.routeId == scMergingRouteId) {
             mMergingRequestQueuedOrSent = true;
@@ -426,12 +434,28 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
                 mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Reject))) {
         if (mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Accept)) {
             mCoordinationProgressCV = coordinationProgressCV::AcceptSent;
+            mCvResponseQueuedOrSent = true;
         } else {
+            mCvHasRejectedRequest = true;
+            mCvRejectedRvStationId = mCvRvStationId;
+            mCvRejectedRequestId = mCvRequestId;
             mCoordinationProgressCV = coordinationProgressCV::NoRequest;
             mOperationMode = operationMode::IntentionSharingMode;
+            mMcmSubtype = mcmSubtype::Regular;
+            mCooperatingVehicleType = cooperatingVehicleType::NCV;
             mControlManeuver = controlManeuver::DoNothing;
             mCvSelectedTrajectory.clear();
             mHasCvSelectedTrajectory = false;
+            mCvRvStationId = 0;
+            mCvRequestId = 0;
+            mCvResponseNumberOfVehicles = 1;
+            mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
+            mHasCvLastOfferQueuedAt = false;
+            mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
+            mHasCvLastAcceptQueuedAt = false;
+            mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+            mHasCvNegotiationStartedAt = false;
+            mCvResponseQueuedOrSent = false;
             mTargetSpeed = 0.0;
             mCommandDuration = 0.0;
             mCvDecelerationControlApplied = false;
@@ -442,7 +466,6 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mCvRestoreNormalSpeedSkippedLogged = false;
             mCvStoppedDecelerationForRvLogged = false;
         }
-        mCvResponseQueuedOrSent = true;
     }
 }
 
@@ -663,6 +686,7 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mRvExecuteQueuedOrSent = false;
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
+    mRvSecondRequestAttempted = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -690,6 +714,9 @@ void McApplication::resetCvCoordinationStateAfterComplete()
     mCvRvStationId = 0;
     mCvRequestId = 0;
     mCvResponseNumberOfVehicles = 1;
+    mCvHasRejectedRequest = false;
+    mCvRejectedRvStationId = 0;
+    mCvRejectedRequestId = 0;
     mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
     mHasCvLastOfferQueuedAt = false;
     mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
@@ -849,6 +876,126 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
     return command;
 }
 
+std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || mEgoContext.plannedTrajectory.empty() ||
+            mEgoContext.routeReferenceX.empty() || mEgoContext.routeReferenceY.empty() ||
+            mEgoContext.routeReferenceIndex < 0) {
+        return std::nullopt;
+    }
+
+    const uint32_t rejectingCv = received.data.stationId;
+    TrajectoryPlanner::Trajectory otherTrajectory = received.data.plannedTrajectory;
+    for (auto it = mReceivedMcmCache.rbegin(); it != mReceivedMcmCache.rend(); ++it) {
+        if (it->data.stationId == rejectingCv && !it->data.plannedTrajectory.empty()) {
+            otherTrajectory = it->data.plannedTrajectory;
+            break;
+        }
+    }
+
+    if (otherTrajectory.empty()) {
+        return std::nullopt;
+    }
+
+    const auto& rvPoint = mEgoContext.plannedTrajectory.front();
+    const auto& cvPoint = otherTrajectory.front();
+    bool decelerationRequired = rvPoint.mY >= cvPoint.mY;
+    bool accelerationRequired = !decelerationRequired;
+
+    TrajectoryPlanner::Trajectory estimatedOtherTrajectory = otherTrajectory;
+    if (accelerationRequired) {
+        const int requestPriority = priorityLevel(mPriorityMcmCategory);
+        const double speedFactor = requestPriority <= 0 ? 0.2 : (requestPriority == 1 ? 0.4 : 0.5);
+        const double deceleration = requestPriority <= 0 ? 2.0 : (requestPriority == 1 ? 4.0 : 5.0);
+        estimatedOtherTrajectory = mTrajectoryPlanner.estimateOtherDecelerationTrajectory(
+            scRequestTrajectorySteps,
+            scRequestTrajectoryDt,
+            mEgoContext.routeReferenceX,
+            mEgoContext.routeReferenceY,
+            mEgoContext.routeReferenceIndex,
+            false,
+            static_cast<float>(mEgoContext.speed - speedFactor * mEgoContext.speed),
+            0.0F,
+            static_cast<float>(deceleration),
+            otherTrajectory);
+        if (estimatedOtherTrajectory.empty()) {
+            estimatedOtherTrajectory = otherTrajectory;
+        }
+    }
+
+    const omnetpp::SimTime eteDelay =
+        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+    auto result = mTrajectoryPlanner.findSecondRequestTrajRV(
+        estimatedOtherTrajectory,
+        priorityLevel(mPriorityMcmCategory),
+        scRequestTrajectorySteps,
+        scRequestTrajectoryDt,
+        mEgoContext.routeReferenceX,
+        mEgoContext.routeReferenceY,
+        mEgoContext.routeReferenceIndex,
+        mEgoContext.speed,
+        eteDelay,
+        decelerationRequired,
+        accelerationRequired);
+
+    const bool foundTrajectory = std::get<0>(result);
+    const auto& secondRequestTrajectory = std::get<1>(result);
+    if (secondRequestTrajectory.empty()) {
+        return std::nullopt;
+    }
+
+    uint8_t newRequestId = makeRequestId(mEgoContext.now + mNegotiationRetryInterval);
+    if (newRequestId == mRvRequestId) {
+        newRequestId = static_cast<uint8_t>(newRequestId + 1);
+    }
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Request;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.requestId = newRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = secondRequestTrajectory;
+
+    EV_INFO << "[MCM-LC-STATE]"
+        << " simTime=" << mEgoContext.now
+        << " role=safety-critical-lane-change-rv"
+        << " station=" << mEgoContext.stationId
+        << " vehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+        << " event=queued-second-request"
+        << " previousRequestId=" << static_cast<int>(mRvRequestId)
+        << " requestId=" << static_cast<int>(newRequestId)
+        << " rejectingCv=" << rejectingCv
+        << " targetCv1=" << command.targetVehicle1
+        << " targetCv2=" << command.targetVehicle2
+        << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
+        << " trajectoryFound=" << foundTrajectory
+        << " trajectoryCostRv=" << std::get<3>(result)
+        << " trajectoryTypeRv=" << std::get<4>(result)
+        << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
+
+    std::cout << "[MCM-LC-STATE]"
+        << " t=" << mEgoContext.now
+        << " " << (mVehicleController ? mVehicleController->getVehicleId() : "")
+        << " station=" << mEgoContext.stationId
+        << " QUEUE second Request"
+        << " previousRequestId=" << static_cast<int>(mRvRequestId)
+        << " requestId=" << static_cast<int>(newRequestId)
+        << " rejectingCv=" << rejectingCv
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " trajectoryFound=" << foundTrajectory
+        << std::endl;
+
+    return command;
+}
+
 // RV timeout reset for unsuccessful medium-priority merging negotiations.
 // High-priority lane-change timeouts use the emergency fallback brake instead,
 // so this helper preserves the merging-only reset semantics.
@@ -863,6 +1010,7 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvExecuteQueuedOrSent = false;
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
+    mRvSecondRequestAttempted = false;
     mRvNegotiationTimedOut = true;
 
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
@@ -893,6 +1041,9 @@ void McApplication::resetCvNegotiationAfterTimeout()
     mCvRvStationId = 0;
     mCvRequestId = 0;
     mCvResponseNumberOfVehicles = 1;
+    mCvHasRejectedRequest = false;
+    mCvRejectedRvStationId = 0;
+    mCvRejectedRequestId = 0;
     mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
     mHasCvLastOfferQueuedAt = false;
     mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
@@ -2132,6 +2283,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvExecuteQueuedOrSent = false;
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
+    mRvSecondRequestAttempted = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -2242,6 +2394,10 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
         }
 
         resetRvNegotiationAfterTimeout();
+        return;
+    }
+
+    if (mRvSecondRequestAttempted) {
         return;
     }
 
@@ -3012,6 +3168,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mRvExecuteQueuedOrSent = false;
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
+    mRvSecondRequestAttempted = false;
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
@@ -3347,10 +3504,30 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         return;
     }
 
+    const uint8_t incomingRequestId = snapshot.requestId >= 0 ? static_cast<uint8_t>(snapshot.requestId) : 0;
+    if (mCvHasRejectedRequest &&
+            snapshot.stationId == mCvRejectedRvStationId &&
+            incomingRequestId == mCvRejectedRequestId) {
+        EV_INFO << "[MCM-CV-DECISION]"
+            << " simTime=" << (mHasEgoContext ? mEgoContext.now : omnetpp::simTime())
+            << " event=ignore-rejected-request-retry"
+            << " cvVehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " cvStation=" << egoStationId
+            << " rvStation=" << snapshot.stationId
+            << " requestId=" << static_cast<int>(incomingRequestId)
+            << '\n';
+        return;
+    }
+    if (mCvHasRejectedRequest && snapshot.stationId == mCvRejectedRvStationId) {
+        mCvHasRejectedRequest = false;
+        mCvRejectedRvStationId = 0;
+        mCvRejectedRequestId = 0;
+    }
+
     logNegotiationTrace("RECV", snapshot, received.receivedAt);
 
     mCvRvStationId = snapshot.stationId;
-    mCvRequestId = snapshot.requestId >= 0 ? static_cast<uint8_t>(snapshot.requestId) : 0;
+    mCvRequestId = incomingRequestId;
     mCooperatingVehicleType = cooperatingVehicleType::CV;
     mOperationMode = operationMode::ManeuverNegotiationMode;
     mCoordinationProgressCV = coordinationProgressCV::ReceivedRequest;
@@ -3373,7 +3550,33 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
     command.hasTargetVehicle2 = false;
     command.targetVehicle2 = 0;
 
-    if (snapshot.requestedTrajectory.empty()) {
+    const bool forceSmokeReject =
+        mSecondRequestSmokeRejectEnabled &&
+        !mSecondRequestSmokeRejectConsumed &&
+        mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
+        mHasEgoContext &&
+        mEgoContext.routeId == scTargetLaneChangeRouteId &&
+        egoStationId == mSecondRequestSmokeRejectStationId;
+
+    if (forceSmokeReject) {
+        mSecondRequestSmokeRejectConsumed = true;
+        command.subtype = mcmSubtype::Reject;
+        command.requestedTrajectory = mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
+        command.offeredTrajectory.clear();
+        command.hasOfferedTrajectory = false;
+        mCoordinationProgressCV = coordinationProgressCV::SendReject;
+
+        EV_WARN << "[MCM-SECOND-REQUEST-SMOKE]"
+            << " simTime=" << mEgoContext.now
+            << " event=force-first-cv-reject"
+            << " cvVehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+            << " cvStation=" << egoStationId
+            << " rvStation=" << command.targetVehicle1
+            << " requestId=" << static_cast<int>(command.requestId)
+            << " priority=HighPriority"
+            << " numberOfVehicles=" << snapshot.numberOfVehicles
+            << '\n';
+    } else if (snapshot.requestedTrajectory.empty()) {
         command.subtype = mcmSubtype::Reject;
         command.requestedTrajectory = mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
         mCoordinationProgressCV = coordinationProgressCV::SendReject;
@@ -3944,6 +4147,44 @@ void McApplication::handleReceivedExecuteEvidenceAsRv(const ReceivedMcm& receive
         << '\n';
 }
 
+void McApplication::handleReceivedRejectAsCv(const ReceivedMcm& received)
+{
+    EV_STATICCONTEXT;
+
+    if (!mHasEgoContext || !mVehicleDataProvider ||
+            mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mCoordinationProgressCV != coordinationProgressCV::SendOffer ||
+            !mCvResponseQueuedOrSent) {
+        return;
+    }
+
+    const auto& snapshot = received.data;
+    if (!snapshot.hasNegotiationContainer ||
+            snapshot.mcmCategory != static_cast<long>(mcmSubtype::Reject) ||
+            snapshot.requestId < 0 ||
+            static_cast<uint8_t>(snapshot.requestId) != mCvRequestId) {
+        return;
+    }
+
+    const uint32_t egoStationId = mVehicleDataProvider->station_id();
+    if (snapshot.stationId == egoStationId ||
+            snapshot.negotiationVehicleId1 != mCvRvStationId) {
+        return;
+    }
+
+    EV_INFO << "[MCM-CV-DECISION]"
+        << " simTime=" << (mHasEgoContext ? mEgoContext.now : omnetpp::simTime())
+        << " event=peer-reject-clears-pending-offer"
+        << " cvVehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+        << " cvStation=" << egoStationId
+        << " rvStation=" << mCvRvStationId
+        << " rejectingCv=" << snapshot.stationId
+        << " requestId=" << static_cast<int>(mCvRequestId)
+        << '\n';
+
+    resetCvNegotiationAfterTimeout();
+}
+
 void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -3987,6 +4228,56 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
         << " targetCv1=" << mRvTargetVehicle1
         << " targetCv2=" << mRvTargetVehicle2
         << " priority=HighPriority\n";
+
+    const bool waitingForInitialRequestResponse =
+        mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired ||
+        mCoordinationProgressRV == coordinationProgressRV::RequestSent;
+    if (!mPendingMcmCommand && !mRvSecondRequestAttempted && waitingForInitialRequestResponse) {
+        auto secondRequest = makeRvSecondRequestCommand(received);
+        if (secondRequest) {
+            const uint8_t previousRequestId = mRvRequestId;
+
+            mPendingMcmCommand = *secondRequest;
+            mRvSecondRequestAttempted = true;
+            mRvRequestId = secondRequest->requestId;
+            mRvNumberOfVehicles = secondRequest->numberOfVehicles;
+            mRvTargetVehicle1 = secondRequest->targetVehicle1;
+            mRvTargetVehicle2 = secondRequest->hasTargetVehicle2 ? secondRequest->targetVehicle2 : 0;
+            mRvOfferReceived1 = false;
+            mRvOfferReceived2 = false;
+            mRvConfirmQueuedOrSent = false;
+            mRvAcceptReceived1 = false;
+            mRvAcceptReceived2 = false;
+            mRvExecuteQueuedOrSent = false;
+            mRvNegotiationCompletionReported = false;
+            mCompletedRvNegotiationRequestId.reset();
+            mRvLastRequestQueuedAt = received.receivedAt;
+            mHasRvLastRequestQueuedAt = true;
+            mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
+            mHasRvLastConfirmQueuedAt = false;
+            mRvNegotiationStartedAt = received.receivedAt;
+            mHasRvNegotiationStartedAt = true;
+            mActiveNegotiatedTrajectory = secondRequest->requestedTrajectory;
+            mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+            mMcmSubtype = mcmSubtype::Request;
+            mOperationMode = operationMode::ManeuverNegotiationMode;
+            mCoordinationProgressRV = coordinationProgressRV::SecondRequest;
+
+            EV_INFO << "[MCM-LC-STATE]"
+                << " simTime=" << mEgoContext.now
+                << " role=safety-critical-lane-change-rv"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << (mVehicleController ? mVehicleController->getVehicleId() : "")
+                << " event=second-request-ready"
+                << " previousRequestId=" << static_cast<int>(previousRequestId)
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " rejectingCv=" << senderStationId
+                << " targetCv1=" << mRvTargetVehicle1
+                << " targetCv2=" << mRvTargetVehicle2
+                << '\n';
+            return;
+        }
+    }
 
     applyEmergencyFallbackBrake("rejected-brake", "received-reject", mRvRequestId);
 }
@@ -4268,6 +4559,7 @@ void McApplication::applyEmergencyFallbackBrake(
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    mRvSecondRequestAttempted = false;
     mRvNegotiationTimedOut = true;
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;

@@ -794,6 +794,10 @@ void McService::initialize()
     mNegotiationLimitLaneChange = mCommunicationConfig.negotiationLimitLaneChange;
     mEffectiveIntentTrigger = mCommunicationConfig.intentTrigger;
     mSendNegotiationTestMcm = par("sendNegotiationTestMcm").boolValue();
+    mForceFirstCvRejectForSecondRequestSmoke = par("forceFirstCvRejectForSecondRequestSmoke").boolValue();
+    const long forceRejectStationId = par("forceFirstCvRejectStationId").intValue();
+    mForceFirstCvRejectStationId = forceRejectStationId > 0 ?
+        static_cast<uint32_t>(forceRejectStationId) : 0;
     mUsePrerecordedIntentTrajectory = par("usePrerecordedIntentTrajectory").boolValue();
     mPrerecordedTrajectoryCsv = par("prerecordedTrajectoryCsv").stdstringValue();
     mPrerecordedTrajectorySteps = par("prerecordedTrajectorySteps").intValue();
@@ -832,6 +836,9 @@ void McService::initialize()
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,
         mNegotiationLimitLaneChange);
+    mApplication->setSecondRequestSmokeReject(
+        mForceFirstCvRejectForSecondRequestSmoke,
+        mForceFirstCvRejectStationId);
 }
 
 void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)

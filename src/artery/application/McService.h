@@ -231,6 +231,8 @@ private:
 
     // Temporary disabled-by-default test mode
     bool mSendNegotiationTestMcm = false;
+    bool mForceFirstCvRejectForSecondRequestSmoke = false;
+    uint32_t mForceFirstCvRejectStationId = 0;
     McmCommunicationConfig mCommunicationConfig;
     IntentTriggeringCondition mEffectiveIntentTrigger = IntentTriggeringCondition::SameAsCam;
     McmFrequencyReduceState mFrequencyReduceState = McmFrequencyReduceState::None;

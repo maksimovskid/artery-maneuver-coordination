@@ -104,7 +104,7 @@ Coordination message generation is rate-limited. The default validation setup us
 
 Emergency behavior is separate from the normal Request/Offer/Confirm/Accept flow. The configured emergency vehicle broadcasts emergency execution MCMs at 10 Hz for 15 s in the current emergency lane-change validation run.
 
-Cascading and second-request related types exist in the enums and planner support, but full generalized cascading behavior should be treated as limited/TODO unless a scenario explicitly validates it.
+The high-priority lane-change RV path can queue one second Request after a Reject. The RV uses the rejecting CV's latest planned trajectory and the second-request planner helper to build a new requested trajectory with a new request ID, then sends it through the normal rate-limited MCM generation path. Full generalized cascading behavior remains limited unless a scenario explicitly validates it.
 
 ## 5. Validation Scenarios
 
@@ -148,6 +148,12 @@ Expected purpose:
 * Following lane-1 vehicles arm high-priority lane-change negotiation.
 * Lane-2 vehicles can act as CVs.
 * Right-lane NCVs provide non-cooperating/background traffic.
+
+### `envmod-19CAVs-second-request-smoke`
+
+Purpose: Focused second-request validation.
+
+This optional smoke-test config extends `envmod-19CAVs-emergency-lane-change` and enables a disabled-by-default validation hook. One selected CV rejects its first high-priority lane-change Request, allowing the RV to queue and send a second Request through the normal rate-limited MCM generation path. Use it to check the second-request state machine; do not treat it as a baseline traffic or communication result configuration.
 * No merging vehicles should appear in this scenario.
 
 The emergency broadcast validation expectation for a 30 s run is 150 queued emergency execution MCMs, from 10 Hz over a 15 s emergency broadcast window.
@@ -369,7 +375,8 @@ Current limitations and TODOs:
 * Scenario constants still live in `src/artery/application/mcm/McScenarioConfig.*`; some should eventually move to configuration.
 * Negotiation-related adaptive reduction is not implemented.
 * Important Intent Sharing exemption is explicitly marked as TODO in the adaptive intent-generation path.
-* Full generalized cascading/second-request behavior should be treated as limited unless a scenario explicitly validates it.
+* Full generalized cascading behavior should be treated as limited unless a scenario explicitly validates it.
+* The second-request path is scoped to one retry after a rejected high-priority lane-change Request; broader multi-stage negotiation policies need additional scenario coverage.
 * CV lateral lane-change execution is currently logged as not applied in one control path because the lateral target and step counter are not represented there yet.
 * Completion semantics are represented through the currently available container path in some execution-completion logic.
 * Some detailed metrics are deferred or incomplete:

@@ -216,6 +216,7 @@ public:
     void initialize(traci::VehicleController*, const VehicleDataProvider*, const LocalEnvironmentModel* = nullptr);
     void setNegotiationRetryInterval(omnetpp::SimTime interval);
     void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
+    void setSecondRequestSmokeReject(bool enabled, uint32_t stationId);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -284,6 +285,7 @@ private:
     PendingMcmCommand makeRvConfirmRetryCommand() const;
     PendingMcmCommand makeCvOfferRetryCommand() const;
     PendingMcmCommand makeCvAcceptRetryCommand() const;
+    std::optional<PendingMcmCommand> makeRvSecondRequestCommand(const ReceivedMcm&);
     void resetRvNegotiationAfterTimeout();
     void resetCvNegotiationAfterTimeout();
     void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
@@ -318,6 +320,7 @@ private:
     void handleReceivedConfirmAsCv(const ReceivedMcm&);
     void handleReceivedAcceptAsRv(const ReceivedMcm&);
     void handleReceivedExecuteEvidenceAsRv(const ReceivedMcm&);
+    void handleReceivedRejectAsCv(const ReceivedMcm&);
     void handleReceivedRejectAsRv(const ReceivedMcm&);
     void handleReceivedExecuteAsCv(const ReceivedMcm&);
     void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
@@ -359,12 +362,18 @@ private:
     omnetpp::SimTime mNegotiationRetryInterval = 0.1;
     omnetpp::SimTime mNegotiationLimitMerging = 1.0;
     omnetpp::SimTime mNegotiationLimitLaneChange = 1.0;
+    bool mSecondRequestSmokeRejectEnabled = false;
+    uint32_t mSecondRequestSmokeRejectStationId = 0;
+    bool mSecondRequestSmokeRejectConsumed = false;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;
     uint32_t mCvRvStationId = 0;
     uint8_t mCvRequestId = 0;
     uint8_t mCvResponseNumberOfVehicles = 1;
+    bool mCvHasRejectedRequest = false;
+    uint32_t mCvRejectedRvStationId = 0;
+    uint8_t mCvRejectedRequestId = 0;
     omnetpp::SimTime mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
     bool mHasCvLastOfferQueuedAt = false;
     omnetpp::SimTime mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
@@ -394,6 +403,7 @@ private:
     bool mRvExecuteQueuedOrSent = false;
     bool mRvNegotiationCompletionReported = false;
     std::optional<uint8_t> mCompletedRvNegotiationRequestId;
+    bool mRvSecondRequestAttempted = false;
 
     // Fixed trajectory agreed during negotiation.
     // During execution this is used only as the completion reference;
