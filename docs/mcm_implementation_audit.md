@@ -66,7 +66,7 @@ The main remaining gaps are evaluation completeness and broader scenario coverag
 | DCC transmitted/dropped by profile/subtype | These are lower-layer statistics and are not fabricated in `McService`. | DCC/radio layer metrics | External/deferred | Use lower-layer statistics sources. |
 | CAM-specific metrics | CAM metrics are outside the current MCM helper scope. | CA service and lower-layer metrics | Separate analysis scope | Keep MCM and CAM analysis separate unless doing coexistence studies. |
 | Affected NCV counters | Affected non-cooperating-vehicle counters are not currently exposed as validated metrics. | planner/application TODO scope | Deferred | Add only after defining scenario semantics. |
-| RV trajectory-cost metrics | CV planner cost is measured; RV trajectory-cost metrics are not exposed as a validated path. | `TrajectoryCost`, planner helpers | Deferred | Add once RV cost path is explicit. |
+| RV trajectory-cost metrics | `TrajectoryCostRV` is exported for the scoped second-request path; broader RV trajectory-type counters remain deferred. | `TrajectoryCostRV`, `McApplication::makeRvSecondRequestCommand` | Scoped support | Keep the metric tied to validated RV-side cost calculations. |
 | Negotiation MCMs per cooperating vehicle | Config-level ratios exist; participant-normalized ratios need role-specific counters or a safe denominator. | `tools/analyze_mcm_qos_results.py` | Deferred | Avoid fixed participant divisors across one-CV and two-CV flows. |
 
 ## 6. Metrics Status
@@ -88,6 +88,7 @@ The main remaining gaps are evaluation completeness and broader scenario coverag
 | Negotiation MCMs per cooperating vehicle | Deferred | Needs role-specific counters or safe participant denominator. |
 | `currentMCSoperatingMode` | Implemented | Numeric mode signal. |
 | Priority/planner/cooperation-cost metrics | Implemented for current CV planner path | Includes `TrajectoryCost`, possible-priority counters, and trajectory category counters. |
+| Second-request metrics | Implemented for scoped second-request path | Includes `SecondRequestStartedCounter`, `SecondRequestCompletedCounter`, `SecondRequestRejectedCounter`, and `TrajectoryCostRV`. |
 | Delayed MCM, rate, periodicity, DCC transmitted/dropped metrics | Missing or external | See Section 5. |
 
 ## 7. Scenario Validation Status

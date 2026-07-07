@@ -153,6 +153,10 @@ struct SentMcm {
 
 enum class PlannerMeasurementMetric {
     TrajectoryCost,
+    TrajectoryCostRV,
+    SecondRequestStartedCounter,
+    SecondRequestCompletedCounter,
+    SecondRequestRejectedCounter,
     CounterCoordPossiblePriorityLow,
     CounterCoordPossiblePriorityMedium,
     CounterCoordPossiblePriorityHigh,
@@ -206,6 +210,10 @@ struct PendingMcmCommand {
     // For Request/Accept/Reject this can stay empty and McService can use a valid placeholder.
     TrajectoryPlanner::Trajectory offeredTrajectory;
     bool hasOfferedTrajectory = false;
+
+    // Measurement-only metadata for the RV-generated second-request path.
+    bool hasTrajectoryCostRv = false;
+    double trajectoryCostRv = 0.0;
 };
 
 class McApplication
@@ -404,6 +412,8 @@ private:
     bool mRvNegotiationCompletionReported = false;
     std::optional<uint8_t> mCompletedRvNegotiationRequestId;
     bool mRvSecondRequestAttempted = false;
+    bool mRvSecondRequestCompletedMeasured = false;
+    bool mRvSecondRequestRejectedMeasured = false;
 
     // Fixed trajectory agreed during negotiation.
     // During execution this is used only as the completion reference;

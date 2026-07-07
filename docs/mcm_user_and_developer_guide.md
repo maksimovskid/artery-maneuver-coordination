@@ -308,7 +308,11 @@ Important communication metrics include:
 * `NegotiationCompletedCounter`
 * `ExecutionStartedCounter`
 * `ExecutionCompletedCounter`
+* `SecondRequestStartedCounter`
+* `SecondRequestCompletedCounter`
+* `SecondRequestRejectedCounter`
 * `TrajectoryCost`
+* `TrajectoryCostRV`
 * `CounterCoordPossiblePriorityLow`
 * `CounterCoordPossiblePriorityMedium`
 * `CounterCoordPossiblePriorityHigh`
@@ -337,11 +341,15 @@ There is currently no dedicated SUMO traffic-analysis helper in `tools/`. A futu
 
 ## 11. Maneuver Coordination and Cooperation-Cost Metrics
 
-The current implementation adds MCM-specific OMNeT++ signals/statistics through `McService.ned` and `McService.cc`. Planner metrics are measurement-only; they do not change maneuver decisions or trajectory generation.
+The current implementation adds MCM-specific OMNeT++ signals/statistics through `McService.ned` and `McService.cc`. Planner and second-request metrics are measurement-only; they do not change maneuver decisions, trajectory generation, or message scheduling.
 
 Planner/cost metrics:
 
 * `TrajectoryCost`
+* `TrajectoryCostRV`
+* `SecondRequestStartedCounter`
+* `SecondRequestCompletedCounter`
+* `SecondRequestRejectedCounter`
 * `CounterCoordPossiblePriorityLow`
 * `CounterCoordPossiblePriorityMedium`
 * `CounterCoordPossiblePriorityHigh`

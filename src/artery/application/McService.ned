@@ -89,6 +89,10 @@ simple McService like ItsG5Service
         @signal[CounterNegotiationTwoVehicles](type=long);
         @signal[CounterNegotiationThreeVehicles](type=long);
         @signal[TrajectoryCost](type=double);
+        @signal[TrajectoryCostRV](type=double);
+        @signal[SecondRequestStartedCounter](type=long);
+        @signal[SecondRequestCompletedCounter](type=long);
+        @signal[SecondRequestRejectedCounter](type=long);
         @signal[CounterCoordPossiblePriorityLow](type=long);
         @signal[CounterCoordPossiblePriorityMedium](type=long);
         @signal[CounterCoordPossiblePriorityHigh](type=long);
@@ -129,6 +133,10 @@ simple McService like ItsG5Service
         @statistic[CounterNegotiationTwoVehicles](source=CounterNegotiationTwoVehicles;record=count,vector?);
         @statistic[CounterNegotiationThreeVehicles](source=CounterNegotiationThreeVehicles;record=count,vector?);
         @statistic[TrajectoryCost](source=TrajectoryCost;record=stats,vector);
+        @statistic[TrajectoryCostRV](source=TrajectoryCostRV;record=stats,vector);
+        @statistic[SecondRequestStartedCounter](source=SecondRequestStartedCounter;record=count,vector?);
+        @statistic[SecondRequestCompletedCounter](source=SecondRequestCompletedCounter;record=count,vector?);
+        @statistic[SecondRequestRejectedCounter](source=SecondRequestRejectedCounter;record=count,vector?);
         @statistic[CounterCoordPossiblePriorityLow](source=CounterCoordPossiblePriorityLow;record=count,vector?);
         @statistic[CounterCoordPossiblePriorityMedium](source=CounterCoordPossiblePriorityMedium;record=count,vector?);
         @statistic[CounterCoordPossiblePriorityHigh](source=CounterCoordPossiblePriorityHigh;record=count,vector?);

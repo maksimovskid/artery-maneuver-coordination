@@ -70,6 +70,10 @@ static const simsignal_t scSignalCounterNegotiationRejected = cComponent::regist
 static const simsignal_t scSignalCounterNegotiationTwoVehicles = cComponent::registerSignal("CounterNegotiationTwoVehicles");
 static const simsignal_t scSignalCounterNegotiationThreeVehicles = cComponent::registerSignal("CounterNegotiationThreeVehicles");
 static const simsignal_t scSignalTrajectoryCost = cComponent::registerSignal("TrajectoryCost");
+static const simsignal_t scSignalTrajectoryCostRV = cComponent::registerSignal("TrajectoryCostRV");
+static const simsignal_t scSignalSecondRequestStartedCounter = cComponent::registerSignal("SecondRequestStartedCounter");
+static const simsignal_t scSignalSecondRequestCompletedCounter = cComponent::registerSignal("SecondRequestCompletedCounter");
+static const simsignal_t scSignalSecondRequestRejectedCounter = cComponent::registerSignal("SecondRequestRejectedCounter");
 static const simsignal_t scSignalCounterCoordPossiblePriorityLow = cComponent::registerSignal("CounterCoordPossiblePriorityLow");
 static const simsignal_t scSignalCounterCoordPossiblePriorityMedium = cComponent::registerSignal("CounterCoordPossiblePriorityMedium");
 static const simsignal_t scSignalCounterCoordPossiblePriorityHigh = cComponent::registerSignal("CounterCoordPossiblePriorityHigh");
@@ -668,6 +672,18 @@ void McService::emitPlannerMeasurements(const std::vector<mcm::PlannerMeasuremen
         switch (measurement.metric) {
             case mcm::PlannerMeasurementMetric::TrajectoryCost:
                 emit(scSignalTrajectoryCost, measurement.value);
+                break;
+            case mcm::PlannerMeasurementMetric::TrajectoryCostRV:
+                emit(scSignalTrajectoryCostRV, measurement.value);
+                break;
+            case mcm::PlannerMeasurementMetric::SecondRequestStartedCounter:
+                emit(scSignalSecondRequestStartedCounter, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::SecondRequestCompletedCounter:
+                emit(scSignalSecondRequestCompletedCounter, 1L);
+                break;
+            case mcm::PlannerMeasurementMetric::SecondRequestRejectedCounter:
+                emit(scSignalSecondRequestRejectedCounter, 1L);
                 break;
             case mcm::PlannerMeasurementMetric::CounterCoordPossiblePriorityLow:
                 emit(scSignalCounterCoordPossiblePriorityLow, 1L);

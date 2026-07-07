@@ -687,6 +687,8 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
+    mRvSecondRequestCompletedMeasured = false;
+    mRvSecondRequestRejectedMeasured = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -961,6 +963,8 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
     command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
     command.targetVehicle2 = mRvTargetVehicle2;
     command.requestedTrajectory = secondRequestTrajectory;
+    command.hasTrajectoryCostRv = true;
+    command.trajectoryCostRv = std::get<3>(result);
 
     EV_INFO << "[MCM-LC-STATE]"
         << " simTime=" << mEgoContext.now
@@ -1011,6 +1015,8 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
+    mRvSecondRequestCompletedMeasured = false;
+    mRvSecondRequestRejectedMeasured = false;
     mRvNegotiationTimedOut = true;
 
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
@@ -2284,6 +2290,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
+    mRvSecondRequestCompletedMeasured = false;
+    mRvSecondRequestRejectedMeasured = false;
     mActiveNegotiatedTrajectory.clear();
     mHasActiveNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -3169,6 +3177,8 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
+    mRvSecondRequestCompletedMeasured = false;
+    mRvSecondRequestRejectedMeasured = false;
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
@@ -4064,6 +4074,10 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
         mCompletedRvNegotiationRequestId = command.requestId;
         mRvNegotiationCompletionReported = true;
     }
+    if (mRvSecondRequestAttempted && !mRvSecondRequestCompletedMeasured) {
+        enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestCompletedCounter);
+        mRvSecondRequestCompletedMeasured = true;
+    }
     mRvExecuteQueuedOrSent = true;
     mLastExecuteQueuedAt = mEgoContext.now;
     mHasLastExecuteQueuedAt = true;
@@ -4137,6 +4151,10 @@ void McApplication::handleReceivedExecuteEvidenceAsRv(const ReceivedMcm& receive
 
     mCompletedRvNegotiationRequestId = mRvRequestId;
     mRvNegotiationCompletionReported = true;
+    if (mRvSecondRequestAttempted && !mRvSecondRequestCompletedMeasured) {
+        enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestCompletedCounter);
+        mRvSecondRequestCompletedMeasured = true;
+    }
 
     EV_INFO << "McApplication RV station " << mEgoContext.stationId
         << " treated Execute from missing CV as negotiation completion evidence"
@@ -4239,6 +4257,14 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
 
             mPendingMcmCommand = *secondRequest;
             mRvSecondRequestAttempted = true;
+            mRvSecondRequestCompletedMeasured = false;
+            mRvSecondRequestRejectedMeasured = false;
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestStartedCounter);
+            if (secondRequest->hasTrajectoryCostRv) {
+                enqueuePlannerMeasurement(
+                    PlannerMeasurementMetric::TrajectoryCostRV,
+                    secondRequest->trajectoryCostRv);
+            }
             mRvRequestId = secondRequest->requestId;
             mRvNumberOfVehicles = secondRequest->numberOfVehicles;
             mRvTargetVehicle1 = secondRequest->targetVehicle1;
@@ -4277,6 +4303,13 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
                 << '\n';
             return;
         }
+        if (!mRvSecondRequestRejectedMeasured) {
+            enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestRejectedCounter);
+            mRvSecondRequestRejectedMeasured = true;
+        }
+    } else if (mRvSecondRequestAttempted && !mRvSecondRequestRejectedMeasured) {
+        enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestRejectedCounter);
+        mRvSecondRequestRejectedMeasured = true;
     }
 
     applyEmergencyFallbackBrake("rejected-brake", "received-reject", mRvRequestId);
@@ -4559,7 +4592,15 @@ void McApplication::applyEmergencyFallbackBrake(
     mRvAcceptReceived1 = false;
     mRvAcceptReceived2 = false;
     mRvExecuteQueuedOrSent = false;
+    if (mRvSecondRequestAttempted &&
+            !mRvSecondRequestCompletedMeasured &&
+            !mRvSecondRequestRejectedMeasured) {
+        enqueuePlannerMeasurement(PlannerMeasurementMetric::SecondRequestRejectedCounter);
+        mRvSecondRequestRejectedMeasured = true;
+    }
     mRvSecondRequestAttempted = false;
+    mRvSecondRequestCompletedMeasured = false;
+    mRvSecondRequestRejectedMeasured = false;
     mRvNegotiationTimedOut = true;
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;
