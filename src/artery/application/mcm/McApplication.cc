@@ -954,7 +954,7 @@ void McApplication::applyRvExecutionControl()
 
     const std::string& vehicleId = mVehicleController->getVehicleId();
 
-    // Old route_merging_1 RV behavior uses speedMode 0 only for the merging RV.
+    // The route_merging_1 RV path uses speedMode 0 only for the merging RV.
     // This prevents SUMO right-of-way logic from stopping/decelerating the RV at
     // the merge. Later ordinary speed-control maneuvers, such as CV
     // acceleration/deceleration, should use speedMode 31 so SUMO safety checks
@@ -1390,7 +1390,7 @@ void McApplication::applyCvAccelerationControl()
     const double targetSpeed = highPriorityLaneChange && mTargetSpeed > mEgoContext.speed ?
         mTargetSpeed : 33.33;
 
-    // Old highway CV acceleration uses speedMode 31 so SUMO safety checks stay
+    // Highway CV acceleration uses speedMode 31 so SUMO safety checks stay
     // active while raising the speed toward 120 km/h.
     mVehicleController->setSpeedMode(vehicleId, 31);
     mVehicleController->setSpeed(targetSpeed * boost::units::si::meter_per_second);
@@ -1801,7 +1801,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     const auto& requestedLastPoint = snapshot.requestedTrajectory.back();
     const bool decelerationRequired = myLastPoint.mY >= requestedLastPoint.mY;
     const bool accelerationRequired = !decelerationRequired;
-    // Old safety-critical lane-change CV branch keeps the CV lane-change
+    // The safety-critical lane-change CV branch keeps the CV lane-change
     // feasibility block disabled, so target-lane CVs cooperate by speed
     // adaptation or DoNothing rather than initiating another lane change.
     const bool laneChangePossible = false;
@@ -1830,7 +1830,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         EV_INFO << "McApplication CV station " << mEgoContext.stationId
             << " classified merging control maneuver: DoNothing"
             << " because findSuitableTrajectoryCV found no safe trajectory"
-            << " oldBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
+            << " adaptationBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
             << " requestId=" << snapshot.requestId
             << " priority=" << priority
             << '\n';
@@ -1877,7 +1877,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     EV_INFO << "McApplication CV station " << mEgoContext.stationId
         << " classified merging control maneuver: " << controlManeuverName(mControlManeuver)
         << " using findSuitableTrajectoryCV"
-        << " oldBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
+        << " adaptationBranch=" << (decelerationRequired ? "decelerate-or-change-lane" : "accelerate-or-change-lane")
         << " requestId=" << snapshot.requestId
         << " priority=" << priority
         << " trajectoryType=" << trajectoryType
@@ -2590,7 +2590,7 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     const bool withinBroadcastWindow =
         emergencyElapsed >= 0.0 && emergencyElapsed < scEmergencyBroadcastDuration;
 
-    // Old emergency signaling is represented as an execution-container
+    // Emergency signaling is represented as an execution-container
     // Abort with EmergencyPriority. Sending every 0.1 s for 15 s gives the
     // expected 10 Hz broadcast window, approximately 150 emergency MCMs.
     if (!mEmergencyBroadcastStarted && withinBroadcastWindow) {
@@ -3212,7 +3212,7 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
         const bool priorityAllowsCost =
             decision.possiblePriorityLevel >= 0 &&
             decision.possiblePriorityLevel <= requestPriority;
-        // Old priority-level ordering is numeric severity:
+        // Priority-level ordering is numeric severity:
         // 0 = Low, 1 = Medium, 2 = High. A request may accept a cooperation
         // trajectory whose required priority is less than or equal to its own.
         const bool leaderBlocksAcceleration =
@@ -3278,7 +3278,8 @@ void McApplication::recordCvPlannerEvaluation(
 
     // The raw OMNeT++ counter names are non-contiguous, so the analysis
     // helper adds contiguous public trajectory_category labels for readability.
-    // The raw signal names remain stable for existing result files.
+    // The labels describe the planner categories, including acceleration or
+    // deceleration combined with a lane-change trajectory where applicable.
     switch (trajectoryType) {
         case 0:
             enqueuePlannerMeasurement(PlannerMeasurementMetric::CounterTrajectoryType0);
@@ -4178,9 +4179,9 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         << " desiredMinimumTimeGap=" << scSafetyCriticalTimeGap
         << " reactionWindow=" << reactionWindow
         << " paperInitialTimeGap=" << scInitialPaperTimeGap
-        << " oldMinimumGapConflict=" << conflictAtMinimumGap
-        << " oldCoordinationGap=" << scEmergencyCoordinationTimeGap
-        << " oldCoordinationConflict=" << conflictAtCoordinationGap
+        << " minimumGapConflict=" << conflictAtMinimumGap
+        << " coordinationGap=" << scEmergencyCoordinationTimeGap
+        << " coordinationConflict=" << conflictAtCoordinationGap
         << " safetyCritical=1"
         << " reason=armed-same-lane-emergency-ahead"
         << '\n';
@@ -4461,7 +4462,7 @@ bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
     const auto& lastPoint = mActiveNegotiatedTrajectory.back();
 
     if (mEgoContext.routeId == scMergingRouteId) {
-        // Old route_merging_1 RV behavior:
+        // The route_merging_1 RV behavior:
         // if RV passed the last negotiated trajectory point, then send Complete.
         // In this scenario, passing the point means current SUMO y is below the
         // final negotiated trajectory y.

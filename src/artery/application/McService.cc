@@ -1132,7 +1132,7 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
         return Profile::DP2;
     }
 
-    // Old MCM logic gave negotiation a higher DCC priority than execution
+    // MCM negotiation uses a higher DCC priority than execution
     // because Request/Offer/Confirm/Accept messages unblock cooperative
     // maneuver decisions, while execution messages can tolerate slightly lower
     // priority except for emergency execution.

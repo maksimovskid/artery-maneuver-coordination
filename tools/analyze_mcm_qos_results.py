@@ -54,11 +54,11 @@ METRICS = {
 
 TRAJECTORY_TYPE_LABELS = {
     "CounterTrajectoryType0": ("constant speed / no adaptation / normal time gap", "0", "0"),
-    "CounterTrajectoryType1": ("deceleration / speed reduction", "1", "1"),
-    "CounterTrajectoryType2": ("lane change", "2", "2"),
+    "CounterTrajectoryType1": ("deceleration / speed reduction with lane-change trajectory", "1", "1"),
+    "CounterTrajectoryType2": ("lane-change trajectory", "2", "2"),
     "CounterTrajectoryType4": ("constant speed / no adaptation / reduced time gap", "3", "4"),
-    "CounterTrajectoryType5": ("acceleration / normal time gap", "4", "5"),
-    "CounterTrajectoryType6": ("acceleration / reduced time gap", "5", "6"),
+    "CounterTrajectoryType5": ("acceleration with lane-change trajectory / normal time gap", "4", "5"),
+    "CounterTrajectoryType6": ("acceleration with lane-change trajectory / reduced time gap", "5", "6"),
 }
 
 FIELDNAMES = [

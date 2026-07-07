@@ -47,11 +47,11 @@ Planner measurement is available for current CV-side planner evaluations. `Traje
 | `trajectory_category` | Raw metric | Meaning |
 | --- | --- | --- |
 | 0 | `CounterTrajectoryType0` | constant speed / no adaptation / normal time gap |
-| 1 | `CounterTrajectoryType1` | deceleration / speed reduction |
+| 1 | `CounterTrajectoryType1` | deceleration / speed reduction with lane-change trajectory |
 | 2 | `CounterTrajectoryType2` | lane-change trajectory |
 | 3 | `CounterTrajectoryType4` | constant speed / no adaptation / reduced time gap |
-| 4 | `CounterTrajectoryType5` | acceleration / normal time gap |
-| 5 | `CounterTrajectoryType6` | acceleration / reduced time gap |
+| 4 | `CounterTrajectoryType5` | acceleration with lane-change trajectory / normal time gap |
+| 5 | `CounterTrajectoryType6` | acceleration with lane-change trajectory / reduced time gap |
 
 `TrajectoryCostRV`, RV trajectory-type counters, second-request counters, and `CounterAffectedNonCoopVehicles` remain deferred because the current flow does not yet expose the corresponding RV-cost path or scenario-specific non-cooperating-vehicle affected state cleanly.
 
@@ -121,7 +121,7 @@ Vehicle IDs shown in this README are validation expectations for the current rou
 
   * Scenario and validation constants.
   * Route IDs, emergency vehicle ID, scenario speeds/timing, merge thresholds, and emergency thresholds.
-  * Old-implementation carryovers that are documented explicitly.
+  * Scenario compatibility constants that are documented explicitly.
   * Constants that may later move to `omnetpp.ini`.
 
 * `src/artery/application/mcm/TrajectoryPlanner.*`
