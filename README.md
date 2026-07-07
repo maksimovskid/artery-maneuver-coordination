@@ -349,16 +349,11 @@ Related peer-reviewed publications and research outputs are available through th
 * The combined 19-CAV scenario is not the primary correctness validation target because mixing merging and emergency lane-change use cases can create SUMO side effects.
 * GUI/SUMO shutdown behavior may differ from headless Cmdenv; headless validation is the main regression check.
 * More refactoring and documentation are ongoing.
-* Communication/QoS options for DCC profile selection and adaptive generation are being restored incrementally. Local CBR is available to `McService`, regular Intent MCM frequency reduction is available behind disabled-by-default flags, and MCO-specific 1 Hz Intent reduction is available experimentally behind `newGenMcmRulesIntent1Hz_MCO` using `freqReduceCBRmco`. Negotiation-related adaptive reduction remains staged/WIP.
+* Communication/QoS options for DCC profile selection and adaptive generation are being developed incrementally. Local CBR is available to `McService`, regular Intent MCM frequency reduction is available behind disabled-by-default flags, and MCO-specific 1 Hz Intent reduction is available experimentally behind `newGenMcmRulesIntent1Hz_MCO` using `freqReduceCBRmco`. Negotiation-related adaptive reduction remains staged/WIP.
 
 ## Cleanup
 
-Generated SUMO files should not be committed:
-
-```bash
-rm -f scenarios/artery-maneuver-coordination/results_sumo/test/simulation.statistic.xml
-rm -f scenarios/artery-maneuver-coordination/results_sumo/test/simulation.tripinfo.xml
-```
+Simulation runs may create generated SUMO result files under scenario result directories.
 
 ## Original Artery Documentation
 

@@ -325,7 +325,7 @@ Traffic metrics to inspect include:
 * **Safety:** minimum time gap, minimum TTC, collision/teleport checks, emergency-braking checks, lane-change conflict diagnostics when configured.
 * **Comfort:** acceleration, deceleration, maximum acceleration/deceleration, and jerk if available from enabled outputs or future tools.
 * **Efficiency:** travel time, time loss, mean speed, throughput, completed trips/routes.
-* **Coordination-specific traffic effects:** trajectory cost, CV cooperation cost, priority class, trajectory category, and affected non-cooperating vehicles if that metric is restored later.
+* **Coordination-specific traffic effects:** trajectory cost, CV cooperation cost, priority class, trajectory category, and affected non-cooperating vehicles if that metric is added later.
 
 There is currently no dedicated SUMO traffic-analysis helper in `tools/`. A future `tools/analyze_sumo_traffic_results.py` would be useful for parsing `tripinfo.xml`, `statistic.xml`, optional SSM/FCD output, and producing a traffic-focused CSV summary.
 

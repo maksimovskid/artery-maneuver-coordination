@@ -363,12 +363,12 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
                 }
                 EV_INFO << "[MCM-MERGE-CONTROL]"
                     << " simTime=" << mcm.sentAt
-                    << " event=rv-speedmode-restored-after-completion"
+                    << " event=rv-speedmode-enabled-after-completion"
                     << " vehicleId=" << vehicleId
                     << " station=" << mEgoContext.stationId
                     << " requestId=" << static_cast<int>(mRvRequestId)
                     << " speedMode=31"
-                    << " normalSpeedRestored=" << restoreNormalSpeed
+                    << " normalSpeedEnabled=" << restoreNormalSpeed
                     << '\n';
             } catch (const std::exception& e) {
                 EV_WARN << "[MCM-MERGE-CONTROL]"
@@ -1725,17 +1725,17 @@ void McApplication::restoreCvSpeedControl()
         return;
     }
 
-    const bool restoredAfterAcceleration = mCvAccelerationControlApplied;
-    const bool restoredAfterDeceleration = mCvDecelerationControlApplied;
+    const bool hadAccelerationControl = mCvAccelerationControlApplied;
+    const bool hadDecelerationControl = mCvDecelerationControlApplied;
 
     restoreNormalSpeedIfSafe("CV", mCvRequestId);
 
-    EV_INFO << "McApplication restored highway-merging CV speed control"
+    EV_INFO << "McApplication applied highway-merging CV speed-control reset"
         << ": station=" << mEgoContext.stationId
         << " vehicleId=" << mVehicleController->getVehicleId()
         << " speedMode=31 normalSpeed=27.77"
-        << " restoredAfterDeceleration=" << restoredAfterDeceleration
-        << " restoredAfterAcceleration=" << restoredAfterAcceleration
+        << " hadDecelerationControl=" << hadDecelerationControl
+        << " hadAccelerationControl=" << hadAccelerationControl
         << '\n';
 }
 
@@ -3602,8 +3602,8 @@ void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
         << ": requestId=" << snapshot.requestId
         << " rvStation=" << snapshot.stationId
         << " previousProgress=" << static_cast<int>(previousProgress)
-        << " restoredAfterDeceleration=" << hadDecelerationControl
-        << " restoredAfterAcceleration=" << hadAccelerationControl
+        << " hadDecelerationControl=" << hadDecelerationControl
+        << " hadAccelerationControl=" << hadAccelerationControl
         << '\n';
 }
 
