@@ -16,6 +16,8 @@ This repository extends Artery with a research prototype for V2X-based maneuver 
 
 The simulation stack uses Artery together with OMNeT++, INET, Vanetza, SUMO, and TraCI. The maneuver-coordination work is being refactored into clearer components while preserving the behavior of the currently validated scenarios.
 
+For a detailed explanation of the MCM service, scenario setup, and result-analysis workflow, see `docs/mcm_user_and_developer_guide.md`.
+
 ## Terminology
 
 The current maneuver-coordination scenarios distinguish between the following vehicle roles:

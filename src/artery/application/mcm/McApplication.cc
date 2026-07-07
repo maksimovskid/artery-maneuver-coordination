@@ -1433,7 +1433,7 @@ void McApplication::applyCvLaneChangeControl()
         return;
     }
 
-    // Legacy lateral control transitions ChangeLane to LaneChangeExecution and
+    // Lateral control transitions ChangeLane to LaneChangeExecution and
     // uses a 10-step moveToXY loop based on live TraCI lane/position/speed.
     // Keep this milestone state-only until the lane target and step counter are
     // represented explicitly in McApplication.
