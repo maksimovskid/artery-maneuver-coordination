@@ -7,7 +7,7 @@ There are three chief sources of information about this model:
 
 - The [GEMV² website](http://vehicle2x.net):
   You can download the Matlab implementation and the user manual of GEMV² from there.
-- Studying the code of this Matlab reference implementation
+- Studying the code of the Matlab implementation
 - An article explaining some concepts behind the model:
   > Mate Boban, Joao Barros, and Ozan K. Tonguz: "Geometry-Based Vehicle-to-Vehicle Channel Modeling for Large-Scale Simulation",
   > IEEE Transactions on Vehicular Technology, Volume 63, Number 9, November 2014 (DOI: [10.1109/TVT.2014.2317803](https://doi.org/10.1109/TVT.2014.2317803))
