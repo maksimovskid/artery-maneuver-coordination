@@ -74,6 +74,18 @@ The current MCM implementation is split across service integration, application 
 
 Scenario files under `scenarios/artery-maneuver-coordination/` provide SUMO routes, SUMO configs, OMNeT++ configs, services, sensors, and prerecorded trajectory data.
 
+### Trajectory Planning and SUMO Coordinate Assumptions
+
+The current maneuver planner works with trajectory points expressed in the global SUMO coordinate system. In practice, the planner expects road-aligned `x/y` points for the relevant lanes and route segments in the maneuver area. These points are used to build candidate trajectories, check conflicts, evaluate cooperation costs, support second-request trajectory proposals, and guide lane-change execution support.
+
+This implementation is scenario-oriented. The included validation scenarios provide the assumptions and helper data needed by the planner to obtain suitable global coordinates for their maneuver areas. The main coordinate data file is `scenarios/artery-maneuver-coordination/coordinates_new_map.csv`, which contains route-specific `*_x` and `*_y` columns used by `TrajectoryCsv.*` and the trajectory-generation helpers. Runtime state from SUMO/TraCI, received MCM trajectories, and local helper logic are combined with this prepared route data.
+
+This makes the current planner practical and reproducible for the supplied cooperative-merging and emergency lane-change experiments, but it is not yet a fully general route/lane trajectory generator for arbitrary SUMO networks. SUMO/TraCI can expose vehicle state and road-network information depending on the API usage, but the current application does not implement a general future route/lane coordinate sampling layer that directly feeds this planner with a complete road-aligned point sequence for every lane, edge, or route.
+
+A more general implementation would add a route/lane geometry provider. Such a component would read the SUMO network, follow each vehicle's route edges, use lane shapes and edge lengths to sample future road-aligned positions, and convert route progress into global `x/y` coordinates. It would also need to handle lane changes, junctions, merges, diverges, lane endings, and route changes. The resulting coordinate sequence could then be passed to the same planner and conflict-checking logic instead of relying on scenario-specific assumptions.
+
+When adding a new scenario, verify that the planner has access to continuous and lane-consistent coordinate points for the maneuver region. If the map or route differs significantly from the provided scenarios, either prepare compatible trajectory/environment data or extend the geometry provider before interpreting safety, comfort, efficiency, or cooperation-cost results.
+
 ## 4. MCM Containers and Flow
 
 The application uses three main operation modes:
@@ -237,6 +249,7 @@ A new maneuver-coordination scenario usually needs:
 * Vehicle role assumptions for RVs, CVs, and NCVs.
 * Optional scenario constants in `src/artery/application/mcm/McScenarioConfig.*`.
 * Trajectory CSV/map data if prerecorded intent trajectories are required.
+* Road-aligned global SUMO `x/y` points for the RV/CV trajectories in the maneuver area.
 * Validation expectations and sanity-check commands.
 
 Checklist:
@@ -247,10 +260,11 @@ Checklist:
 4. Add a `.sumocfg` that loads the route files and desired SUMO outputs.
 5. Add an OMNeT++ config in `scenarios/artery-maneuver-coordination/omnetpp.ini`.
 6. Ensure `services-mco-envmod.xml` or the selected service file activates the MC service.
-7. Verify MCM generation and participant IDs in a short run.
-8. Run a short headless Cmdenv test.
-9. Inspect logs, `.sca` output, and SUMO output.
-10. Add scenario-specific validation notes.
+7. Verify trajectory-coordinate availability for the maneuver area: the planner needs road-aligned global SUMO `x/y` points for the RV/CV trajectories.
+8. Verify MCM generation and participant IDs in a short run.
+9. Run a short headless Cmdenv test.
+10. Inspect logs, `.sca` output, and SUMO output.
+11. Add scenario-specific validation notes.
 
 Prefer dynamic target selection when possible. Avoid adding scenario-specific constants unless the scenario cannot be expressed through existing route/config inputs. Keep background/load vehicles conceptually separate from coordination participants. Document expected sanity checks so future changes can distinguish scenario tuning from behavior regressions.
 
@@ -385,6 +399,8 @@ Current limitations and TODOs:
 * Important Intent Sharing exemption is explicitly marked as TODO in the adaptive intent-generation path.
 * Full generalized cascading behavior should be treated as limited unless a scenario explicitly validates it.
 * The second-request path is scoped to one retry after a rejected high-priority lane-change Request; broader multi-stage negotiation policies need additional scenario coverage.
+* Trajectory planning is scenario-oriented and relies on prepared/helper-provided global SUMO coordinates for the current validation maps.
+* A general route/lane geometry provider for arbitrary SUMO maps and routes is a planned extension.
 * CV lateral lane-change execution is currently logged as not applied in one control path because the lateral target and step counter are not represented there yet.
 * Completion semantics are represented through the currently available container path in some execution-completion logic.
 * Some detailed metrics are deferred or incomplete:
