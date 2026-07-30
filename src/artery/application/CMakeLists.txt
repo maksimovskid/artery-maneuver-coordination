@@ -53,6 +53,7 @@ target_sources(core PRIVATE
     mcm/McApplication.cc
     mcm/McApplicationDiagnostics.cc
     mcm/McApplicationExecutionControl.cc
+    mcm/McApplicationExecutionProgress.cc
     mcm/McApplicationRetry.cc
     mcm/McApplicationCvDecision.cc
     mcm/McApplicationMerging.cc
