@@ -8,6 +8,18 @@
 #include <iostream>
 #include <tuple>
 
+/*
+ * Implements common negotiation support for McApplication.
+ *
+ * This file contains shared guards, command builders, completion predicates,
+ * coordination-state resets, and second-request construction used by multiple
+ * protocol handlers. The methods preserve the existing one-CV and two-CV
+ * sequencing while operating on the single shared McApplication object.
+ *
+ * The source split is organizational only; it does not reduce state coupling or
+ * create an independent negotiation component.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -238,6 +250,12 @@ bool McApplication::haveAllExpectedRvAccepts() const
         mRvAcceptReceived1;
 }
 
+/*
+ * Builds the high-priority RV second Request after a Reject. The method keeps
+ * the existing request-id update, target selection fallback, trajectory search,
+ * and planner measurements together so the retry and Reject handlers can treat
+ * the command as one atomic follow-up.
+ */
 std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;

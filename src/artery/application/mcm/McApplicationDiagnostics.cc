@@ -9,6 +9,18 @@
 #include <exception>
 #include <string>
 
+/*
+ * Implements merging-gap diagnostics for McApplication.
+ *
+ * This file samples and reports diagnostic gap measurements around merging
+ * execution. The diagnostics observe McApplication state and vehicle positions;
+ * they do not own separate maneuver state or change the protocol flow.
+ *
+ * The source split is organizational only. All definitions are member functions
+ * of the single McApplication class declared in McApplication.h and operate on
+ * the same shared application state.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -41,6 +53,11 @@ void McApplication::resetMergingGapDiagnostics()
     mMergingGapDiagMinRvY = 0.0;
 }
 
+/*
+ * Samples the current RV-to-target-CV gap during merging execution. The
+ * diagnostics use the latest received CV trajectory sample and TraCI lane data
+ * for reporting only; the sampled values do not drive maneuver decisions.
+ */
 void McApplication::sampleMergingGapDiagnostics(const char* phase)
 {
     EV_STATICCONTEXT;
@@ -177,6 +194,11 @@ void McApplication::sampleMergingGapDiagnostics(const char* phase)
     }
 }
 
+/*
+ * Reports the best observed merging gap at execution completion. Missing
+ * samples are reported explicitly so validation logs distinguish no-data cases
+ * from a measured small gap.
+ */
 void McApplication::logMergingGapSummary(omnetpp::SimTime completionTime) const
 {
     EV_STATICCONTEXT;

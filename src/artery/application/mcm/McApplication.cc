@@ -15,6 +15,19 @@
 #include <unordered_map>
 #include <utility>
 
+/*
+ * Implements the service-facing core of McApplication.
+ *
+ * This translation unit contains lifecycle setup, command and message dispatch,
+ * sent-message tracking, negotiation trace logging, and the remaining protocol
+ * handlers that have not been moved to more focused files. All definitions are
+ * member functions of the single McApplication class declared in
+ * McApplication.h and operate on the same shared application state.
+ *
+ * The source split is organizational only; it does not create a separate
+ * runtime component or independent protocol state owner.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -175,6 +188,12 @@ void McApplication::updateEgoContext(const McEgoContext& context)
     mHasEgoContext = true;
 }
 
+/*
+ * Runs one application update in the fixed order expected by the current
+ * protocol implementation. Trigger evaluation, retry handling, execution
+ * control, diagnostics, and completion checks all share McApplication state, so
+ * reordering this sequence can change observable message timing.
+ */
 void McApplication::tick(omnetpp::SimTime now)
 {
     logScenarioVehicleLifetime(now);
@@ -196,6 +215,11 @@ void McApplication::tick(omnetpp::SimTime now)
     evaluateCvExecutionProgress();
 }
 
+/*
+ * Prepares generation-time state before McService serializes the next MCM. RVs
+ * in execution mode may enqueue a repeated Execute here so the generated
+ * message reflects the current live planned trajectory.
+ */
 void McApplication::prepareMcmGeneration(omnetpp::SimTime now)
 {
     if (mHasEgoContext) {
@@ -209,6 +233,11 @@ void McApplication::prepareMcmGeneration(omnetpp::SimTime now)
     }
 }
 
+/*
+ * Records the received snapshot and dispatches it to all protocol handlers.
+ * The handler order is part of the current behavior because each handler may
+ * inspect or update shared negotiation and pending-command state.
+ */
 void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
 {
     ++mReceivedMcmCount;
@@ -231,6 +260,11 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedEmergencyAsFollower(mcm);
 }
 
+/*
+ * Tracks messages produced by this application and advances local negotiation
+ * progress after McService has actually sent them. This keeps queued-command
+ * creation separate from sent-message evidence.
+ */
 void McApplication::handleSentMcm(const SentMcm& mcm)
 {
     EV_STATICCONTEXT;
@@ -406,6 +440,11 @@ std::vector<PlannerMeasurement> McApplication::consumePlannerMeasurements()
     return measurements;
 }
 
+/*
+ * Emits the compact protocol trace used to compare Request, Offer, Confirm,
+ * Accept, Reject, Cancel, Execute, and emergency message sequencing across RV
+ * and CV roles.
+ */
 void McApplication::logNegotiationTrace(
     const char* action,
     const McmSnapshot& snapshot,
@@ -508,6 +547,12 @@ void McApplication::applyCommand()
     // TODO: later use VehicleController hooks for DecelerateTo and RestoreNormalSpeed commands.
 }
 
+/*
+ * Handles an incoming Request from the CV side. The method evaluates the
+ * requested trajectory, chooses the cooperative maneuver, records planner
+ * measurements, and queues either Offer, Accept, or Reject while preserving the
+ * one-CV and two-CV response paths.
+ */
 void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -783,6 +828,11 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         << '\n';
 }
 
+/*
+ * Rolls back CV-side negotiation state when a pre-execution Cancel arrives
+ * from the active RV. Execution-phase Cancel is reserved for the current
+ * Complete workaround and is intentionally ignored here.
+ */
 void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -836,6 +886,11 @@ void McApplication::handleReceivedCancelAsCv(const ReceivedMcm& received)
         << '\n';
 }
 
+/*
+ * RV-side Offer handling for one-CV and two-CV coordination. It records which
+ * expected CVs have responded and queues Confirm only after the required Offer
+ * set has arrived.
+ */
 void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -944,6 +999,10 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * CV-side Confirm handling. Once the active RV confirms the offered trajectory,
+ * this builds and queues the Accept that transitions the CV toward execution.
+ */
 void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -1001,6 +1060,11 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * RV-side Accept handling. The method supports both the direct one-CV
+ * Request-to-Accept path and the two-CV Confirm-to-Accept path, then queues the
+ * Execute command only after all expected Accepts have been observed.
+ */
 void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -1136,6 +1200,11 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * Treats an Execute from a missing CV as completion evidence for the RV when a
+ * duplicate or reordered message sequence prevented the matching Accept from
+ * being recorded.
+ */
 void McApplication::handleReceivedExecuteEvidenceAsRv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -1181,6 +1250,11 @@ void McApplication::handleReceivedExecuteEvidenceAsRv(const ReceivedMcm& receive
         << '\n';
 }
 
+/*
+ * Clears a CV's pending Offer when another target CV rejects the same active
+ * Request. This keeps the CV-side state from retrying an Offer after the RV has
+ * already lost the multi-vehicle negotiation.
+ */
 void McApplication::handleReceivedRejectAsCv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -1219,6 +1293,11 @@ void McApplication::handleReceivedRejectAsCv(const ReceivedMcm& received)
     resetCvNegotiationAfterTimeout();
 }
 
+/*
+ * Handles a high-priority RV-side Reject. The first eligible Reject can build a
+ * second Request with a different target set; later or unrecoverable Rejects
+ * fall back to emergency braking.
+ */
 void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -1331,6 +1410,11 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
     applyEmergencyFallbackBrake("rejected-brake", "received-reject", mRvRequestId);
 }
 
+/*
+ * CV-side Execute handling. It arms execution after the active RV sends Execute
+ * for the accepted Request, preserving selected trajectory and control
+ * maneuver state chosen during the CV decision phase.
+ */
 void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;

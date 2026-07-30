@@ -15,6 +15,18 @@
 #include <limits>
 #include <string>
 
+/*
+ * Implements SUMO vehicle execution control for McApplication.
+ *
+ * This file applies and monitors RV and CV speed and lane-change commands after
+ * negotiation decisions have selected an executable maneuver. It is separate
+ * from execution-progress message handling, but all methods still operate on
+ * the same McApplication object and shared state declared in McApplication.h.
+ *
+ * The source split is organizational only; it does not create an independent
+ * execution controller.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -119,6 +131,11 @@ bool McApplication::canRestoreNormalSpeedFromLeader(double desiredSpeed)
         (frontInfo.distance > 10.0 && timeGap >= scSafetyCriticalTimeGap && ttc >= 2.0);
 }
 
+/*
+ * Restores normal SUMO speed control only after a conservative leader check.
+ * Both RV and CV completion paths call this helper, so the guard prevents a
+ * completed maneuver from immediately accelerating into an unsafe gap.
+ */
 void McApplication::restoreNormalSpeedIfSafe(const char* role, uint8_t requestId)
 {
     EV_STATICCONTEXT;
@@ -208,6 +225,11 @@ void McApplication::restoreNormalSpeedIfSafe(const char* role, uint8_t requestId
     }
 }
 
+/*
+ * Applies RV lane-change execution for the safety-critical scenario. The method
+ * drives the current fixed-step moveToXY behavior and leaves the negotiated
+ * trajectory and protocol state sequencing unchanged.
+ */
 void McApplication::applySafetyCriticalLaneChangeExecutionControl()
 {
     EV_STATICCONTEXT;
@@ -581,6 +603,11 @@ void McApplication::applyCvLaneChangeControl()
     mCvLaneChangeControlLogged = true;
 }
 
+/*
+ * Monitors CV execution after Execute has been received. It logs live TraCI
+ * state and restores normal speed when the active trajectory has completed,
+ * without creating additional protocol messages.
+ */
 void McApplication::monitorCvExecutionControl()
 {
     EV_STATICCONTEXT;

@@ -145,7 +145,9 @@ Vehicle IDs shown in this README are validation expectations for the current rou
 
 ### McApplication Source Organization
 
-`McApplication` remains one C++ class with one shared declaration in `src/artery/application/mcm/McApplication.h`. Its implementation is distributed across several cohesive `.cc` files for readability and maintenance; this is an organizational source split, not a set of separate runtime modules or independent objects. `McService` still owns and drives one `McApplication` instance.
+`McApplication` remains one C++ class with one shared declaration in `src/artery/application/mcm/McApplication.h`. Its method definitions are distributed across several cohesive `.cc` files for navigation and maintenance; this is an organizational source split, not a set of separate OMNeT++ modules or independent runtime components. `McService` still owns and drives one `McApplication` instance, and all implementation files operate on the same shared object state.
+
+Every `McApplication` implementation file must be listed explicitly in `src/artery/application/CMakeLists.txt`.
 
 Current implementation-file map:
 
@@ -154,9 +156,12 @@ Current implementation-file map:
 | `src/artery/application/mcm/McApplication.cc` | Lifecycle, signal/event dispatch, top-level orchestration, and remaining common behavior. |
 | `src/artery/application/mcm/McApplicationDiagnostics.cc` | Merging-gap diagnostics. |
 | `src/artery/application/mcm/McApplicationExecutionControl.cc` | RV/CV execution control and SUMO vehicle-control hooks. |
+| `src/artery/application/mcm/McApplicationExecutionProgress.cc` | Repeated Execute generation and execution-completion progress. |
+| `src/artery/application/mcm/McApplicationNegotiationCommon.cc` | Shared negotiation guards, command builders, completion predicates, resets, and second-request construction. |
 | `src/artery/application/mcm/McApplicationRetry.cc` | Retry, timeout, and retry-command handling. |
 | `src/artery/application/mcm/McApplicationCvDecision.cc` | CV cooperation decisions and planner measurements. |
 | `src/artery/application/mcm/McApplicationMerging.cc` | Merging classification and request-trigger logic. |
+| `src/artery/application/mcm/McApplicationLaneChange.cc` | Emergency source/follower handling, safety-critical lane-change triggering, and fallback braking. |
 
 ### Trajectory Coordinate Model
 

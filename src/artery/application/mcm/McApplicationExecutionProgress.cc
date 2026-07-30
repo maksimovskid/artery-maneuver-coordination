@@ -5,6 +5,17 @@
 
 #include <cmath>
 
+/*
+ * Implements execution-progress signaling for McApplication.
+ *
+ * This file queues repeated Execute messages and detects RV/CV completion of
+ * the active negotiated trajectory. It intentionally remains separate from
+ * low-level SUMO control while sharing the same McApplication state.
+ *
+ * The source split is organizational only; it does not create a separate
+ * runtime component.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -46,6 +57,11 @@ const char* controlManeuverName(controlManeuver maneuver)
 }
 } // namespace
 
+/*
+ * Queues an additional Execute while the RV remains in execution mode. The
+ * repeated message carries the live planned trajectory from the current ego
+ * context rather than resending a frozen copy of the original request.
+ */
 void McApplication::queueRepeatedExecute()
 {
     EV_STATICCONTEXT;
@@ -90,6 +106,11 @@ void McApplication::queueRepeatedExecute()
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * Detects RV completion of the active negotiated trajectory and queues the
+ * current Complete-as-Cancel workaround. The diagnostic sample is taken before
+ * RV coordination state is reset by the sent-message path.
+ */
 void McApplication::evaluateRvExecutionProgress()
 {
     EV_STATICCONTEXT;
@@ -143,6 +164,11 @@ void McApplication::evaluateRvExecutionProgress()
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * Detects CV completion of the selected negotiated trajectory and queues the
+ * same Complete-as-Cancel workaround used by the RV side, preserving the CV
+ * request and RV target identifiers.
+ */
 void McApplication::evaluateCvExecutionProgress()
 {
     EV_STATICCONTEXT;
@@ -209,6 +235,11 @@ void McApplication::evaluateCvExecutionProgress()
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
+/*
+ * Checks whether the ego vehicle has passed the saved negotiated trajectory
+ * endpoint. The comparison is route-aware and still uses global SUMO Cartesian
+ * trajectory points, not an ego-relative coordinate transform.
+ */
 bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
 {
     if (!mHasEgoContext || !mHasActiveNegotiatedTrajectory ||

@@ -9,6 +9,18 @@
 #include <algorithm>
 #include <exception>
 
+/*
+ * Implements CV cooperation decisions for McApplication.
+ *
+ * This file runs trajectory feasibility checks, cooperation-cost evaluation,
+ * priority comparison, and planner-measurement recording for received Requests.
+ * The methods still use the shared McApplication negotiation and trajectory
+ * state declared in McApplication.h.
+ *
+ * The source split is organizational only; it does not create an independent CV
+ * planner component.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -78,6 +90,12 @@ int priorityLevel(priorityMcmCategory priority)
 }
 }
 
+/*
+ * Evaluates whether this CV can cooperate with a received Request. It combines
+ * conflict checking, route-reference availability, leader constraints,
+ * trajectory-planner results, cooperation cost, and priority gating before a
+ * response command is built by the caller.
+ */
 McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecision(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -300,6 +318,11 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
     return decision;
 }
 
+/*
+ * Converts the selected planner result into scalar measurements and counters.
+ * These records are diagnostics for analysis and do not feed back into the
+ * current cooperation decision.
+ */
 void McApplication::recordCvPlannerEvaluation(
     double trajectoryCost,
     int trajectoryType,

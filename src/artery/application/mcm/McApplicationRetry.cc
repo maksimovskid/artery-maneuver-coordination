@@ -6,6 +6,17 @@
 
 #include <iostream>
 
+/*
+ * Implements retry and timeout handling for McApplication.
+ *
+ * This file evaluates RV and CV retry timers, rebuilds pending retry commands,
+ * and resets negotiation state after configured timeout limits. The ordering of
+ * these state changes is part of the protocol behavior and should be preserved.
+ *
+ * The source split is organizational only. All definitions are member functions
+ * of the single McApplication class declared in McApplication.h.
+ */
+
 namespace artery
 {
 namespace mcm

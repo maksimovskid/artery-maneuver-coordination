@@ -11,6 +11,21 @@
 #include <exception>
 #include <string>
 
+/*
+ * Implements emergency and safety-critical lane-change behavior for
+ * McApplication.
+ *
+ * This file contains the emergency trigger, scenario vehicle lifetime logging,
+ * safety-critical lane-change Request generation, emergency-follower handling,
+ * and fallback-braking logic. The lane-change trajectory construction preserves
+ * the current simulation-specific global-coordinate and fixed-width shift
+ * assumptions.
+ *
+ * The source split is organizational only. All definitions are member functions
+ * of the single McApplication class declared in McApplication.h and operate on
+ * the same shared application state.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -62,6 +77,11 @@ const char* controlManeuverName(controlManeuver maneuver)
 }
 } // namespace
 
+/*
+ * Drives the scenario emergency source vehicle. Once the configured start time
+ * is reached, the vehicle brakes and repeatedly broadcasts EmergencyPriority
+ * execution evidence for followers to evaluate.
+ */
 void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
@@ -228,6 +248,11 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     }
 }
 
+/*
+ * Emits one-time lifecycle diagnostics for the vehicles involved in the
+ * safety-critical lane-change scenario. These logs help validate scenario
+ * participation and do not alter maneuver decisions.
+ */
 void McApplication::logScenarioVehicleLifetime(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
@@ -331,6 +356,12 @@ void McApplication::logScenarioVehicleLifetime(omnetpp::SimTime now)
     }
 }
 
+/*
+ * Starts high-priority lane-change coordination for an armed follower. The
+ * method selects target CVs, constructs the requested trajectory using the
+ * current global SUMO coordinate convention and fixed lateral shift, initializes
+ * RV negotiation state, and queues the Request.
+ */
 void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
@@ -564,6 +595,11 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
         << '\n';
 }
 
+/*
+ * Arms a lane-1 follower after receiving emergency execution evidence from the
+ * scenario emergency vehicle. Same-lane/ahead checks gate the arm state, while
+ * the logged trajectory-conflict checks remain diagnostic.
+ */
 void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -736,6 +772,11 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         << " controlManeuver=ChangeLane\n";
 }
 
+/*
+ * Applies the high-priority fallback path when lane-change negotiation cannot
+ * continue safely. It queues an emergency Abort, records fallback measurements,
+ * restores pending-command state, and commands conservative braking.
+ */
 void McApplication::applyEmergencyFallbackBrake(
     const char* event,
     const char* reason,

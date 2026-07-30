@@ -14,6 +14,18 @@
 #include <unordered_map>
 #include <vector>
 
+/*
+ * Implements merging-specific coordination for McApplication.
+ *
+ * This file classifies CV behavior for merging Requests, selects merge-gap
+ * targets, and creates RV merging Requests from the pre-recorded global SUMO
+ * reference paths. It preserves the current one-CV and two-CV coordination
+ * paths and operates on the shared McApplication state.
+ *
+ * The source split is organizational only; it does not create a separate
+ * merging coordinator object.
+ */
+
 namespace artery
 {
 namespace mcm
@@ -135,6 +147,12 @@ int priorityLevel(priorityMcmCategory priority)
 }
 }
 
+/*
+ * Chooses the CV-side control maneuver for a medium-priority merging Request.
+ * The method keeps the current global-SUMO trajectory comparison and planner
+ * cost evaluation, then stores the selected trajectory and control command for
+ * later Offer/Accept construction and execution control.
+ */
 void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
@@ -290,6 +308,12 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         << '\n';
 }
 
+/*
+ * Starts RV-side merging coordination once the configured route and trigger
+ * conditions are met. Target selection, request identity, active trajectory
+ * state, and diagnostic initialization must remain ordered with Request
+ * command creation.
+ */
 void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
