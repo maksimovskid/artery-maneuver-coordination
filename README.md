@@ -143,6 +143,18 @@ Vehicle IDs shown in this README are validation expectations for the current rou
 
   * Supporting trajectory/environment helpers used by the maneuver-coordination implementation.
 
+### Trajectory Coordinate Model
+
+The current maneuver-coordination implementation uses pre-recorded global SUMO reference paths for the relevant maneuver areas. These paths are stored as absolute SUMO Cartesian `x/y` coordinates in metres and are used as road-aligned lane-centre references for the supplied validation scenarios.
+
+During simulation, the planner selects a finite local planning horizon from those global coordinates. In this repository, "local" means the near-term subset of future trajectory points used for planning and conflict checking; it does not mean an ego-relative coordinate frame, and no global-to-local coordinate transformation is performed.
+
+MCM trajectories intentionally carry rounded absolute SUMO coordinates in the current simulation implementation. This keeps sender, receiver, and conflict-checking logic in one shared coordinate frame, but it is a scenario-specific convention rather than a generally interoperable relative-coordinate MCM encoding.
+
+For the active highway lane-change scenario, adjacent-lane trajectory points may be approximated by shifting the global `x` coordinate by about one lane width. The implementation uses approximately `+3.0 m` for some planned/requested trajectory paths and about `3.2 m` for execution movement, matching the current highway geometry where adjacent lanes are nearly parallel and separated mainly along the global `x` axis.
+
+For the complete coordinate flow, lane-change approximation, conflict-checking assumptions, and portability limitations, see [Trajectory Planning and Conflict Checking](docs/trajectory_planning_and_conflict_checking.md).
+
 ## Message and Negotiation Flow
 
 For two-CV cooperative merging, the current high-level flow is:
