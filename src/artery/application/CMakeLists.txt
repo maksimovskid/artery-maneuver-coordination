@@ -55,4 +55,5 @@ target_sources(core PRIVATE
     mcm/McApplicationExecutionControl.cc
     mcm/McApplicationRetry.cc
     mcm/McApplicationCvDecision.cc
+    mcm/McApplicationMerging.cc
 )
