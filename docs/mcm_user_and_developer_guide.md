@@ -74,6 +74,25 @@ The current MCM implementation is split across service integration, application 
 
 Scenario files under `scenarios/artery-maneuver-coordination/` provide SUMO routes, SUMO configs, OMNeT++ configs, services, sensors, and prerecorded trajectory data.
 
+### McApplication Implementation Layout
+
+`McApplication` is implemented across several translation units to keep the large maneuver-coordination implementation easier to navigate. All of these files still define member functions of the same `artery::mcm::McApplication` class declared in `src/artery/application/mcm/McApplication.h`.
+
+The split is physical source organization only. Private member access, timers, caches, negotiation state, trajectory state, logging state, and execution state remain shared through the single `McApplication` object. Moving a member function between these files does not create a new runtime component and does not reduce the behavioral coupling by itself.
+
+Every `McApplication` implementation file must be listed explicitly in `src/artery/application/CMakeLists.txt`. `src/artery/application/McService.cc` and `src/artery/application/McService.ned` remain the OMNeT++ service/module integration points; the extracted files do not require NED declarations or module registration.
+
+| Filename | Responsibility | Representative methods | Behavioral sensitivity |
+| --- | --- | --- | --- |
+| `McApplication.cc` | Core lifecycle, signal/event dispatch, top-level orchestration, message handling, and remaining common behavior. | `initialize()`, `indicate()`, `trigger()`, protocol handlers that remain in the core file. | High: preserves OMNeT++ timing, message sequencing, and shared state-machine flow. |
+| `McApplicationDiagnostics.cc` | Merging-gap diagnostic reset, sampling, and summary output. | `resetMergingGapDiagnostics()`, `sampleMergingGapDiagnostics()`, `logMergingGapSummary()`. | Low to medium: diagnostic-only logic, but log field names and sampling calls are used for validation. |
+| `McApplicationExecutionControl.cc` | RV/CV execution control and SUMO vehicle-control hooks. | `applyRvExecutionControl()`, `applyCvLaneChangeControl()`, `monitorCvExecutionControl()`. | High: controls vehicle speed, lane-change execution, safety-critical execution, and restoration behavior. |
+| `McApplicationRetry.cc` | Negotiation retry, timeout detection, retry-command construction, and timeout resets. | `evaluateRvRequestRetry()`, `evaluateCvOfferRetry()`, `resetRvNegotiationAfterTimeout()`. | High: affects Request/Offer/Confirm/Accept ordering, retry timing, and state resets. |
+| `McApplicationCvDecision.cc` | CV cooperation decision flow and planner measurement recording. | `evaluateCvCooperationDecision()`, `recordCvPlannerEvaluation()`, `enqueuePlannerMeasurement()`. | High: affects planner selection, priority/cost decisions, metrics, and Offer generation. |
+| `McApplicationMerging.cc` | Merging-control classification and merging request-trigger logic. | `classifyCvMergingControlManeuver()`, `evaluateMergingRequestTrigger()`. | High: affects merge target selection, one-CV/two-CV behavior, Request generation, diagnostics, and retry entry points. |
+
+Because the split is organizational, behavior-sensitive protocol handlers should not be casually reordered, simplified, deduplicated, or logically rewritten merely because they now live in separate files. The physical split was performed as a low-risk step before considering any future class extraction, state-context redesign, or deeper architectural separation.
+
 ### Trajectory Planning and SUMO Coordinate Assumptions
 
 The current maneuver planner works with trajectory points expressed in the global SUMO coordinate system. In practice, the planner expects road-aligned `x/y` points for the relevant lanes and route segments in the maneuver area. These points are used to build candidate trajectories, check conflicts, evaluate cooperation costs, support second-request trajectory proposals, and guide lane-change execution support.

@@ -143,6 +143,21 @@ Vehicle IDs shown in this README are validation expectations for the current rou
 
   * Supporting trajectory/environment helpers used by the maneuver-coordination implementation.
 
+### McApplication Source Organization
+
+`McApplication` remains one C++ class with one shared declaration in `src/artery/application/mcm/McApplication.h`. Its implementation is distributed across several cohesive `.cc` files for readability and maintenance; this is an organizational source split, not a set of separate runtime modules or independent objects. `McService` still owns and drives one `McApplication` instance.
+
+Current implementation-file map:
+
+| File | Responsibility |
+| --- | --- |
+| `src/artery/application/mcm/McApplication.cc` | Lifecycle, signal/event dispatch, top-level orchestration, and remaining common behavior. |
+| `src/artery/application/mcm/McApplicationDiagnostics.cc` | Merging-gap diagnostics. |
+| `src/artery/application/mcm/McApplicationExecutionControl.cc` | RV/CV execution control and SUMO vehicle-control hooks. |
+| `src/artery/application/mcm/McApplicationRetry.cc` | Retry, timeout, and retry-command handling. |
+| `src/artery/application/mcm/McApplicationCvDecision.cc` | CV cooperation decisions and planner measurements. |
+| `src/artery/application/mcm/McApplicationMerging.cc` | Merging classification and request-trigger logic. |
+
 ### Trajectory Coordinate Model
 
 The current maneuver-coordination implementation uses pre-recorded global SUMO reference paths for the relevant maneuver areas. These paths are stored as absolute SUMO Cartesian `x/y` coordinates in metres and are used as road-aligned lane-centre references for the supplied validation scenarios.
