@@ -52,4 +52,5 @@ target_sources(core PRIVATE
     mcm/McScenarioConfig.cc
     mcm/McApplication.cc
     mcm/McApplicationDiagnostics.cc
+    mcm/McApplicationExecutionControl.cc
 )
