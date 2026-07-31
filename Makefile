@@ -46,3 +46,6 @@ animation_render_all:
 	python3 tools/animation/render_comparison.py lane-change --view closeup
 	python3 tools/animation/render_comparison.py merging --view interaction
 	python3 tools/animation/render_comparison.py lane-change --view interaction
+
+test_mcm:
+	python3 -m unittest discover -s tests/mcm -p "test_*.py"
