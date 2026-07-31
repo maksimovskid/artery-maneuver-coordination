@@ -1,0 +1,18 @@
+{
+  "scenario": "merging",
+  "description": "Primary vehicles for the first 19-CAV highway-merging comparison.",
+  "vehicles": {
+    "rv": "car_ml1_1",
+    "candidate_cvs": ["car_hl0_1", "car_hl0_2"]
+  },
+  "merge": {
+    "ramp_edge_prefixes": ["39704924", "39704922"],
+    "highway_entry_edge_prefixes": ["266507540", "27392720", "27392724", "266507546"],
+    "merge_start": {
+      "x": 216554.0,
+      "y": 452461.0
+    },
+    "near_merge_radius_m": 30.0,
+    "merge_area_radius_m": 50.0
+  }
+}

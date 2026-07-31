@@ -1,0 +1,15 @@
+{
+  "scenario": "lane-change",
+  "description": "Primary vehicles for the 19-CAV safety-critical lane-change comparison.",
+  "vehicles": {
+    "emergency_vehicle": "car_hl0_Emergency",
+    "follower_rv": "car_hl1_1",
+    "target_lane_cvs": ["car_hl2_1", "car_hl2_2", "car_hl2_3", "car_hl2_4", "car_hl2_5", "car_hl2_6"]
+  },
+  "emergency": {
+    "start_time_s": 12.0,
+    "target_speed_mps": 0.1,
+    "behind_distance_m": 100.0,
+    "significant_braking_threshold_mps2": -1.0
+  }
+}
