@@ -61,8 +61,10 @@ Render final side-by-side GIF and PNG media from existing captured data:
 ```bash
 python3 tools/animation/render_comparison.py merging
 python3 tools/animation/render_comparison.py merging --view closeup
+python3 tools/animation/render_comparison.py merging --view interaction
 python3 tools/animation/render_comparison.py lane-change
 python3 tools/animation/render_comparison.py lane-change --view closeup
+python3 tools/animation/render_comparison.py lane-change --view interaction
 python3 tools/animation/render_comparison.py all
 ```
 
@@ -71,8 +73,11 @@ Equivalent Make targets are available and do not rerun simulations:
 ```bash
 make animation_render_merging
 make animation_render_merging_closeup
+make animation_render_merging_interaction
 make animation_render_lane_change
 make animation_render_lane_change_closeup
+make animation_render_lane_change_interaction
+make animation_render_interaction_all
 make animation_render_all
 ```
 
@@ -81,8 +86,10 @@ The default timing is deterministic:
 ```text
 Merging overview: 6.5 s to 26.5 s, 10 fps, 1x simulation time
 Merging close-up: 7.0 s to 16.5 s, 10 fps, 1x simulation time
+Merging interaction: 8.5 s to 15.0 s, 10 fps, 1x simulation time
 Lane overview:    11.5 s to 30.0 s, 10 fps, 1x simulation time
 Lane close-up:    11.5 s to 20.0 s, 10 fps, 1x simulation time
+Lane interaction: 11.5 s to 18.0 s, 10 fps, 1x simulation time
 ```
 
 Useful optional renderer arguments:
@@ -95,9 +102,17 @@ Useful optional renderer arguments:
 --end
 --view overview
 --view closeup
+--view interaction
 --output
 --keep-frames
 ```
+
+The view levels have different purposes:
+
+* `overview` shows the wider scenario context and delayed baseline outcomes.
+* `interaction` is the README-embedded vehicle-level view focused on relative
+  motion, gap creation, braking response, and lateral maneuver execution.
+* `closeup` provides more road context while still emphasizing the maneuver.
 
 The default output directory is:
 
@@ -112,26 +127,26 @@ docs/media/merging-comparison.gif
 docs/media/merging-comparison.png
 docs/media/merging-comparison-closeup.gif
 docs/media/merging-comparison-closeup.png
+docs/media/merging-comparison-interaction.gif
+docs/media/merging-comparison-interaction.png
 docs/media/lane-change-comparison.gif
 docs/media/lane-change-comparison.png
 docs/media/lane-change-comparison-closeup.gif
 docs/media/lane-change-comparison-closeup.png
+docs/media/lane-change-comparison-interaction.gif
+docs/media/lane-change-comparison-interaction.png
 ```
 
 Temporary frames are written only below
 `scenarios/artery-maneuver-coordination/results_animation/tmp_frames/` when
 `--keep-frames` is used. That generated tree is ignored by Git.
 
-The root README embeds the close-up merging GIF because it shows the selected
-RV/CV gap formation and merge movement more clearly. The wider merging overview
-is kept as a linked repository asset for scenario context. Both merging views use
-a fixed synchronized viewport shared by the baseline and coordinated panels.
-
-The root README also embeds the close-up lane-change GIF because it focuses on
-the emergency vehicle, follower RV, target-lane CVs, coordinated lane-change
-completion, and baseline heavy braking. The wider lane-change overview remains
-available as a linked repository asset to show the later delayed baseline lane
-change.
+The root README embeds the interaction GIFs because they make the selected
+vehicles and maneuver-level differences easiest to see. The close-up views are
+linked for additional road context, and the wider overviews remain linked
+repository assets for full-scenario context and delayed baseline behavior. All
+views use a fixed synchronized viewport shared by the baseline and coordinated
+panels.
 
 ## Output Structure
 

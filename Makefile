@@ -23,13 +23,25 @@ animation_render_merging:
 animation_render_merging_closeup:
 	python3 tools/animation/render_comparison.py merging --view closeup
 
+animation_render_merging_interaction:
+	python3 tools/animation/render_comparison.py merging --view interaction
+
 animation_render_lane_change:
 	python3 tools/animation/render_comparison.py lane-change
 
 animation_render_lane_change_closeup:
 	python3 tools/animation/render_comparison.py lane-change --view closeup
 
+animation_render_lane_change_interaction:
+	python3 tools/animation/render_comparison.py lane-change --view interaction
+
+animation_render_interaction_all:
+	python3 tools/animation/render_comparison.py merging --view interaction
+	python3 tools/animation/render_comparison.py lane-change --view interaction
+
 animation_render_all:
 	python3 tools/animation/render_comparison.py all
 	python3 tools/animation/render_comparison.py merging --view closeup
 	python3 tools/animation/render_comparison.py lane-change --view closeup
+	python3 tools/animation/render_comparison.py merging --view interaction
+	python3 tools/animation/render_comparison.py lane-change --view interaction

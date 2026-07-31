@@ -82,6 +82,19 @@ VIEW_PRESETS = {
                 max_y=452520.0,
             ),
         },
+        "interaction": {
+            "start": 8.5,
+            "end": 15.0,
+            "poster_time": 12.2,
+            "gif": "merging-comparison-interaction.gif",
+            "png": "merging-comparison-interaction.png",
+            "viewport": Viewport(
+                min_x=216568.0,
+                max_x=216612.0,
+                min_y=452270.0,
+                max_y=452505.0,
+            ),
+        },
     },
     "lane-change": {
         "overview": {},
@@ -96,6 +109,19 @@ VIEW_PRESETS = {
                 max_x=216625.0,
                 min_y=452050.0,
                 max_y=452350.0,
+            ),
+        },
+        "interaction": {
+            "start": 11.5,
+            "end": 18.0,
+            "poster_time": 12.9,
+            "gif": "lane-change-comparison-interaction.gif",
+            "png": "lane-change-comparison-interaction.png",
+            "viewport": Viewport(
+                min_x=216596.0,
+                max_x=216616.0,
+                min_y=452110.0,
+                max_y=452345.0,
             ),
         },
     },
@@ -118,7 +144,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=540)
     parser.add_argument("--start", type=float)
     parser.add_argument("--end", type=float)
-    parser.add_argument("--view", choices=("overview", "closeup"), default="overview")
+    parser.add_argument("--view", choices=("overview", "closeup", "interaction"), default="overview")
     parser.add_argument("--output", type=Path, help="Optional output directory for final media.")
     parser.add_argument("--keep-frames", action="store_true")
     return parser.parse_args()
@@ -195,11 +221,31 @@ def annotation_for(
     variant: str,
     time_s: float,
     sample: VehicleSample | None,
+    view: str,
 ) -> str:
     metrics = data.metrics[variant]["scenario_metrics"]
     events = data.events[variant]
 
     if data.scenario == "merging":
+        if view == "interaction":
+            if variant == "baseline":
+                if sample and sample.speed < STOPPED_SPEED_MPS:
+                    return "RV stopped"
+                if sample and (sample.acceleration <= -0.5 or sample.speed < 15.0):
+                    return "RV braking"
+                return "No coordination"
+
+            request_t = first_event_time(events, tag="MCM-NEGOTIATION", action="SEND", msg="Request")
+            accept_t = first_event_time(events, tag="MCM-NEGOTIATION", action="SEND", msg="Accept")
+            highway_entry = metrics.get("highway_entry_time_s")
+            if highway_entry and time_s >= highway_entry:
+                return "Merge"
+            if accept_t and time_s >= accept_t:
+                return "Gap created"
+            if request_t and time_s >= request_t:
+                return "Coordination request"
+            return "Approaching"
+
         if variant == "baseline":
             if metrics.get("highway_entry_time_s") and time_s >= metrics["highway_entry_time_s"]:
                 return "RV enters highway"
@@ -221,6 +267,26 @@ def annotation_for(
         return "Approaching merge"
 
     emergency_t = metrics.get("emergency_brake_trigger_time_s", 12.0)
+    if view == "interaction":
+        if variant == "baseline":
+            if sample and sample.speed < STOPPED_SPEED_MPS:
+                return "Follower stopped"
+            if sample and sample.acceleration <= -1.0:
+                return "Follower braking"
+            if time_s >= emergency_t:
+                return "Coordination disabled"
+            return "Before emergency"
+
+        start = metrics.get("lane_change_start_time_s")
+        armed_t = first_event_time(events, event="safety-critical-trigger-armed")
+        if start and time_s >= start:
+            return "Lane change"
+        if armed_t and time_s >= armed_t:
+            return "Follower armed"
+        if time_s >= emergency_t:
+            return "Emergency braking"
+        return "Before emergency"
+
     if variant == "baseline":
         lane_change_t = metrics.get("lane_change_completion_time_s")
         if lane_change_t and time_s >= lane_change_t:
@@ -345,6 +411,7 @@ def draw_panel(
     roles,
     fonts,
     final_hold: bool,
+    view: str,
 ) -> None:
     draw = ImageDraw.Draw(base)
     left, top, right, bottom = panel_box
@@ -402,7 +469,7 @@ def draw_panel(
     heading = "Without coordination" if variant == "baseline" else "With coordination"
     draw.text((left + 14, top + 10), heading, fill=(20, 24, 28), font=fonts["title"])
     draw.text((left + 14, top + 34), f"Simulation time: {time_s:.1f} s", fill=(54, 62, 72), font=fonts["body"])
-    annotation = annotation_for(data, variant, time_s, primary_sample)
+    annotation = annotation_for(data, variant, time_s, primary_sample, view)
     draw_text_box(
         draw,
         (left + 14, top + 62),
@@ -456,6 +523,7 @@ def render_frame(
     dimensions_by_type,
     roles,
     fonts,
+    view: str,
 ) -> Image.Image:
     image = Image.new("RGB", (width, height), (235, 239, 245))
     draw = ImageDraw.Draw(image)
@@ -470,8 +538,8 @@ def render_frame(
     panel_width = (width - gap - 20) // 2
     left_panel = (10, panel_top, 10 + panel_width, panel_bottom)
     right_panel = (10 + panel_width + gap, panel_top, 10 + panel_width * 2 + gap, panel_bottom)
-    draw_panel(image, left_panel, data, "baseline", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold)
-    draw_panel(image, right_panel, data, "coordinated", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold)
+    draw_panel(image, left_panel, data, "baseline", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold, view)
+    draw_panel(image, right_panel, data, "coordinated", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold, view)
     return image
 
 
@@ -536,6 +604,7 @@ def render_scenario(
             dimensions_by_type,
             roles,
             fonts,
+            view,
         )
         frames.append(frame)
         if keep_frames:
