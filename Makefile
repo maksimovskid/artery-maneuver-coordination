@@ -1,6 +1,7 @@
 all:
-	@echo This Makefile is deprecated.
+	@echo Legacy build/run targets in this Makefile are deprecated.
 	@echo Build process of external dependencies is handled entirely by CMake now.
+	@echo Animation data/render convenience targets remain supported.
 
 inet simulte veins vanetza:
 	@echo Makefile target \'$@\' is obsolete. Use CMake.

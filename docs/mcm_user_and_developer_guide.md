@@ -381,7 +381,7 @@ Traffic metrics to inspect include:
 * **Efficiency:** travel time, time loss, mean speed, throughput, completed trips/routes.
 * **Coordination-specific traffic effects:** trajectory cost, CV cooperation cost, priority class, trajectory category, and affected non-cooperating vehicles if that metric is added later.
 
-There is currently no dedicated SUMO traffic-analysis helper in `tools/`. A future `tools/analyze_sumo_traffic_results.py` would be useful for parsing `tripinfo.xml`, `statistic.xml`, optional SSM/FCD output, and producing a traffic-focused CSV summary.
+`tools/animation/analyze_scenario.py` parses SUMO FCD, lane-change, tripinfo, and MCM event logs for the two coordinated/baseline animation scenarios. It is scenario-specific and should not be treated as a general-purpose SUMO traffic-analysis framework. A future `tools/analyze_sumo_traffic_results.py` would still be useful for arbitrary configs and broader traffic-focused CSV summaries.
 
 ## 11. Maneuver Coordination and Cooperation-Cost Metrics
 

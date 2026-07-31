@@ -2,6 +2,7 @@ ansible/*.retry
 scenarios/**/*.pyc
 scenarios/*/results/*
 scenarios/*/results_animation/*
+scenarios/*/results_generated/*
 scenarios/*/.cmdenv-log
 scenarios/*/.qtenvrc
 scenarios/*/.tkenvrc
@@ -36,6 +37,7 @@ compile_commands.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 

@@ -10,9 +10,9 @@
 
     <output>
 
-	<tripinfo-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.tripinfo.xml"/>
-	<statistic-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.statistic.xml"/>
-	<lanechange-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.lane_change.xml"/>
+		<tripinfo-output value="../../results_generated/test_flows/simulation.tripinfo.xml"/>
+		<statistic-output value="../../results_generated/test_flows/simulation.statistic.xml"/>
+		<lanechange-output value="../../results_generated/test_flows/simulation.lane_change.xml"/>
 
     </output>
 	
@@ -23,12 +23,12 @@
     </time>
     
     <device.ssm.deterministic value="true"/> 
-    <device.ssm.file value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.ssm_vehicles.xml"/> 
+    <device.ssm.file value="../../results_generated/test_flows/simulation.ssm_vehicles.xml"/>
 
     <device.fcd.deterministic value="true"/>  
     <!-- <device.fcd.explicit value = "RV"/> 
     <fcd-output.acceleration value="true"/> -->
-    <fcd-output value="/home/maksimovski/Desktop/artery/scenarios/artery-mc-lane-change/results_sumo/lane_change/test_flow/simulation.fcd_vehicles.xml"/>
+    <fcd-output value="../../results_generated/test_flows/simulation.fcd_vehicles.xml"/>
 
 
         
