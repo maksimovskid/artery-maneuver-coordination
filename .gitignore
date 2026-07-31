@@ -3,6 +3,7 @@ scenarios/**/*.pyc
 scenarios/*/results/*
 scenarios/*/results_animation/*
 scenarios/*/results_generated/*
+scenarios/*/results_diagnostic/*
 scenarios/*/.cmdenv-log
 scenarios/*/.qtenvrc
 scenarios/*/.tkenvrc
