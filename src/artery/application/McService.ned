@@ -9,6 +9,10 @@ simple McService like ItsG5Service
         // high-priority lane-change Request followed by an RV second Request.
         bool forceFirstCvRejectForSecondRequestSmoke = default(false);
         int forceFirstCvRejectStationId = default(0);
+        // Baseline-animation hook. When enabled, the configured emergency
+        // source vehicle still brakes, but emergency MCM broadcasting and
+        // maneuver-coordination behavior are suppressed.
+        bool emergencyBrakingOnlyBaseline = default(false);
 
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate

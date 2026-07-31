@@ -124,6 +124,40 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
     const bool withinBroadcastWindow =
         emergencyElapsed >= 0.0 && emergencyElapsed < scEmergencyBroadcastDuration;
 
+    if (mEmergencyBrakingOnlyBaseline) {
+        if (!mEmergencyBroadcastStarted && withinBroadcastWindow) {
+            mEmergencyBroadcastStarted = true;
+            mEmergencyBroadcastStartedAt = now;
+            EV_INFO << "[MCM-BASELINE]"
+                << " simTime=" << now
+                << " role=emergency-vehicle"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << mVehicleController->getVehicleId()
+                << " route=" << mEgoContext.routeId
+                << " laneIndex=" << mEgoContext.laneIndex
+                << " event=emergency-mcm-suppressed"
+                << " reason=emergency-braking-only-baseline"
+                << " scheduledStartTime=" << scEmergencyStartTime
+                << " duration=" << scEmergencyBroadcastDuration
+                << " sendInterval=" << scEmergencyBroadcastInterval
+                << '\n';
+        }
+
+        if (!mEmergencyBroadcastFinished && emergencyElapsed >= scEmergencyBroadcastDuration) {
+            mEmergencyBroadcastFinished = true;
+            EV_INFO << "[MCM-BASELINE]"
+                << " simTime=" << now
+                << " role=emergency-vehicle"
+                << " station=" << mEgoContext.stationId
+                << " vehicleId=" << mVehicleController->getVehicleId()
+                << " route=" << mEgoContext.routeId
+                << " laneIndex=" << mEgoContext.laneIndex
+                << " event=emergency-mcm-suppression-finished"
+                << " elapsed=" << emergencyElapsed
+                << " duration=" << scEmergencyBroadcastDuration
+                << '\n';
+        }
+    } else {
     // Emergency signaling is represented as an execution-container
     // Abort with EmergencyPriority. Sending every 0.1 s for 15 s gives the
     // expected 10 Hz broadcast window, approximately 150 emergency MCMs.
@@ -214,6 +248,7 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
             << " plannedTrajectoryPoints=" << mEgoContext.plannedTrajectory.size()
             << " speed=" << mEgoContext.speed
             << '\n';
+    }
     }
 
     if (!mEmergencyBrakeApplied) {
@@ -365,6 +400,10 @@ void McApplication::logScenarioVehicleLifetime(omnetpp::SimTime now)
 void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now)
 {
     EV_STATICCONTEXT;
+
+    if (mEmergencyBrakingOnlyBaseline) {
+        return;
+    }
 
     if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
             mPendingMcmCommand || mLaneChangeRequestQueuedOrSent ||
@@ -603,6 +642,10 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
 void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
+
+    if (mEmergencyBrakingOnlyBaseline) {
+        return;
+    }
 
     if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
             mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||

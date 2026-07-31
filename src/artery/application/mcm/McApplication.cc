@@ -182,6 +182,11 @@ void McApplication::setSecondRequestSmokeReject(bool enabled, uint32_t stationId
     mSecondRequestSmokeRejectStationId = stationId;
 }
 
+void McApplication::setEmergencyBrakingOnlyBaseline(bool enabled)
+{
+    mEmergencyBrakingOnlyBaseline = enabled;
+}
+
 void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;
@@ -198,6 +203,9 @@ void McApplication::tick(omnetpp::SimTime now)
 {
     logScenarioVehicleLifetime(now);
     evaluateEmergencyBrakingTrigger(now);
+    if (mEmergencyBrakingOnlyBaseline) {
+        return;
+    }
     evaluateMergingRequestTrigger(now);
     evaluateRvRequestRetry(now);
     evaluateRvConfirmRetry(now);

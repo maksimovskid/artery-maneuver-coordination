@@ -225,6 +225,7 @@ public:
     void setNegotiationRetryInterval(omnetpp::SimTime interval);
     void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
     void setSecondRequestSmokeReject(bool enabled, uint32_t stationId);
+    void setEmergencyBrakingOnlyBaseline(bool enabled);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -373,6 +374,7 @@ private:
     bool mSecondRequestSmokeRejectEnabled = false;
     uint32_t mSecondRequestSmokeRejectStationId = 0;
     bool mSecondRequestSmokeRejectConsumed = false;
+    bool mEmergencyBrakingOnlyBaseline = false;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

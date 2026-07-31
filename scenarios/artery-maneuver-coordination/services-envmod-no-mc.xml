@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<services>
+
+    <service type="artery.application.CaService">
+        <listener port="2001" channel="180"/>
+    </service>
+
+</services>

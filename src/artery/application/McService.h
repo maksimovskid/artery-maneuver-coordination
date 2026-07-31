@@ -109,6 +109,7 @@ public:
         double freqReduceCbrMedium = 0.6;
         double freqReduceCbrMax = 0.65;
         double freqReduceCbrMco = 0.5;
+        bool emergencyBrakingOnlyBaseline = false;
     };
 
 private:

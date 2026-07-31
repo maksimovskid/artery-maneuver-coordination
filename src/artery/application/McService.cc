@@ -559,6 +559,7 @@ void McService::loadCommunicationConfig()
     mCommunicationConfig.freqReduceCbrMedium = par("freqReduceCBRmedium").doubleValue();
     mCommunicationConfig.freqReduceCbrMax = par("freqReduceCBRmax").doubleValue();
     mCommunicationConfig.freqReduceCbrMco = par("freqReduceCBRmco").doubleValue();
+    mCommunicationConfig.emergencyBrakingOnlyBaseline = par("emergencyBrakingOnlyBaseline").boolValue();
 }
 
 void McService::logCommunicationConfig() const
@@ -583,6 +584,7 @@ void McService::logCommunicationConfig() const
         << " freqReduceCBRmedium=" << mCommunicationConfig.freqReduceCbrMedium
         << " freqReduceCBRmax=" << mCommunicationConfig.freqReduceCbrMax
         << " freqReduceCBRmco=" << mCommunicationConfig.freqReduceCbrMco
+        << " emergencyBrakingOnlyBaseline=" << mCommunicationConfig.emergencyBrakingOnlyBaseline
         << " note=configuration-hooks-active-behavior-staged\n";
 }
 
@@ -855,6 +857,7 @@ void McService::initialize()
     mApplication->setSecondRequestSmokeReject(
         mForceFirstCvRejectForSecondRequestSmoke,
         mForceFirstCvRejectStationId);
+    mApplication->setEmergencyBrakingOnlyBaseline(mCommunicationConfig.emergencyBrakingOnlyBaseline);
 }
 
 void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)
