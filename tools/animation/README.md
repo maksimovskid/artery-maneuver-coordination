@@ -1,8 +1,9 @@
-# Animation Data Capture
+# Animation Data and Rendering
 
-This directory contains data-capture and analysis helpers for future
-README-ready maneuver-coordination animations. The scripts do not render GIFs,
-videos, or polished plots.
+This directory contains data-capture, analysis, and deterministic rendering
+helpers for README-ready maneuver-coordination animations. Rendering is
+data-driven from captured SUMO FCD, lane-change, tripinfo, and event outputs. It
+does not record the live SUMO GUI or the desktop.
 
 ## Prerequisites
 
@@ -12,9 +13,10 @@ Build the project before capturing data:
 cmake --build build --target core -j 4
 ```
 
-The scripts use the repository's existing `tools/run_artery.py` launcher and
-Python standard-library modules. No pandas, plotting package, video encoder, or
-GUI is required for this data step.
+The capture script uses the repository's existing `tools/run_artery.py`
+launcher. Analysis and rendering use Python standard-library modules plus
+Pillow. No pandas, GUI recorder, OpenCV, MoviePy, or external video encoder is
+required.
 
 ## Supported Captures
 
@@ -28,6 +30,14 @@ python3 tools/animation/capture_scenario.py lane-change baseline
 Each capture defaults to run `0`, `Cmdenv`, `--sim-time-limit=30s`, and
 `--cmdenv-express-mode=false`. Use `--time-limit` only when a longer metric
 window is intentionally needed.
+
+Equivalent Make targets capture and analyze the coordinated/baseline pairs:
+
+```bash
+make animation_data_merging
+make animation_data_lane_change
+make animation_data_all
+```
 
 ## Analysis
 
@@ -43,6 +53,85 @@ Analyze all supported captures:
 ```bash
 python3 tools/animation/analyze_scenario.py all
 ```
+
+## Rendering
+
+Render final side-by-side GIF and PNG media from existing captured data:
+
+```bash
+python3 tools/animation/render_comparison.py merging
+python3 tools/animation/render_comparison.py merging --view closeup
+python3 tools/animation/render_comparison.py lane-change
+python3 tools/animation/render_comparison.py lane-change --view closeup
+python3 tools/animation/render_comparison.py all
+```
+
+Equivalent Make targets are available and do not rerun simulations:
+
+```bash
+make animation_render_merging
+make animation_render_merging_closeup
+make animation_render_lane_change
+make animation_render_lane_change_closeup
+make animation_render_all
+```
+
+The default timing is deterministic:
+
+```text
+Merging overview: 6.5 s to 26.5 s, 10 fps, 1x simulation time
+Merging close-up: 7.0 s to 16.5 s, 10 fps, 1x simulation time
+Lane overview:    11.5 s to 30.0 s, 10 fps, 1x simulation time
+Lane close-up:    11.5 s to 20.0 s, 10 fps, 1x simulation time
+```
+
+Useful optional renderer arguments:
+
+```text
+--fps
+--width
+--height
+--start
+--end
+--view overview
+--view closeup
+--output
+--keep-frames
+```
+
+The default output directory is:
+
+```text
+docs/media/
+```
+
+Generated media:
+
+```text
+docs/media/merging-comparison.gif
+docs/media/merging-comparison.png
+docs/media/merging-comparison-closeup.gif
+docs/media/merging-comparison-closeup.png
+docs/media/lane-change-comparison.gif
+docs/media/lane-change-comparison.png
+docs/media/lane-change-comparison-closeup.gif
+docs/media/lane-change-comparison-closeup.png
+```
+
+Temporary frames are written only below
+`scenarios/artery-maneuver-coordination/results_animation/tmp_frames/` when
+`--keep-frames` is used. That generated tree is ignored by Git.
+
+The root README embeds the close-up merging GIF because it shows the selected
+RV/CV gap formation and merge movement more clearly. The wider merging overview
+is kept as a linked repository asset for scenario context. Both merging views use
+a fixed synchronized viewport shared by the baseline and coordinated panels.
+
+The root README also embeds the close-up lane-change GIF because it focuses on
+the emergency vehicle, follower RV, target-lane CVs, coordinated lane-change
+completion, and baseline heavy braking. The wider lane-change overview remains
+available as a linked repository asset to show the later delayed baseline lane
+change.
 
 ## Output Structure
 
@@ -96,11 +185,34 @@ The coordinated follower is verified from MCM logs when possible; otherwise the
 role map uses `car_hl1_1`. Proximity is reported as centre-to-centre distance,
 not physical bumper clearance.
 
+## Role Highlighting
+
+Merging highlights:
+
+```text
+RV:  car_ml1_1
+CV1: car_hl0_1
+CV2: car_hl0_2
+```
+
+Emergency lane-change highlights:
+
+```text
+Emergency: car_hl0_Emergency
+RV:        car_hl1_1
+CV1:       car_hl2_1
+CV2:       car_hl2_2
+```
+
+Other vehicles remain visible in a secondary style when present in FCD.
+
 ## Limitations
 
-The analysis is intended to validate whether future animation claims are
-supported. It does not create visual media. A 30-second capture may include
-unfinished trips; tripinfo uses SUMO's unfinished-trip output where supported.
-Any future animation should map simulation time to playback time directly, with
-one simulation second equal to one video second unless a clearly labelled
-slow-motion segment is added.
+The generated media represents run `0`, seed `10`, and the validated 30-second
+captures. A 30-second capture may include unfinished trips; tripinfo uses SUMO's
+unfinished-trip output where supported. Vehicle rectangles use SUMO vehicle
+length when available and a documented visual width fallback when width is not
+provided by the vehicle type.
+
+The animations show one controlled run. They should not be described as a
+multi-seed statistical result.

@@ -18,6 +18,56 @@ The simulation stack uses Artery together with OMNeT++, INET, Vanetza, SUMO, and
 
 For a detailed explanation of the MCM service, scenario setup, and result-analysis workflow, see `docs/mcm_user_and_developer_guide.md`.
 
+## Scenario Animations
+
+The following animations compare maneuver coordination with matching baseline
+runs. In each pair, both panels use the same SUMO network, routes, traffic
+population, departure times, simulation step, and random seed; only maneuver
+coordination differs. Playback follows simulation time at 1x speed, and the
+visualizations are deterministic replays generated from SUMO FCD and event data,
+not desktop recordings. The displayed metrics come from one controlled run
+(`run 0`, seed `10`) and are not a statistical evaluation.
+
+### Cooperative Merging
+
+![Close-up coordinated and uncoordinated merging comparison](docs/media/merging-comparison-closeup.gif)
+
+The left panel shows the baseline without maneuver coordination. The right panel
+shows the coordinated scenario, where the requesting merging vehicle negotiates
+with highway-lane cooperating vehicles so a usable merging gap is created. In
+this controlled run, the baseline vehicle stops before entering the highway,
+while the coordinated vehicle keeps moving and enters earlier.
+
+[View the wider scenario overview](docs/media/merging-comparison.gif).
+
+Compact run metrics for `car_ml1_1`:
+
+* Stopped duration: baseline `4.9 s`, coordinated `0.0 s`.
+* Highway entry time: baseline `25.1 s`, coordinated `12.2 s`.
+* Time loss: baseline `14.73 s`, coordinated `3.93 s`.
+
+### Safety-Critical Lane Change
+
+![Close-up coordinated and uncoordinated emergency lane-change comparison](docs/media/lane-change-comparison-closeup.gif)
+
+The emergency vehicle brakes at the same time in both panels. In the baseline,
+no maneuver coordination is exchanged, so the following vehicle reacts through
+normal driving behavior and brakes heavily; it may still perform a delayed SUMO
+lane change. In the coordinated case, emergency information triggers a
+high-priority lane-change negotiation and cooperating vehicles support the
+target-lane maneuver.
+
+[View the wider scenario overview](docs/media/lane-change-comparison.gif).
+
+Compact run metrics for `car_hl1_1`:
+
+* Peak deceleration: baseline `7.81 m/s^2`, coordinated `3.28 m/s^2`.
+* Stopped duration: baseline `2.8 s`, coordinated `0.0 s`.
+* Time loss: baseline `13.97 s`, coordinated `0.63 s`.
+
+The capture, metric-analysis, and rendering workflow is documented in
+[`tools/animation/README.md`](tools/animation/README.md).
+
 ## Terminology
 
 The current maneuver-coordination scenarios distinguish between the following vehicle roles:
