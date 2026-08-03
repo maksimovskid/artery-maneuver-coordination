@@ -38,8 +38,27 @@ class McScenarioTestCase(unittest.TestCase):
         request_id: str,
         target1: str,
         target2: str,
+        priority: str,
     ) -> None:
-        expected = {
+        initial_expected = {
+            "station": station,
+            "subtype": "Execute",
+            "kind": "Execution",
+            "container": "Execution",
+            "requestId": "-1",
+            "cooperationId": request_id,
+            "target1": target1,
+            "target2": target2,
+            "priority": priority,
+        }
+        log.require(
+            "MCM-WIRE", direction="queued", origin="initial-execute", **initial_expected
+        )
+        log.require("MCM-WIRE", direction="sent", **initial_expected)
+
+        # Temporary mixed-state baseline: repeated Execute remains the next
+        # negotiation-container sender migration target.
+        repeated_expected = {
             "station": station,
             "subtype": "Execute",
             "kind": "Negotiation",
@@ -48,14 +67,13 @@ class McScenarioTestCase(unittest.TestCase):
             "target1": target1,
             "target2": target2,
         }
-        log.require("MCM-WIRE", direction="queued", origin="initial-execute", **expected)
-        sent = log.find("MCM-WIRE", direction="sent", **expected)
-        self.assertGreaterEqual(
-            len(sent),
-            2,
-            "expected the initial and at least one repeated negotiation-container Execute",
+        log.require(
+            "MCM-WIRE",
+            direction="queued",
+            origin="repeated-execute",
+            **repeated_expected,
         )
-        log.require("MCM-WIRE", direction="queued", origin="repeated-execute", **expected)
+        log.require("MCM-WIRE", direction="sent", cooperationId="-1", **repeated_expected)
 
     def require_cv_execution_armed(
         self,
@@ -64,6 +82,8 @@ class McScenarioTestCase(unittest.TestCase):
         station: str,
         sender: str,
         request_id: str,
+        target1: str,
+        target2: str,
     ) -> None:
         log.require(
             "MCM-WIRE",
@@ -72,8 +92,10 @@ class McScenarioTestCase(unittest.TestCase):
             station=station,
             sender=sender,
             subtype="Execute",
-            container="Negotiation",
-            requestId=request_id,
+            container="Execution",
+            cooperationId=request_id,
+            target1=target1,
+            target2=target2,
             result="pass",
             reason="none",
         )
@@ -84,8 +106,10 @@ class McScenarioTestCase(unittest.TestCase):
             station=station,
             sender=sender,
             subtype="Execute",
-            container="Negotiation",
-            requestId=request_id,
+            container="Execution",
+            cooperationId=request_id,
+            target1=target1,
+            target2=target2,
             mode="ManeuverExecutionMode",
         )
         log.require(
@@ -153,12 +177,23 @@ class CoordinatedMergingTest(McScenarioTestCase):
                 request_id=request_id,
                 target1="169",
                 target2="309",
+                priority="MediumPriority",
             )
             self.require_cv_execution_armed(
-                log, station="169", sender="29", request_id=request_id
+                log,
+                station="169",
+                sender="29",
+                request_id=request_id,
+                target1="169",
+                target2="309",
             )
             self.require_cv_execution_armed(
-                log, station="309", sender="29", request_id=request_id
+                log,
+                station="309",
+                sender="29",
+                request_id=request_id,
+                target1="169",
+                target2="309",
             )
             # Temporary baseline characterization: successful completion is
             # still represented as negotiation-container Cancel.
@@ -256,12 +291,23 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 request_id=request_id,
                 target1="309",
                 target2="589",
+                priority="HighPriority",
             )
             self.require_cv_execution_armed(
-                log, station="309", sender="449", request_id=request_id
+                log,
+                station="309",
+                sender="449",
+                request_id=request_id,
+                target1="309",
+                target2="589",
             )
             self.require_cv_execution_armed(
-                log, station="589", sender="449", request_id=request_id
+                log,
+                station="589",
+                sender="449",
+                request_id=request_id,
+                target1="309",
+                target2="589",
             )
             log.require("MCM-LC-EXEC", event="lane-change-execution-complete", requestId=request_id)
             # Temporary baseline characterization: successful completion is
@@ -351,6 +397,7 @@ class SecondRequestSmokeTest(McScenarioTestCase):
                 request_id=second_request_id,
                 target1=queued.fields["targetCv1"],
                 target2=queued.fields["targetCv2"],
+                priority="HighPriority",
             )
 
             all_request_ids = request_ids(log.find("MCM-NEGOTIATION", msg="Request"))

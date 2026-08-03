@@ -1100,6 +1100,7 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     PendingMcmCommand command = makeRvFollowupCommand(
         mcmSubtype::Execute,
         snapshot.cooperationTypeMcm >= 0 ? snapshot.cooperationTypeMcm : 0);
+    command.kind = PendingMcmCommand::Kind::Execution;
 
     mActiveNegotiatedTrajectory = command.requestedTrajectory;
     mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
@@ -1109,10 +1110,11 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
         << " direction=queued"
         << " station=" << mEgoContext.stationId
         << " subtype=Execute"
-        << " kind=Negotiation"
-        << " container=Negotiation"
+        << " kind=Execution"
+        << " container=Execution"
         << " origin=initial-execute"
-        << " requestId=" << static_cast<int>(command.requestId)
+        << " requestId=-1"
+        << " cooperationId=" << static_cast<int>(command.requestId)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
         << " hasTarget2=" << command.hasTargetVehicle2
