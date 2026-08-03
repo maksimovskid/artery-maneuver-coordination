@@ -131,26 +131,62 @@ class McScenarioTestCase(unittest.TestCase):
         )
 
     def require_completion_cancel_workaround(self, log: ParsedLog, request_id: str) -> None:
-        queued = log.require(
+        rv_queued = log.require(
             "MCM-WIRE",
             direction="queued",
             subtype="Cancel",
             kind="Negotiation",
             container="Negotiation",
-            origin="completion-workaround",
+            origin="execution-completion-workaround",
+            role="RV",
+            executionState="SendExecute",
             requestId=request_id,
         )
         log.require(
             "MCM-WIRE",
             direction="sent",
-            station=queued.fields["station"],
+            station=rv_queued.fields["station"],
             subtype="Cancel",
             kind="Negotiation",
             container="Negotiation",
             requestId=request_id,
-            target1=queued.fields["target1"],
-            target2=queued.fields["target2"],
+            target1=rv_queued.fields["target1"],
+            target2=rv_queued.fields["target2"],
         )
+        log.require(
+            "MCM-WIRE",
+            direction="sent",
+            event="execution-completion-workaround-confirmed",
+            role="RV",
+            station=rv_queued.fields["station"],
+            requestId=request_id,
+        )
+
+        cv_stations = [rv_queued.fields["target1"]]
+        if rv_queued.fields.get("hasTarget2") == "1":
+            cv_stations.append(rv_queued.fields["target2"])
+        for cv_station in cv_stations:
+            cv_queued = log.require(
+                "MCM-WIRE",
+                direction="queued",
+                station=cv_station,
+                subtype="Cancel",
+                kind="Negotiation",
+                container="Negotiation",
+                origin="execution-completion-workaround",
+                role="CV",
+                executionState="SendExecuteCV",
+                requestId=request_id,
+                target1=rv_queued.fields["station"],
+            )
+            log.require(
+                "MCM-WIRE",
+                direction="sent",
+                event="execution-completion-workaround-confirmed",
+                role="CV",
+                station=cv_queued.fields["station"],
+                requestId=request_id,
+            )
 
 
 class CoordinatedMergingTest(McScenarioTestCase):

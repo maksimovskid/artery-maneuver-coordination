@@ -215,6 +215,27 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
     handleReceivedEmergencyAsFollower(mcm);
 }
 
+bool McApplication::isRvExecutionCompletionWorkaround(const SentMcm& mcm) const
+{
+    return mcm.data.hasNegotiationContainer &&
+        mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
+        mCooperatingVehicleType == cooperatingVehicleType::RV &&
+        mOperationMode == operationMode::ManeuverExecutionMode &&
+        mCoordinationProgressRV == coordinationProgressRV::SendComplete &&
+        mcm.data.requestId == mRvRequestId;
+}
+
+bool McApplication::isCvExecutionCompletionWorkaround(const SentMcm& mcm) const
+{
+    return mcm.data.hasNegotiationContainer &&
+        mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
+        mCooperatingVehicleType == cooperatingVehicleType::CV &&
+        mOperationMode == operationMode::ManeuverExecutionMode &&
+        mCoordinationProgressCV == coordinationProgressCV::SendCompleteCV &&
+        mcm.data.requestId == mCvRequestId &&
+        mcm.data.negotiationVehicleId1 == mCvRvStationId;
+}
+
 /*
  * Tracks messages produced by this application and advances local negotiation
  * progress after McService has actually sent them. This keeps queued-command
@@ -250,11 +271,14 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
                 << " targetCv2=" << mcm.data.negotiationVehicleId2
                 << " priority=HighPriority\n";
         }
-    } else if (mcm.data.hasNegotiationContainer &&
-            mCooperatingVehicleType == cooperatingVehicleType::RV &&
-            mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
-            mCoordinationProgressRV == coordinationProgressRV::SendComplete &&
-            mcm.data.requestId == mRvRequestId) {
+    } else if (isRvExecutionCompletionWorkaround(mcm)) {
+        EV_INFO << "[MCM-WIRE]"
+            << " direction=sent"
+            << " event=execution-completion-workaround-confirmed"
+            << " role=RV"
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << mcm.data.requestId
+            << '\n';
         logMergingGapSummary(mcm.sentAt);
 
         if (mEgoContext.routeId == scMergingRouteId && mVehicleController) {
@@ -309,12 +333,14 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             << " subtype=Abort"
             << " priority=EmergencyPriority"
             << " executionContainer=1\n";
-    } else if (mcm.data.hasNegotiationContainer &&
-            mCooperatingVehicleType == cooperatingVehicleType::CV &&
-            mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Cancel) &&
-            mCoordinationProgressCV == coordinationProgressCV::SendCompleteCV &&
-            mcm.data.requestId == mCvRequestId &&
-            mcm.data.negotiationVehicleId1 == mCvRvStationId) {
+    } else if (isCvExecutionCompletionWorkaround(mcm)) {
+        EV_INFO << "[MCM-WIRE]"
+            << " direction=sent"
+            << " event=execution-completion-workaround-confirmed"
+            << " role=CV"
+            << " station=" << mEgoContext.stationId
+            << " requestId=" << mcm.data.requestId
+            << '\n';
         restoreCvSpeedControl();
 
         resetCvCoordinationStateAfterComplete();

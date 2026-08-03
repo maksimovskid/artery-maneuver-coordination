@@ -322,6 +322,10 @@ private:
     bool classifyExpectedRvResponseSender(uint32_t senderStationId, bool& fromTarget1, bool& fromTarget2) const;
     PendingMcmCommand makeRvFollowupCommand(mcmSubtype, long cooperationType = 0) const;
     PendingMcmCommand makeCvAcceptCommand(const McmSnapshot&) const;
+    PendingMcmCommand buildRvExecutionCompletionWorkaroundCommand() const;
+    PendingMcmCommand buildCvExecutionCompletionWorkaroundCommand() const;
+    bool isRvExecutionCompletionWorkaround(const SentMcm&) const;
+    bool isCvExecutionCompletionWorkaround(const SentMcm&) const;
     void resetRvCoordinationStateAfterComplete();
     void resetCvCoordinationStateAfterComplete();
     void handleReceivedCancelAsCv(const ReceivedMcm&);

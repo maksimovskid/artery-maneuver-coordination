@@ -28,6 +28,42 @@ using scenario::scMergingRouteId;
 
 } // namespace
 
+// Successful completion has no dedicated ASN.1 McmCategory yet. These are the
+// single intended role-specific construction points for the backward-compatible
+// Cancel encoding; a future migration should replace it with execution-container
+// Complete.
+PendingMcmCommand McApplication::buildRvExecutionCompletionWorkaroundCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Cancel;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mRvRequestId;
+    command.numberOfVehicles = mRvNumberOfVehicles;
+    command.targetVehicle1 = mRvTargetVehicle1;
+    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
+    command.targetVehicle2 = mRvTargetVehicle2;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+    return command;
+}
+
+PendingMcmCommand McApplication::buildCvExecutionCompletionWorkaroundCommand() const
+{
+    PendingMcmCommand command;
+    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.subtype = mcmSubtype::Cancel;
+    command.priority = mPriorityMcmCategory;
+    command.cooperationType = 0;
+    command.requestId = mCvRequestId;
+    command.numberOfVehicles = 1;
+    command.targetVehicle1 = mCvRvStationId;
+    command.hasTargetVehicle2 = false;
+    command.targetVehicle2 = 0;
+    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+    return command;
+}
+
 /*
  * Queues an additional Execute while the RV remains in execution mode. The
  * repeated message carries the live planned trajectory from the current ego
@@ -100,8 +136,9 @@ void McApplication::evaluateRvExecutionProgress()
 {
     EV_STATICCONTEXT;
 
-    if (!mHasEgoContext || !mVehicleDataProvider ||
+    if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
             mCooperatingVehicleType != cooperatingVehicleType::RV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
             !mHasActiveNegotiatedTrajectory) {
         return;
@@ -111,21 +148,7 @@ void McApplication::evaluateRvExecutionProgress()
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Cancel;
-    // TODO: temporary Complete workaround.
-    // The current ASN.1/model uses Cancel here because Complete is not available.
-    // Semantically this means: maneuver execution completed after reaching/passing
-    // the final point of the saved negotiated trajectory.
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = 0;
-    command.requestId = mRvRequestId;
-    command.numberOfVehicles = mRvNumberOfVehicles;
-    command.targetVehicle1 = mRvTargetVehicle1;
-    command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
-    command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+    PendingMcmCommand command = buildRvExecutionCompletionWorkaroundCommand();
 
     mPendingMcmCommand = command;
     EV_INFO << "[MCM-WIRE]"
@@ -134,7 +157,9 @@ void McApplication::evaluateRvExecutionProgress()
         << " subtype=Cancel"
         << " kind=Negotiation"
         << " container=Negotiation"
-        << " origin=completion-workaround"
+        << " origin=execution-completion-workaround"
+        << " role=RV"
+        << " executionState=SendExecute"
         << " requestId=" << static_cast<int>(command.requestId)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
@@ -173,6 +198,7 @@ void McApplication::evaluateCvExecutionProgress()
 
     if (!mHasEgoContext || !mVehicleDataProvider || mPendingMcmCommand ||
             mCooperatingVehicleType != cooperatingVehicleType::CV ||
+            mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
             !mHasActiveNegotiatedTrajectory) {
         return;
@@ -182,21 +208,7 @@ void McApplication::evaluateCvExecutionProgress()
         return;
     }
 
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Cancel;
-    // TODO: temporary Complete workaround.
-    // The current ASN.1/model uses Cancel here because Complete is not available.
-    // Semantically this means: CV maneuver execution completed after reaching/passing
-    // the final point of the saved negotiated trajectory.
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = 0;
-    command.requestId = mCvRequestId;
-    command.numberOfVehicles = 1;
-    command.targetVehicle1 = mCvRvStationId;
-    command.hasTargetVehicle2 = false;
-    command.targetVehicle2 = 0;
-    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+    PendingMcmCommand command = buildCvExecutionCompletionWorkaroundCommand();
 
     mPendingMcmCommand = command;
     EV_INFO << "[MCM-WIRE]"
@@ -205,7 +217,9 @@ void McApplication::evaluateCvExecutionProgress()
         << " subtype=Cancel"
         << " kind=Negotiation"
         << " container=Negotiation"
-        << " origin=completion-workaround"
+        << " origin=execution-completion-workaround"
+        << " role=CV"
+        << " executionState=SendExecuteCV"
         << " requestId=" << static_cast<int>(command.requestId)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
