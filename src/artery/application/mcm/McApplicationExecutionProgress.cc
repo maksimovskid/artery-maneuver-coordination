@@ -24,7 +24,6 @@ namespace mcm
 
 namespace
 {
-using scenario::scMergingRouteId;
 
 } // namespace
 
@@ -289,7 +288,7 @@ bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
     const auto& firstPoint = negotiatedTrajectory->front();
     const auto& lastPoint = negotiatedTrajectory->back();
 
-    if (mEgoContext.routeId == scMergingRouteId) {
+    if (mEgoContext.routeId == mMergingCoordinationConfig.requestingRouteId) {
         // The route_merging_1 RV behavior:
         // if RV passed the last negotiated trajectory point, then send Complete.
         // In this scenario, passing the point means current SUMO y is below the

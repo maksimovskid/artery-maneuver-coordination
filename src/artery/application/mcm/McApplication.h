@@ -198,6 +198,20 @@ struct EmergencySourceConfig {
     bool brakingOnlyBaseline = false;
 };
 
+struct MergingCoordinationConfig {
+    std::string requestingRouteId;
+    double validationTriggerX = 0.0;
+    double validationTriggerY = 0.0;
+    omnetpp::SimTime triggerGapTimeFactor = omnetpp::SimTime::ZERO;
+    int cooperatingLaneIndex = 0;
+    double validationLaneMinY = 0.0;
+    double validationLaneMaxY = 0.0;
+    omnetpp::SimTime snapshotFreshness = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime targetSelectionTimeGap = omnetpp::SimTime::ZERO;
+    double minimumGapSpeed = 0.0;
+    double gapWindowFactor = 0.0;
+};
+
 struct PendingMcmCommand {
     enum class Kind {
         Negotiation,
@@ -236,6 +250,7 @@ public:
     void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
     void setSecondRequestSmokeReject(bool enabled, uint32_t stationId);
     void setEmergencySourceConfig(const EmergencySourceConfig&);
+    void setMergingCoordinationConfig(const MergingCoordinationConfig&);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -410,6 +425,7 @@ private:
     uint32_t mSecondRequestSmokeRejectStationId = 0;
     bool mSecondRequestSmokeRejectConsumed = false;
     EmergencySourceConfig mEmergencySourceConfig;
+    MergingCoordinationConfig mMergingCoordinationConfig;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

@@ -34,13 +34,7 @@ namespace mcm
 
 namespace
 {
-using scenario::scHighwayLane0MaxY;
-using scenario::scHighwayLane0MinY;
 using scenario::scHighwayMergingRouteId;
-using scenario::scMergeStartX;
-using scenario::scMergeStartY;
-using scenario::scMergeTargetMaxSnapshotAge;
-using scenario::scMergingRouteId;
 using scenario::scMergingTimeGap;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
@@ -295,15 +289,20 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         return;
     }
 
-    if (mEgoContext.routeId != scMergingRouteId) {
+    if (mEgoContext.routeId != mMergingCoordinationConfig.requestingRouteId) {
         EV_DETAIL << "McApplication merge trigger ignored for route "
             << mEgoContext.routeId << '\n';
         return;
     }
 
     const double distanceToStartingPoint =
-        getDistance(mEgoContext.x, mEgoContext.y, scMergeStartX, scMergeStartY);
-    const double desiredDistanceGap = mTrajectoryPlanner.getGap(0.5);
+        getDistance(
+            mEgoContext.x,
+            mEgoContext.y,
+            mMergingCoordinationConfig.validationTriggerX,
+            mMergingCoordinationConfig.validationTriggerY);
+    const double desiredDistanceGap =
+        mTrajectoryPlanner.getGap(mMergingCoordinationConfig.triggerGapTimeFactor.dbl());
 
     EV_DETAIL << "McApplication route_merging_1 trigger check at x=" << mEgoContext.x
         << " y=" << mEgoContext.y << " distanceToStart=" << distanceToStartingPoint
@@ -356,7 +355,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         ++considered;
 
         const omnetpp::SimTime age = std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
-        if (age.dbl() > scMergeTargetMaxSnapshotAge) {
+        if (age > mMergingCoordinationConfig.snapshotFreshness) {
             ++skippedStale;
             continue;
         }
@@ -377,7 +376,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
             continue;
         }
 
-        if (!snapshot.hasLaneId || snapshot.laneId != 0) {
+        if (!snapshot.hasLaneId ||
+                snapshot.laneId != mMergingCoordinationConfig.cooperatingLaneIndex) {
             ++skippedLane;
             continue;
         }
@@ -393,7 +393,8 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
             continue;
         }
 
-        if (first.mY <= scHighwayLane0MinY || first.mY >= scHighwayLane0MaxY) {
+        if (first.mY <= mMergingCoordinationConfig.validationLaneMinY ||
+                first.mY >= mMergingCoordinationConfig.validationLaneMaxY) {
             ++skippedLane;
             continue;
         }
@@ -401,7 +402,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         const bool diagnosticPointConflict = mTrajectoryPlanner.check_traj_conflict_merging(
             mEgoContext.plannedTrajectory,
             snapshot.plannedTrajectory,
-            scMergingTimeGap,
+            mMergingCoordinationConfig.targetSelectionTimeGap.dbl(),
             age,
             true);
 
@@ -424,7 +425,11 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
         candidate.diagnosticPointConflict = diagnosticPointConflict;
 
         const double mergeGapWindow =
-            std::max(desiredDistanceGap, scMergingTimeGap * std::max(mEgoContext.speed, 1.0) * 2.5);
+            std::max(
+                desiredDistanceGap,
+                mMergingCoordinationConfig.targetSelectionTimeGap.dbl() *
+                    std::max(mEgoContext.speed, mMergingCoordinationConfig.minimumGapSpeed) *
+                    mMergingCoordinationConfig.gapWindowFactor);
         if (candidate.absLongitudinalGap > mergeGapWindow) {
             continue;
         }

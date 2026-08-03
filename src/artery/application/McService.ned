@@ -20,6 +20,19 @@ simple McService like ItsG5Service
         double emergencyNormalSpeed @unit(mps) = default(27.77mps);
         double emergencyTargetSpeed @unit(mps) = default(0.1mps);
 
+        // Coordinate-specific medium-priority merging validation configuration.
+        string mergingRequestingRouteId = default("route_merging_1");
+        double mergingValidationTriggerX @unit(m) = default(216554m);
+        double mergingValidationTriggerY @unit(m) = default(452461m);
+        double mergingTriggerGapTimeFactor @unit(s) = default(0.5s);
+        int mergingCooperatingLaneIndex = default(0);
+        double mergingValidationLaneMinY @unit(m) = default(452474m);
+        double mergingValidationLaneMaxY @unit(m) = default(452574m);
+        double mergingSnapshotFreshness @unit(s) = default(0.6s);
+        double mergingTargetSelectionTimeGap @unit(s) = default(1.2s);
+        double mergingMinimumGapSpeed @unit(mps) = default(1.0mps);
+        double mergingGapWindowFactor = default(2.5);
+
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate
         // behavior; the named policies will be implemented incrementally.

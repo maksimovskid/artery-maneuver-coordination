@@ -228,6 +228,24 @@ class McScenarioTestCase(unittest.TestCase):
             brakingOnlyBaseline=braking_only_baseline,
         )
 
+    def require_merging_coordination_config(self, log: ParsedLog) -> None:
+        log.require(
+            "MCM-CONFIG",
+            type="merging",
+            station="29",
+            requestingRouteId="route_merging_1",
+            triggerX="216554",
+            triggerY="452461",
+            triggerGapTimeFactor="0.5",
+            cooperatingLaneIndex="0",
+            laneMinY="452474",
+            laneMaxY="452574",
+            snapshotFreshness="0.6",
+            targetSelectionTimeGap="1.2",
+            minimumGapSpeed="1",
+            gapWindowFactor="2.5",
+        )
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -303,7 +321,7 @@ class CoordinatedMergingTest(McScenarioTestCase):
         with self.run_checked_scenario("envmod-19CAVs-merging") as run:
             log = run.parsed_log
 
-            log.forbid("MCM-CONFIG")
+            self.require_merging_coordination_config(log)
 
             for subtype in ("Request", "Offer", "Confirm", "Accept"):
                 self.require_negotiation_subtype(log, subtype)
@@ -395,6 +413,7 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
             log = run.parsed_log
 
             self.require_emergency_source_config(log, braking_only_baseline="0")
+            log.forbid("MCM-CONFIG", type="merging")
 
             log.require(
                 "MCM-EMERGENCY",
@@ -493,6 +512,7 @@ class EmergencyBaselineTest(McScenarioTestCase):
             log = run.parsed_log
 
             self.require_emergency_source_config(log, braking_only_baseline="1")
+            log.forbid("MCM-CONFIG", type="merging")
 
             log.require(
                 "MCM-BASELINE",

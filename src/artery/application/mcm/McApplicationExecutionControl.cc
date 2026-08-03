@@ -35,7 +35,6 @@ namespace mcm
 
 namespace
 {
-using scenario::scMergingRouteId;
 using scenario::scExecutionRestoreMinFrontDistance;
 using scenario::scExecutionRestoreMinTtc;
 using scenario::scHighwayCvAccelerationTargetSpeed;
@@ -61,7 +60,7 @@ void McApplication::applyRvExecutionControl()
             mCooperatingVehicleType != cooperatingVehicleType::RV ||
             mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
-            mEgoContext.routeId != scMergingRouteId) {
+            mEgoContext.routeId != mMergingCoordinationConfig.requestingRouteId) {
         return;
     }
 

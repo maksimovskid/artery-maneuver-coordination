@@ -12,7 +12,6 @@ namespace scenario
 
 // Validation route IDs from the SUMO route files. These are scenario selectors,
 // not protocol concepts; they should eventually become omnetpp.ini parameters.
-extern const char* const scMergingRouteId;
 extern const char* const scHighwayMergingRouteId;
 extern const char* const scSafetyCriticalLaneChangeRouteId;
 extern const char* const scTargetLaneChangeRouteId;
@@ -39,14 +38,8 @@ extern const double scLaneChangeExecutionMinTtc;
 extern const double scLaneChangeEmergencyFallbackSpeed;
 extern const double scLaneChangeEmergencyFallbackDecelerationTime;
 
-// Medium-priority merging validation geometry. The trigger point and highway
-// lane-0 coordinate window come from the current SUMO map/route setup.
-extern const double scMergeStartX;
-extern const double scMergeStartY;
-extern const double scHighwayLane0MinY;
-extern const double scHighwayLane0MaxY;
+// Cooperation time-gap calibration shared by merging and lane-change planner paths.
 extern const double scMergingTimeGap;
-extern const double scMergeTargetMaxSnapshotAge;
 
 // Physical speed-control calibration for the current validation scenarios.
 extern const double scMergingRvExecutionSpeed;

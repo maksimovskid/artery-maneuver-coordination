@@ -37,17 +37,10 @@ namespace mcm
 namespace
 {
 using scenario::scEmergencyCoordinationTimeGap;
-using scenario::scHighwayLane0MaxY;
-using scenario::scHighwayLane0MinY;
 using scenario::scHighwayMergingRouteId;
 using scenario::scInitialPaperTimeGap;
 using scenario::scLaneChangeShiftX;
 using scenario::scMaxReceivedMcmCache;
-using scenario::scMergeStartX;
-using scenario::scMergeStartY;
-using scenario::scMergeTargetMaxSnapshotAge;
-using scenario::scMergingRouteId;
-using scenario::scMergingTimeGap;
 using scenario::scNormalHighwaySpeed;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
@@ -127,6 +120,11 @@ void McApplication::setSecondRequestSmokeReject(bool enabled, uint32_t stationId
 void McApplication::setEmergencySourceConfig(const EmergencySourceConfig& config)
 {
     mEmergencySourceConfig = config;
+}
+
+void McApplication::setMergingCoordinationConfig(const MergingCoordinationConfig& config)
+{
+    mMergingCoordinationConfig = config;
 }
 
 void McApplication::updateEgoContext(const McEgoContext& context)
@@ -251,7 +249,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             (mCoordinationProgressRV == coordinationProgressRV::CoordinationRequired ||
                 mCoordinationProgressRV == coordinationProgressRV::SecondRequest)) {
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
-        if (mEgoContext.routeId == scMergingRouteId) {
+        if (mEgoContext.routeId == mMergingCoordinationConfig.requestingRouteId) {
             mMergingRequestQueuedOrSent = true;
         } else if (mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId) {
             mLaneChangeRequestQueuedOrSent = true;
@@ -276,7 +274,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             << '\n';
         logMergingGapSummary(mcm.sentAt);
 
-        if (mEgoContext.routeId == scMergingRouteId && mVehicleController) {
+        if (mEgoContext.routeId == mMergingCoordinationConfig.requestingRouteId && mVehicleController) {
             const std::string& vehicleId = mVehicleController->getVehicleId();
             try {
                 // route_merging_1 uses speedMode 0 only for the active
@@ -1146,7 +1144,8 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     mMcmSubtype = mcmSubtype::Execute;
     mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressRV = coordinationProgressRV::SendExecute;
-    mMergingGapDiagActive = mEgoContext.routeId == scMergingRouteId;
+    mMergingGapDiagActive =
+        mEgoContext.routeId == mMergingCoordinationConfig.requestingRouteId;
     mMergingGapDiagExecutionStart = mEgoContext.now;
     mMergingGapDiagTargetCvStationId = mRvTargetVehicle1;
     sampleMergingGapDiagnostics("execution-start");

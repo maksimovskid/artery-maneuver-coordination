@@ -28,7 +28,6 @@ namespace mcm
 
 namespace
 {
-using scenario::scMergingRouteId;
 }
 
 void McApplication::resetMergingGapDiagnostics()
@@ -66,7 +65,7 @@ void McApplication::sampleMergingGapDiagnostics(const char* phase)
             mCooperatingVehicleType != cooperatingVehicleType::RV ||
             mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
-            mEgoContext.routeId != scMergingRouteId) {
+            mEgoContext.routeId != mMergingCoordinationConfig.requestingRouteId) {
         return;
     }
 
@@ -207,7 +206,7 @@ void McApplication::logMergingGapSummary(omnetpp::SimTime completionTime) const
         EV_INFO << "[MCM-GAP-DIAG]"
             << " summary=rv-completion"
             << " rvStation=" << (mHasEgoContext ? mEgoContext.stationId : 0)
-            << " route=" << scMergingRouteId
+            << " route=" << mMergingCoordinationConfig.requestingRouteId
             << " executionStart=" << mMergingGapDiagExecutionStart
             << " completionTime=" << completionTime
             << " targetCvStation=" << mMergingGapDiagTargetCvStationId
@@ -218,7 +217,7 @@ void McApplication::logMergingGapSummary(omnetpp::SimTime completionTime) const
     EV_INFO << "[MCM-GAP-DIAG]"
         << " summary=rv-completion"
         << " rvStation=" << (mHasEgoContext ? mEgoContext.stationId : 0)
-        << " route=" << scMergingRouteId
+        << " route=" << mMergingCoordinationConfig.requestingRouteId
         << " executionStart=" << mMergingGapDiagExecutionStart
         << " completionTime=" << completionTime
         << " targetCvStationAtMin=" << mMergingGapDiagTargetCvStationId

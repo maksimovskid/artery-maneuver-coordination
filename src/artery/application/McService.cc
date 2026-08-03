@@ -913,6 +913,64 @@ void McService::initialize()
             << " brakingOnlyBaseline=" << emergencySourceConfig.brakingOnlyBaseline
             << '\n';
     }
+    mcm::MergingCoordinationConfig mergingCoordinationConfig;
+    mergingCoordinationConfig.requestingRouteId = par("mergingRequestingRouteId").stdstringValue();
+    mergingCoordinationConfig.validationTriggerX = par("mergingValidationTriggerX").doubleValue();
+    mergingCoordinationConfig.validationTriggerY = par("mergingValidationTriggerY").doubleValue();
+    mergingCoordinationConfig.triggerGapTimeFactor = par("mergingTriggerGapTimeFactor");
+    mergingCoordinationConfig.cooperatingLaneIndex = par("mergingCooperatingLaneIndex").intValue();
+    mergingCoordinationConfig.validationLaneMinY = par("mergingValidationLaneMinY").doubleValue();
+    mergingCoordinationConfig.validationLaneMaxY = par("mergingValidationLaneMaxY").doubleValue();
+    mergingCoordinationConfig.snapshotFreshness = par("mergingSnapshotFreshness");
+    mergingCoordinationConfig.targetSelectionTimeGap = par("mergingTargetSelectionTimeGap");
+    mergingCoordinationConfig.minimumGapSpeed = par("mergingMinimumGapSpeed").doubleValue();
+    mergingCoordinationConfig.gapWindowFactor = par("mergingGapWindowFactor").doubleValue();
+    if (mergingCoordinationConfig.requestingRouteId.empty()) {
+        throw cRuntimeError("mergingRequestingRouteId must not be empty");
+    }
+    if (!std::isfinite(mergingCoordinationConfig.validationTriggerX) ||
+            !std::isfinite(mergingCoordinationConfig.validationTriggerY) ||
+            !std::isfinite(mergingCoordinationConfig.validationLaneMinY) ||
+            !std::isfinite(mergingCoordinationConfig.validationLaneMaxY) ||
+            !std::isfinite(mergingCoordinationConfig.minimumGapSpeed) ||
+            !std::isfinite(mergingCoordinationConfig.gapWindowFactor)) {
+        throw cRuntimeError("merging coordination numeric parameters must be finite");
+    }
+    if (mergingCoordinationConfig.triggerGapTimeFactor < SimTime::ZERO ||
+            mergingCoordinationConfig.targetSelectionTimeGap < SimTime::ZERO ||
+            mergingCoordinationConfig.minimumGapSpeed < 0.0 ||
+            mergingCoordinationConfig.gapWindowFactor < 0.0) {
+        throw cRuntimeError("merging coordination gap parameters must not be negative");
+    }
+    if (mergingCoordinationConfig.cooperatingLaneIndex < 0) {
+        throw cRuntimeError("mergingCooperatingLaneIndex must not be negative");
+    }
+    if (mergingCoordinationConfig.validationLaneMinY >
+            mergingCoordinationConfig.validationLaneMaxY) {
+        throw cRuntimeError("mergingValidationLaneMinY must not exceed mergingValidationLaneMaxY");
+    }
+    if (mergingCoordinationConfig.snapshotFreshness <= SimTime::ZERO) {
+        throw cRuntimeError("mergingSnapshotFreshness must be positive");
+    }
+    mApplication->setMergingCoordinationConfig(mergingCoordinationConfig);
+    if (mVehicleController &&
+            mVehicleController->getRouteID() == mergingCoordinationConfig.requestingRouteId) {
+        EV_INFO << "[MCM-CONFIG]"
+            << " type=merging"
+            << " station=" << mVehicleDataProvider->station_id()
+            << " requestingRouteId=" << mergingCoordinationConfig.requestingRouteId
+            << " triggerX=" << mergingCoordinationConfig.validationTriggerX
+            << " triggerY=" << mergingCoordinationConfig.validationTriggerY
+            << " triggerGapTimeFactor=" << mergingCoordinationConfig.triggerGapTimeFactor.dbl()
+            << " cooperatingLaneIndex=" << mergingCoordinationConfig.cooperatingLaneIndex
+            << " laneMinY=" << mergingCoordinationConfig.validationLaneMinY
+            << " laneMaxY=" << mergingCoordinationConfig.validationLaneMaxY
+            << " snapshotFreshness=" << mergingCoordinationConfig.snapshotFreshness.dbl()
+            << " targetSelectionTimeGap=" << mergingCoordinationConfig.targetSelectionTimeGap.dbl()
+            << " minimumGapSpeed=" << mergingCoordinationConfig.minimumGapSpeed
+            << " gapWindowFactor=" << mergingCoordinationConfig.gapWindowFactor
+            << '\n';
+    }
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,
