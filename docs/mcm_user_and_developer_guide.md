@@ -1,451 +1,199 @@
 # MCM User and Developer Guide
 
-This guide describes the maneuver-coordination implementation in this repository for users who want to run the current scenarios and developers who want to extend them. The repository is research-oriented and under active restructuring. It contains working validation paths for cooperative merging and safety-critical lane-change experiments, but it should not be treated as a finished, stable, or fully validated product.
+This guide describes the functioning maneuver-coordination research implementation, its validation scenarios, extension points, diagnostics, and current scope. It should be read together with the [trajectory guide](trajectory_planning_and_conflict_checking.md) and [regression-test guide](../tests/mcm/README.md).
 
-## 1. Overview
+## 1. Research Scope
 
-This repository extends Artery for V2X maneuver-coordination experiments. The implementation focuses on Maneuver Coordination Messages (MCMs), a Maneuver Coordination Service (MCS), negotiation between Requesting Vehicles (RVs) and Cooperating Vehicles (CVs), and measurement of communication and traffic effects in SUMO/OMNeT++ simulations.
+The repository extends Artery with decentralized V2X maneuver coordination between Requesting Vehicles (RVs) and Cooperating Vehicles (CVs). It validates medium-priority cooperative merging and high-priority safety-critical lane changing in predefined SUMO scenarios.
 
-The current implementation supports two main validation targets:
+The reusable application and communication lifecycle is separated from scenario calibration, but the current physical behavior is intentionally scenario-oriented. It is suitable for reproducible research and validation, not production vehicle control or arbitrary-map deployment without adaptation.
 
-* Medium-priority cooperative merging.
-* High-priority emergency lane-change coordination.
+## 2. Architecture
 
-The code is organized around an Artery middleware service, `McService`, and an application-level state machine, `McApplication`. The service handles Artery integration, packet generation/reception, scheduling, DCC/QoS behavior, and OMNeT++ statistics. The application handles RV/CV roles, MCM negotiation state, trajectory selection, cooperation decisions, retry/timeout handling, and SUMO/TraCI execution hooks.
+### McService
 
-## 2. Key Terminology
+`src/artery/application/McService.*` owns communication integration. It reads and validates NED parameters, constructs typed configuration, updates the application ego context, extracts received ASN.1 MCM snapshots, serializes pending commands, selects the negotiation or execution container, adds mandatory intention sharing, and transmits through Artery/Vanetza.
 
-**MCM:** Maneuver Coordination Message. In this repository, MCMs carry intent, negotiation, or execution information for coordinated maneuvers.
+### McApplication
 
-**MCS / Maneuver Coordination Service:** The Artery middleware service that creates, sends, receives, classifies, and records MCMs. It is implemented mainly in `src/artery/application/McService.*` and declared as an OMNeT++ service module in `src/artery/application/McService.ned`.
+`src/artery/application/mcm/McApplication.*` owns role and scenario recognition, negotiation, retry/timeout logic, planner decisions, trajectory state, execution control, execution progress, failure state, reset behavior, diagnostics, and measurements.
 
-**RV / Requesting Vehicle:** The vehicle that initiates a coordination request, such as a merging vehicle or a vehicle that needs to change lanes because of an emergency vehicle ahead.
+It remains one class whose implementation is split for navigation:
 
-**CV / Cooperating Vehicle:** A vehicle that receives an RV request and may adapt speed, acceleration, deceleration, time gap, or trajectory to support the RV.
-
-**NCV / Non-Cooperating Vehicle:** A vehicle present in the traffic scenario but not participating in the active MCM negotiation flow.
-
-**Intent MCM:** An MCM without maneuver negotiation or execution containers. It communicates regular vehicle state and planned trajectory information.
-
-**Negotiation MCM:** An MCM with a maneuver-negotiation container. The current flow uses Request, Offer, Confirm, Accept, Reject, Cancel, and related subtypes.
-
-**Execution MCM:** An MCM with a maneuver-execution container. It is used after negotiation to coordinate or signal execution state.
-
-**Emergency MCM:** In the current emergency lane-change validation path, the emergency vehicle broadcasts execution-container Abort messages with EmergencyPriority.
-
-**QoS / DCC:** Communication-quality and Decentralized Congestion Control behavior. `McService` exposes configuration hooks for DCC restriction, DCC profile mapping, fixed-rate generation, and adaptive intent-frequency experiments.
-
-**CBR / Channel Busy Ratio:** A radio-channel load measure. The helper reports `ChannelLoad` and the MCM service emits `coopCBR` from local channel-load input.
-
-**PER / Packet Error Rate:** Packet error rate from radio statistics, reported as `packetErrorRate` in OMNeT++ results.
-
-**Cooperative Age of Information:** `CoopVehicleAgeOfInformation`, measured for coordination-relevant MCMs received by a listed cooperating participant. It is receive time minus MCM generation timestamp.
-
-**negotiationTime:** RV-side duration from the first Request to the final required Accept, with a current fallback that can treat a missing expected CV Accept as observed Execute evidence.
-
-**Cooperation cost:** A planner cost used to summarize how much a CV adapts. It combines speed change, acceleration/deceleration, lane-change cost, time-gap reduction, and currently zero TTC cost.
-
-**Trajectory type / trajectory category:** The planner returns raw trajectory types that are recorded as OMNeT++ counters. The CSV helper adds contiguous public `trajectory_category` labels from 0 to 5 while preserving raw metric names.
-
-## 3. Architecture
-
-The current MCM implementation is split across service integration, application state, trajectory support, scenarios, and result-analysis tooling.
-
-| Path | Responsibility |
+| File | Responsibility |
 | --- | --- |
-| `src/artery/application/McService.*` | Artery middleware service integration, MCM packet generation/reception, scheduling, DCC/QoS settings, OMNeT++ signals/statistics, and handoff to `McApplication`. |
-| `src/artery/application/McService.ned` | OMNeT++ service declaration and configurable parameters for MCM generation, DCC behavior, retry limits, timestamp source, prerecorded trajectories, and statistics. |
-| `src/artery/application/Asn1PacketVisitor.h` | ASN.1 packet visitor helper used by packet-handling code. |
-| `src/artery/application/mcm/McApplication.*` | Maneuver-coordination state machine, RV/CV behavior, request triggers, retry/timeout handling, cooperation decisions, execution-control hooks, and planner metric emission. |
-| `src/artery/application/mcm/McScenarioConfig.*` | Current scenario constants: route IDs, emergency-vehicle ID, calibrated timing/speed values, merge geometry, request trajectory horizon, and cache limits. |
-| `src/artery/application/mcm/TrajectoryPlanner.*` | Trajectory feasibility, conflict checks, cooperation-cost calculation, and planner category selection. |
-| `src/artery/application/mcm/TrajectoryEnvironment*.*` | Environment and received-message helper functions used by trajectory decisions. |
-| `src/artery/application/mcm/TrajectoryConflict.*` | Trajectory conflict and collision-related checks. |
-| `src/artery/application/mcm/TrajectoryCsv.*` | CSV trajectory support for prerecorded intent trajectories. |
-| `src/artery/application/mcm/TrajectoryGeneration.*` | Reference and execution trajectory generation. |
-| `tools/analyze_mcm_qos_results.py` | OMNeT++ `.sca` result summarizer for MCM/QoS metrics. |
-| `scenarios/artery-maneuver-coordination/omnetpp.ini` | Scenario configurations for 19-CAV validation and 200/500-CAV QoS experiments. |
+| `McApplication.cc` | Lifecycle, dispatch, receive handlers, and common orchestration. |
+| `McApplicationMerging.cc` | Merging trigger and target selection. |
+| `McApplicationLaneChange.cc` | Emergency source/follower behavior, lane-change trigger, and fallback. |
+| `McApplicationCvDecision.cc` | CV feasibility, planner interpretation, and protocol decision. |
+| `McApplicationRetry.cc` | Request, Confirm, Offer, and Accept retry/timeout paths. |
+| `McApplicationExecutionControl.cc` | RV/CV TraCI execution and restoration. |
+| `McApplicationExecutionProgress.cc` | Repeated Execute and completion evaluation. |
+| `McApplicationNegotiationCommon.cc` | Command builders, guards, completion predicates, resets, and second Request. |
+| `McApplicationDiagnostics.cc` | Focused scenario diagnostics. |
 
-`McService` owns the Artery-facing service lifecycle. It reads NED parameters, builds ASN.1 MCMs, fills the common MCM containers, selects DCC traffic class/profile behavior, sends packets through the middleware, receives packets, extracts MCM snapshots, emits OMNeT++ signals/statistics, and calls into `McApplication`.
+These files share one `McApplication` state object; they are not independent modules or a separate state-machine framework.
 
-`McApplication` owns the maneuver-coordination behavior. It tracks whether the vehicle is in Intention Sharing, Maneuver Negotiation, or Maneuver Execution mode; whether it is acting as RV, CV, NCV, or emergency vehicle; which MCM subtype should be sent next; and which execution control action is currently selected.
+## 3. Initialization and Runtime Configuration
 
-`TrajectoryPlanner` and the helper files provide the planner support. They calculate reference trajectories, check conflict/gap conditions, evaluate speed/acceleration/deceleration/lane-change options, compute cooperation cost, and classify planner outputs for measurement.
+`McService` reads NED parameters during initialization, validates them with OMNeT++ runtime errors, builds typed values, and calls focused `McApplication` setters. `McApplication` never performs direct NED parameter lookup.
 
-Scenario files under `scenarios/artery-maneuver-coordination/` provide SUMO routes, SUMO configs, OMNeT++ configs, services, sensors, and prerecorded trajectory data.
+| Type | Scope |
+| --- | --- |
+| `EmergencySourceConfig` | Source identity, braking timing, broadcast interval, normal speed, and emergency speed. |
+| `MergingCoordinationConfig` | Requesting route, global trigger geometry, lane filtering, snapshot freshness, and target-selection gap. |
+| `MergingExecutionConfig` | RV merging speed and CV acceleration target. |
+| `SafetyCriticalLaneChangeConfig` | Follower/source routes, lane assumptions, planned shift, execution steps, target selection, safety, and fallback. |
+| `ExecutionRestorationSafetyConfig` | Shared post-execution leader distance, time-gap, and TTC thresholds. |
 
-### McApplication Implementation Layout
+Defaults in `McService.ned` preserve the supplied validation scenarios; relevant `omnetpp.ini` configurations can override them. Values are grouped by responsibility so emergency source behavior, merging selection, merging actuation, active lane-change safety, and generic restoration safety do not share accidental sources of truth.
 
-The original `McApplication` implementation was distributed across several translation units to keep the maneuver-coordination code easier to navigate and review. All of these files still define member functions of the same `artery::mcm::McApplication` class declared in `src/artery/application/mcm/McApplication.h`.
+`McScenarioConfig.*` still contains a limited set of compile-time planner/scenario calibration values: `scHighwayMergingRouteId`, `scNormalHighwaySpeed`, `scMergingTimeGap`, `scRequestTrajectorySteps`, `scRequestTrajectoryDt`, and `scMaxReceivedMcmCache`. New runtime scenario calibration should normally use a focused typed NED configuration rather than expanding this file indiscriminately.
 
-The split is physical source organization only. Private member access, timers, caches, negotiation state, trajectory state, logging state, and execution state remain shared through the single `McApplication` object. Moving a member function between these files does not create a new runtime component and does not reduce the behavioral coupling by itself.
+## 4. Roles and Operation Modes
 
-Method placement follows behavioral responsibility: retry behavior, execution control, execution progress, merging, lane-change handling, CV cooperation decisions, diagnostics, and common negotiation support are separated into named implementation files. Every `McApplication` implementation file must be listed explicitly in `src/artery/application/CMakeLists.txt`. `src/artery/application/McService.cc` and `src/artery/application/McService.ned` remain the service and OMNeT++ integration points; the extracted files do not require NED declarations or module registration.
+- **RV:** initiates coordination, selects targets, tracks responses, and controls execution.
+- **CV:** evaluates a targeted request, selects a feasible proposal, responds, and applies agreed control.
+- **NCV:** contributes surrounding traffic and intent information without joining negotiation.
+- **Emergency source:** brakes according to configuration and may emit `EmergencyPriority` Abort messages.
 
-| Filename | Responsibility | Representative methods | Behavioral sensitivity |
-| --- | --- | --- | --- |
-| `McApplication.cc` | Core lifecycle, service-facing interface, top-level dispatch/orchestration, sent-message handling, negotiation logging, and remaining protocol handlers. | `initialize()`, `tick()`, `prepareMcmGeneration()`, `handleReceivedMcm()`, `handleSentMcm()`, `logNegotiationTrace()`. | High: preserves OMNeT++ timing, message sequencing, and shared state-machine flow. |
-| `McApplicationDiagnostics.cc` | Merging-gap diagnostic reset, sampling, and summary output. | `resetMergingGapDiagnostics()`, `sampleMergingGapDiagnostics()`, `logMergingGapSummary()`. | Low to medium: diagnostic-only logic, but log field names and sampling calls are used for validation. |
-| `McApplicationExecutionControl.cc` | RV/CV execution control and SUMO vehicle-control hooks. | `applyRvExecutionControl()`, `applyCvLaneChangeControl()`, `monitorCvExecutionControl()`. | High: controls vehicle speed, lane-change execution, safety-critical execution, and restoration behavior. |
-| `McApplicationExecutionProgress.cc` | Repeated Execute generation and execution-completion progress. | `queueRepeatedExecute()`, `evaluateRvExecutionProgress()`, `evaluateCvExecutionProgress()`, `hasReachedActiveNegotiatedTrajectoryEnd()`. | Medium to high: affects repeated Execute messages and Complete-as-Cancel progression. |
-| `McApplicationNegotiationCommon.cc` | Shared negotiation guards, command builders, completion predicates, state resets, and second-request construction. | `makeRvFollowupCommand()`, `makeCvAcceptCommand()`, `resetRvCoordinationStateAfterComplete()`, `makeRvSecondRequestCommand()`. | High: preserves one-CV/two-CV targeting, pending-command contents, reset order, and second-request semantics. |
-| `McApplicationRetry.cc` | Negotiation retry, timeout detection, retry-command construction, and timeout resets. | `evaluateRvRequestRetry()`, `evaluateCvOfferRetry()`, `resetRvNegotiationAfterTimeout()`. | High: affects Request/Offer/Confirm/Accept ordering, retry timing, and state resets. |
-| `McApplicationCvDecision.cc` | CV cooperation decision flow and planner measurement recording. | `evaluateCvCooperationDecision()`, `recordCvPlannerEvaluation()`, `enqueuePlannerMeasurement()`. | High: affects planner selection, priority/cost decisions, metrics, and Offer generation. |
-| `McApplicationMerging.cc` | Merging-control classification and merging request-trigger logic. | `classifyCvMergingControlManeuver()`, `evaluateMergingRequestTrigger()`. | High: affects merge target selection, one-CV/two-CV behavior, Request generation, diagnostics, and retry entry points. |
-| `McApplicationLaneChange.cc` | Emergency source/follower handling, safety-critical lane-change triggering, and fallback braking. | `evaluateEmergencyBrakingTrigger()`, `evaluateSafetyCriticalLaneChangeTrigger()`, `handleReceivedEmergencyAsFollower()`, `applyEmergencyFallbackBrake()`. | High: affects emergency MCM generation, target-lane Request creation, fixed-width shifted trajectories, fallback braking, and second-request failure handling. |
+Application modes are intention sharing, maneuver negotiation, and maneuver execution. Focused RV/CV progress values track the current lifecycle within those modes.
 
-Use this responsibility map when locating behavior, but do not treat separate translation units as independent state owners. Behavior-sensitive protocol handlers should not be casually reordered, simplified, deduplicated, or logically rewritten merely because they now live in separate files. Preserve one-CV versus two-CV sequencing, Request/Offer/Confirm/Accept/Reject/Cancel/Execute and second-request semantics, state mutation order, and pending-command ordering. The physical split was performed as a low-risk step before considering any future class extraction, state-context redesign, or deeper architectural separation.
+## 5. Message and Identity Lifecycle
 
-### Trajectory Planning and SUMO Coordinate Assumptions
-
-The current maneuver planner works with trajectory points expressed in the global SUMO coordinate system. In practice, the planner expects road-aligned `x/y` points for the relevant lanes and route segments in the maneuver area. These points are used to build candidate trajectories, check conflicts, evaluate cooperation costs, support second-request trajectory proposals, and guide lane-change execution support.
-
-This implementation is scenario-oriented. The included validation scenarios provide the assumptions and helper data needed by the planner to obtain suitable global coordinates for their maneuver areas. The main coordinate data file is `scenarios/artery-maneuver-coordination/coordinates_new_map.csv`, which contains route-specific `*_x` and `*_y` columns used by `TrajectoryCsv.*` and the trajectory-generation helpers. Runtime state from SUMO/TraCI, received MCM trajectories, and helper logic are combined with this prepared route data.
-
-The full CSV sequence is the global reference path. A generated local trajectory is a finite near-term planning horizon selected from that global path around the current vehicle state. The word "local" refers to the limited planning horizon, not to an ego-relative coordinate frame. The current implementation does not perform a global-to-local coordinate transformation before MCM serialization, MCM decoding, or conflict checking.
-
-MCM trajectory fields currently carry rounded absolute SUMO `x/y` coordinates by simulation-specific convention, even where ASN.1 field names suggest delta or relative values. This convention is internally consistent for the supplied simulations because sender, receiver, and conflict checks use the same global coordinate frame. It is not a generally interoperable MCM coordinate encoding for external implementations that expect true relative offsets.
-
-The active highway lane-change scenario may construct adjacent-lane trajectory points with a fixed global `x` shift. Some planned/requested trajectory paths use approximately `+3.0 m`, while the execution movement uses approximately `3.2 m` over multiple simulation ticks. This works as a scenario-specific approximation because the relevant highway lanes are nearly parallel, run mainly along the global `y` direction, and are separated mainly along the global `x` direction. It is not a general adjacent-lane geometry algorithm for arbitrary SUMO maps.
-
-This makes the current planner practical and reproducible for the supplied cooperative-merging and emergency lane-change experiments, but it is not yet a fully general route/lane trajectory generator for arbitrary SUMO networks. SUMO/TraCI can expose vehicle state and road-network information depending on the API usage, but the current application does not implement a general future route/lane coordinate sampling layer that directly feeds this planner with a complete road-aligned point sequence for every lane, edge, or route.
-
-A more general implementation would add a route/lane geometry provider. Such a component would read the SUMO network, follow each vehicle's route edges, use lane shapes and edge lengths to sample future road-aligned positions, and convert route progress into global `x/y` coordinates. It would also need to handle lane changes, junctions, merges, diverges, lane endings, and route changes. The resulting coordinate sequence could then be passed to the same planner and conflict-checking logic instead of relying on scenario-specific assumptions.
-
-When adding a new scenario, verify that the planner has access to continuous and lane-consistent coordinate points for the maneuver region. If the map or route differs significantly from the provided scenarios, either prepare compatible trajectory/environment data or extend the geometry provider before interpreting safety, comfort, efficiency, or cooperation-cost results.
-
-A detailed description of the coordinate flow, MCM encoding convention, lane-change approximation, spatial resolution, and conflict-checking assumptions is provided in [Trajectory Planning and Conflict Checking](trajectory_planning_and_conflict_checking.md).
-
-## 4. MCM Containers and Flow
-
-The application uses three main operation modes:
-
-* **Intention Sharing mode:** default mode. Vehicles send regular intent MCMs with basic state and planned trajectory information.
-* **Maneuver Negotiation mode:** active negotiation mode. Vehicles exchange Request, Offer, Confirm, Accept, Reject, and Cancel-style negotiation MCMs.
-* **Maneuver Execution mode:** active execution mode. Vehicles send repeated Execute messages or emergency execution messages and monitor maneuver progress.
-
-The normal high-level negotiation flow is:
+Negotiation messages use `ManeuverNegotiationContainer` and `requestID`:
 
 ```text
-Request -> Offer -> Confirm -> Accept -> Execute -> Complete/Cancel
+Request -> Offer -> Confirm -> Accept
 ```
 
-The current implementation supports one-CV and two-CV paths. In the two-CV merging path, the RV sends a Request to two selected CVs, waits for both Offers, sends Confirm, waits for both Accepts, and then enters execution. In the one-CV high-priority lane-change path, the RV can receive an Accept directly after Request.
+Reject is handled explicitly. In the validated high-priority path, the first Reject can create one replacement Request with a new request ID and proposal. The final successful request identity establishes the cooperation.
 
-The RV and CV roles are separated:
+Initial and repeated Execute use `ManeuverExecutionContainer`. The successful request ID is carried forward numerically as `cooperationID`, and `cooperationVehicleID1` plus the optional second partner identify participants:
 
-* The RV identifies that coordination is needed, selects target CVs, queues a Request, tracks Offer/Accept state, handles Rejects and timeouts, and queues Execute.
-* A CV evaluates whether the incoming Request targets it, checks trajectory feasibility, computes planner cost, sends Offer or Accept/Reject depending on phase, and applies selected speed-control behavior where implemented.
-* NCVs continue normal intent sharing and traffic behavior without joining the negotiation.
+```text
+Accept -> Execute -> repeated Execute while execution is active
+```
 
-Retry and timeout handling exists for the active Request, Confirm, Offer, and Accept phases. The retry interval and negotiation limits are exposed through `McService.ned` and `omnetpp.ini` parameters such as `negotiationRetryInterval`, `negotiationLimitMerging`, and `negotiationLimitLaneChange`.
+CV reception retains legacy compatibility for negotiation-container Execute. That path still requires the active RV sender, matching request ID, ego participant membership, and eligible CV state. Current senders use the execution container.
 
-`negotiationTime` is measured on the RV side. It starts with the first Request and ends when the required Accept evidence is complete. If a required Accept is not observed but an expected CV's Execute is later observed, the implementation can count that Execute as acceptance evidence for completing the measurement.
+Emergency behavior uses `EmergencyPriority` plus Abort in an execution container. Priority describes urgency; Abort describes the event.
 
-Coordination message generation is rate-limited. The default validation setup uses the same 0.1 s cadence as the middleware update interval and MCM fixed-rate behavior. `timeGenMcm = "CurrentTime"` is available for timestamp-sensitive MCMs; otherwise the service can use the data-provider timestamp source.
+No dedicated ASN.1 Complete category exists. Successful execution completion is temporarily encoded by narrowly scoped helpers as negotiation-container Cancel. Recognition requires the matching role and completion state; subtype Cancel alone is insufficient. Sender-local control restoration and cleanup then occur at the established point. This compatibility workaround is accepted current behavior and is distinct from pre-execution negotiation cancellation.
 
-Emergency behavior is separate from the normal Request/Offer/Confirm/Accept flow. The configured emergency vehicle broadcasts emergency execution MCMs at 10 Hz for 15 s in the current emergency lane-change validation run.
+## 6. One-CV and Two-CV Negotiation
 
-The high-priority lane-change RV path can queue one second Request after a Reject. The RV uses the rejecting CV's latest planned trajectory and the second-request planner helper to build a new requested trajectory with a new request ID, then sends it through the normal rate-limited MCM generation path. Full generalized cascading behavior remains limited unless a scenario explicitly validates it.
+The application supports a maximum of two cooperating CVs.
 
-## 5. Validation Scenarios
+- In two-CV merging, the RV waits for both Offers, sends Confirm, waits for both Accepts, and then starts execution.
+- In a one-CV high-priority flow, the targeted CV can send Accept directly after Request.
+- Participant IDs remain ordered in the existing first/optional-second fields.
+- Retries do not overwrite another pending command.
 
-The current correctness-validation targets are split into two 19-CAV scenarios.
+Execute evidence from an expected CV can complete missing-Accept measurement evidence when the established compatibility guards match. It does not weaken participant or identity validation.
 
-### `envmod-19CAVs-merging`
+## 7. Trajectory Ownership
 
-Purpose: Medium-priority cooperative merging validation.
+Trajectory members have distinct lifetimes:
 
-Key files:
+- `mRvRequestedTrajectory` is the active Request proposal. Retries reuse it, and a second Request replaces it.
+- `mRvNegotiatedTrajectory` becomes active only after all required Accepts and remains the fixed RV completion reference.
+- `mCvSelectedTrajectory` is the CV proposal before execution.
+- `mCvNegotiatedTrajectory` is fixed when a valid Execute arms CV execution.
+- `mEgoContext.plannedTrajectory` is rolling live intent generated from current ego state.
 
-* OMNeT++ config: `scenarios/artery-maneuver-coordination/omnetpp.ini`
-* SUMO config: `scenarios/artery-maneuver-coordination/routes/test_19CAVs_merging.sumocfg`
-* Route files:
-  * `scenarios/artery-maneuver-coordination/routes/test/merging_lane_1.rou.xml`
-  * `scenarios/artery-maneuver-coordination/routes/test/highway_lane_0.rou.xml`
+Execution containers carry identity, priority, and partners but no trajectory. Live trajectory information remains in the mandatory intention-sharing container. Repeated Execute neither serializes nor replaces the fixed negotiated reference.
 
-Expected purpose:
+The planner-facing CV and second-Request APIs use named result fields. In the second-Request compatibility contract, a non-empty returned trajectory remains usable even when the planner's `found` field is false; the caller records `found` diagnostically and rejects only an empty result.
 
-* Merging vehicles act as RVs.
-* Highway-lane vehicles selected by current gap/trajectory snapshots act as CVs.
-* Target pairs are validation expectations from the current route timing, not fixed protocol assignments.
-* The scenario validates medium-priority cooperative merging and CV speed adaptation behavior.
+## 8. Validation Scenarios
 
-### `envmod-19CAVs-emergency-lane-change`
+### Cooperative merging
 
-Purpose: High-priority safety-critical lane-change validation.
+`envmod-19CAVs-merging` validates medium-priority, trajectory/gap-based target selection, one/two-CV negotiation behavior, execution-container Execute, scenario-configured actuation, safe restoration, and completion cleanup.
 
-Key files:
+### Emergency lane change
 
-* OMNeT++ config: `scenarios/artery-maneuver-coordination/omnetpp.ini`
-* SUMO config: `scenarios/artery-maneuver-coordination/routes/test_19CAVs_emergency_lane_change.sumocfg`
-* Route files:
-  * `scenarios/artery-maneuver-coordination/routes/test/highway_lane_1.rou.xml`
-  * `scenarios/artery-maneuver-coordination/routes/test/highway_lane_2.rou.xml`
-  * `scenarios/artery-maneuver-coordination/routes/test/highway_lane_0_right_ncv.rou.xml`
+`envmod-19CAVs-emergency-lane-change` validates the emergency Abort source, follower qualification, HighPriority lane-change negotiation, target-lane cooperation, incremental movement, active-execution safety, fallback plumbing, and completion cleanup.
 
-Expected purpose:
+The planned lateral trajectory shift is `3.0 m`. Physical execution uses 10 increments of `0.32 m`, totaling `3.2 m`. They are separate scenario calibrations and should not be derived from one another.
 
-* The configured emergency vehicle brakes and broadcasts emergency MCMs.
-* Following lane-1 vehicles arm high-priority lane-change negotiation.
-* Lane-2 vehicles can act as CVs.
-* Right-lane NCVs provide non-cooperating/background traffic.
+### Baselines and second Request
 
-### `envmod-19CAVs-second-request-smoke`
+The merging baseline suppresses maneuver coordination. The emergency baseline preserves source braking while suppressing emergency MCM transmission and follower coordination. `envmod-19CAVs-second-request-smoke` verifies replacement of the first rejected proposal and continuation with a new identity.
 
-Purpose: Focused second-request validation.
+Experimental 200/500-CAV QoS configurations add background communication load. They are evaluation scaffolding, not validated coordination benchmarks.
 
-This optional smoke-test config extends `envmod-19CAVs-emergency-lane-change` and enables a disabled-by-default validation hook. One selected CV rejects its first high-priority lane-change Request, allowing the RV to queue and send a second Request through the normal rate-limited MCM generation path. Use it to check the second-request state machine; do not treat it as a baseline traffic or communication result configuration.
-* No merging vehicles should appear in this scenario.
+## 9. Running and Testing
 
-The emergency broadcast validation expectation for a 30 s run is 150 queued emergency execution MCMs, from 10 Hz over a 15 s emergency broadcast window.
-
-### Congested QoS Configs
-
-`scenarios/artery-maneuver-coordination/omnetpp.ini` also defines 200-CAV and 500-CAV QoS experiment configs:
-
-* `envmod-200CAVs-qos-baseline-freespace`
-* `envmod-200CAVs-qos-adapt-intent-freespace`
-* `envmod-200CAVs-qos-mco-1hz-freespace`
-* `envmod-200CAVs-qos-dcc-profiles-freespace`
-* `envmod-500CAVs-qos-baseline-freespace`
-* `envmod-500CAVs-qos-adapt-intent-freespace`
-* `envmod-500CAVs-qos-mco-1hz-freespace`
-* `envmod-500CAVs-qos-dcc-profiles-freespace`
-
-These configs use Free Space path loss to exercise higher channel-load conditions and compare baseline, adaptive Intent, MCO-specific 1 Hz Intent reduction, and DCC-profile mapping settings.
-
-The 19 designated maneuver-coordination vehicles remain the intended coordination participants. Additional CAVs are background/load vehicles. They may generate regular Intent MCMs and, with the current service list, CAMs. They are communication-load traffic and should not be interpreted as active negotiation participants.
-
-## 6. How to Run Scenarios
-
-Build from the repository root:
+Build:
 
 ```bash
-cmake --build build
+cmake --build build -j2
 ```
 
-Run 19-CAV merging:
+Run merging:
 
 ```bash
 tools/run_artery.py -l build -s scenarios/artery-maneuver-coordination -- omnetpp.ini -u Cmdenv -c envmod-19CAVs-merging -r 0 --sim-time-limit=30s --cmdenv-express-mode=false
 ```
 
-Run emergency lane-change:
+Run emergency lane change:
 
 ```bash
 tools/run_artery.py -l build -s scenarios/artery-maneuver-coordination -- omnetpp.ini -u Cmdenv -c envmod-19CAVs-emergency-lane-change -r 0 --sim-time-limit=30s --cmdenv-express-mode=false
 ```
 
-GUI configs are available:
-
-* `envmod-19CAVs-merging-gui`
-* `envmod-19CAVs-emergency-lane-change-gui`
-
-GUI/SUMO shutdown messages can occur when closing the GUI. If a headless Cmdenv run passes and the GUI issue appears only during manual close, treat it separately from maneuver-coordination correctness errors.
-
-Simulation runs may create OMNeT++ result files under `scenarios/artery-maneuver-coordination/results/` and SUMO output under configured SUMO result paths such as `scenarios/artery-maneuver-coordination/results_sumo/...`.
-
-## 7. Basic Validation Checks
-
-Useful log checks for fatal or simulation-level issues:
+Run the regression suite:
 
 ```bash
-grep -E '<!> Error|Segmentation fault|core dumped|what\(\)|Teleporting vehicle|collision with vehicle|peer shutdown|unterminated comment|input ended' /tmp/mcm-*.log | tail -80
+python3 -m unittest discover -s tests/mcm -p 'test_*.py'
 ```
 
-Merging Request sanity check:
+The five tests run complete Artery/SUMO simulations and inspect stable diagnostic events. They are simulation-level regressions, not isolated C++ unit tests. Successful runs remove unique temporary output directories; failed runs preserve their logs and outputs for diagnosis.
 
-```bash
-grep -E 'car_ml1_1.*SEND Request|car_ml1_2.*SEND Request|car_ml1_3.*SEND Request' /tmp/mcm-*-merging-30s.log
-```
+## 10. Diagnostics and Measurements
 
-Emergency checks:
+Stable diagnostic families include:
 
-```bash
-grep '\[MCM-EMERGENCY\].*queue-emergency-execution-mcm' /tmp/mcm-*-emergency-30s.log | wc -l
-grep 'car_ml1_' /tmp/mcm-*-emergency-30s.log | wc -l
-```
+- `[MCM-WIRE]`: command/container/subtype/identity/participant evidence.
+- `[MCM-TRAJECTORY]`: requested and negotiated trajectory lifecycle.
+- `[MCM-FAILURE]`: explicit RV failure-reason transitions.
+- `[MCM-STATE]`: role-specific reset evidence.
+- `[MCM-CONFIG]`: validated runtime configuration.
+- `[MCM-NEGOTIATION]`, `[MCM-EMERGENCY]`, and scenario-specific target/execution tags.
 
-For the current 30 s emergency validation run, the expected emergency queue count is 150. The expected `car_ml1_` count in the emergency scenario is 0. Merging target-pair checks are useful sanity checks for the current route files, but they should be treated as validation expectations from route timing rather than protocol-level fixed assignments.
+Useful signals include MCM/container counters, subtype delays, DCC wait, channel load, negotiation/execution counters, second-Request counters, planner priority, trajectory category, and trajectory cost. `tools/analyze_mcm_qos_results.py` can summarize matching `.sca` output.
 
-## 8. How to Create a New Scenario
+The simulator records selected trajectory category and associated cooperation cost for evaluation and diagnostics. They represent internal planner decisions used to compare scenario outcomes; they are not MCM protocol fields and do not alter wire messages. Raw counter names remain available to analysis tools without requiring a category table in this guide.
 
-A new maneuver-coordination scenario usually needs:
+## 11. Adding or Adapting a Scenario
 
-* SUMO network and route files.
-* A SUMO `.sumocfg`.
-* An OMNeT++ config entry in `scenarios/artery-maneuver-coordination/omnetpp.ini`.
-* Vehicle role assumptions for RVs, CVs, and NCVs.
-* Optional scenario constants in `src/artery/application/mcm/McScenarioConfig.*`.
-* Trajectory CSV/map data if prerecorded intent trajectories are required.
-* Road-aligned global SUMO `x/y` points for the RV/CV trajectories in the maneuver area.
-* Validation expectations and sanity-check commands.
+1. Define RV, CV, NCV, and emergency roles for the intended use case.
+2. Add or adapt SUMO network, route, and `.sumocfg` files.
+3. Add an `omnetpp.ini` configuration and enable the MC service.
+4. Override the relevant typed `McService` NED parameters.
+5. Preserve McService validation; do not query NED parameters from McApplication.
+6. Verify route IDs, lane relationships, global coordinates, trigger/conflict areas, and participant ordering.
+7. Provide continuous road-aligned reference trajectory data for the maneuver area.
+8. Validate physical control and safety calibration separately from negotiation logic.
+9. Add stable diagnostics only where existing evidence is insufficient.
+10. Add a simulation regression that proves the intended sequence and baseline behavior.
 
-Checklist:
+Configuration alone does not make arbitrary maps compatible. New geometry may require extending the route/lane geometry abstraction before planner results are meaningful.
 
-1. Define the traffic objective and maneuver type.
-2. Define RV, CV, and NCV roles.
-3. Create or copy route files.
-4. Add a `.sumocfg` that loads the route files and desired SUMO outputs.
-5. Add an OMNeT++ config in `scenarios/artery-maneuver-coordination/omnetpp.ini`.
-6. Ensure `services-mco-envmod.xml` or the selected service file activates the MC service.
-7. Verify trajectory-coordinate availability for the maneuver area: the planner needs road-aligned global SUMO `x/y` points for the RV/CV trajectories.
-8. Verify MCM generation and participant IDs in a short run.
-9. Run a short headless Cmdenv test.
-10. Inspect logs, `.sca` output, and SUMO output.
-11. Add scenario-specific validation notes.
+## 12. Reset and Failure Handling
 
-Prefer dynamic target selection when possible. Avoid adding scenario-specific constants unless the scenario cannot be expressed through existing route/config inputs. Keep background/load vehicles conceptually separate from coordination participants. Document expected sanity checks so future changes can distinguish scenario tuning from behavior regressions.
+Focused RV and CV helpers clear negotiation, execution, response-tracking, retry, trajectory, and control state without hiding lifecycle differences. Vehicle restoration remains separate from protocol-state clearing where ordering matters.
 
-## 9. OMNeT++ Communication Result Analysis
+`RvCoordinationFailureReason` distinguishes `None`, timeout, rejection, unsafe environment, and control failure according to existing paths. Reasons are cleared only at the established lifecycle points; a recoverable first Reject does not incorrectly terminate the second-Request path.
 
-OMNeT++ result files are written under `scenarios/artery-maneuver-coordination/results/` by the current scenario setup. Scalar/statistic values are stored in `.sca`; vector data may appear in `.vec`/`.vci` when enabled.
+Successful completion clears requested/selected and negotiated trajectory state through the completion-specific helpers. Timeout, final rejection, Cancel reception, and fallback retain their distinct cleanup behavior.
 
-The helper `tools/analyze_mcm_qos_results.py` summarizes selected MCM/QoS scalar and statistic output:
+## 13. Current Scope and Future Generalization
 
-```bash
-python3 tools/analyze_mcm_qos_results.py \
-  --input scenarios/artery-maneuver-coordination/results \
-  --output scenarios/artery-maneuver-coordination/results/mcm_qos_summary.csv \
-  --aggregate-output scenarios/artery-maneuver-coordination/results/mcm_qos_aggregate.csv \
-  --group-without-module
-```
+SUMO supports arbitrary road networks. This application currently relies on configured route IDs, lane relationships, global SUMO coordinates, validation-map thresholds, predefined maneuver areas, shifted/prerecorded trajectories, and scenario-calibrated physical control. Arbitrary-network support would require road-topology, route-relative geometry, adjacent-lane, conflict-area, and maneuver-area abstractions.
 
-The flat CSV contains one row per matching module/metric entry. The aggregate CSV groups by config, metric, and module by default. With `--group-without-module`, it aggregates at config/metric level. Multi-seed output is grouped using run/seed information parsed from `.sca` metadata and filenames.
+The current point/index conflict model, maximum two-CV flow, direct TraCI coupling, legacy Execute compatibility, and completion workaround are explicit research-scope boundaries. Missing deterministic tests include timeout, final rejection, forced fallback, invalid NED configuration, pre-execution Cancel rollback, and direct TraCI failures. These gaps limit claims but do not invalidate the covered scenarios.
 
-The helper adds percentage columns for fraction-style metrics:
-
-* `ChannelLoad` -> `cbr_percent_*`
-* `packetErrorRate` -> `per_percent_*`
-* `coopCBR` -> `coop_cbr_percent_*`
-
-For trajectory counters, it adds:
-
-* `metric_label`
-* `trajectory_category`
-* `raw_trajectory_type`
-
-Important communication metrics include:
-
-* `McmSentCounter`
-* `McmReceivedCounter`
-* `McmIntentionSentCounter`
-* `McmIntentionReceivedCounter`
-* `McmNegotiationSentCounter`
-* `McmNegotiationReceivedCounter`
-* `McmExecutionSentCounter`
-* `McmExecutionReceivedCounter`
-* `McmExecutionEmergencySentCounter`
-* `McmExecutionEmergencyReceivedCounter`
-* `EteDelayMcm`
-* `EteDelayMcmNegotiation`
-* `EteDelayMcmExecution`
-* `EteDelayMcmEmergency`
-* `dccTimeWaitNextMcm`
-* `ChannelLoad`
-* `packetErrorRate`
-* `coopCBR`
-* `CoopVehicleAgeOfInformation`
-* `negotiationTime`
-* `NegotiationStartedCounter`
-* `NegotiationCompletedCounter`
-* `ExecutionStartedCounter`
-* `ExecutionCompletedCounter`
-* `SecondRequestStartedCounter`
-* `SecondRequestCompletedCounter`
-* `SecondRequestRejectedCounter`
-* `TrajectoryCost`
-* `TrajectoryCostRV`
-* `CounterCoordPossiblePriorityLow`
-* `CounterCoordPossiblePriorityMedium`
-* `CounterCoordPossiblePriorityHigh`
-* `CounterTrajectoryType0/1/2/4/5/6`
-* `currentMCSoperatingMode`
-
-## 10. SUMO Traffic Result Analysis
-
-SUMO outputs are configured in the scenario `.sumocfg` files. The current 19-CAV merging and emergency configs write:
-
-* `tripinfo-output`
-* `statistic-output`
-
-Several additional outputs are present but commented in the current configs, including lane-change, collision, vehroute, lanedata, edgedata, SSM, and FCD output. If enabled, these outputs can support deeper safety and comfort analysis.
-
-Likely result locations include `scenarios/artery-maneuver-coordination/results_sumo/...`, depending on the active SUMO config.
-
-Traffic metrics to inspect include:
-
-* **Safety:** minimum time gap, minimum TTC, collision/teleport checks, emergency-braking checks, lane-change conflict diagnostics when configured.
-* **Comfort:** acceleration, deceleration, maximum acceleration/deceleration, and jerk if available from enabled outputs or future tools.
-* **Efficiency:** travel time, time loss, mean speed, throughput, completed trips/routes.
-* **Coordination-specific traffic effects:** trajectory cost, CV cooperation cost, priority class, trajectory category, and affected non-cooperating vehicles if that metric is added later.
-
-`tools/animation/analyze_scenario.py` parses SUMO FCD, lane-change, tripinfo, and MCM event logs for the two coordinated/baseline animation scenarios. It is scenario-specific and should not be treated as a general-purpose SUMO traffic-analysis framework. A future `tools/analyze_sumo_traffic_results.py` would still be useful for arbitrary configs and broader traffic-focused CSV summaries.
-
-## 11. Maneuver Coordination and Cooperation-Cost Metrics
-
-The current implementation adds MCM-specific OMNeT++ signals/statistics through `McService.ned` and `McService.cc`. Planner and second-request metrics are measurement-only; they do not change maneuver decisions, trajectory generation, or message scheduling.
-
-Planner/cost metrics:
-
-* `TrajectoryCost`
-* `TrajectoryCostRV`
-* `SecondRequestStartedCounter`
-* `SecondRequestCompletedCounter`
-* `SecondRequestRejectedCounter`
-* `CounterCoordPossiblePriorityLow`
-* `CounterCoordPossiblePriorityMedium`
-* `CounterCoordPossiblePriorityHigh`
-* `CounterTrajectoryType0`
-* `CounterTrajectoryType1`
-* `CounterTrajectoryType2`
-* `CounterTrajectoryType4`
-* `CounterTrajectoryType5`
-* `CounterTrajectoryType6`
-
-Public trajectory mapping:
-
-| `trajectory_category` | Raw metric name | Meaning |
-| --- | --- | --- |
-| 0 | `CounterTrajectoryType0` | constant speed / no adaptation / normal time gap |
-| 1 | `CounterTrajectoryType1` | deceleration / speed reduction with lane-change trajectory |
-| 2 | `CounterTrajectoryType2` | lane-change trajectory |
-| 3 | `CounterTrajectoryType4` | constant speed / no adaptation / reduced time gap |
-| 4 | `CounterTrajectoryType5` | acceleration with lane-change trajectory / normal time gap |
-| 5 | `CounterTrajectoryType6` | acceleration with lane-change trajectory / reduced time gap |
-
-The raw OMNeT++ counter names are intentionally preserved. They are non-contiguous, while the CSV helper provides contiguous public categories from 0 to 5. No synthetic `CounterTrajectoryType3` metric is added.
-
-Cooperation cost is calculated in `TrajectoryPlanner::calculateTrajectoryCost`. The current formula averages speed-change cost, acceleration/deceleration cost, lane-change cost, time-gap-reduction cost, and TTC cost. The TTC cost term is currently zero in the implemented formula.
-
-## 12. Current Limitations
-
-Current limitations and TODOs:
-
-* This is a research/WIP repository, not a fully validated product.
-* Scenario constants still live in `src/artery/application/mcm/McScenarioConfig.*`; some should eventually move to configuration.
-* Negotiation-related adaptive reduction is not implemented.
-* Important Intent Sharing exemption is explicitly marked as TODO in the adaptive intent-generation path.
-* Full generalized cascading behavior should be treated as limited unless a scenario explicitly validates it.
-* The second-request path is scoped to one retry after a rejected high-priority lane-change Request; broader multi-stage negotiation policies need additional scenario coverage.
-* Trajectory planning is scenario-oriented and relies on prepared/helper-provided global SUMO coordinates for the current validation maps.
-* A general route/lane geometry provider for arbitrary SUMO maps and routes is a planned extension.
-* CV lateral lane-change execution is currently logged as not applied in one control path because the lateral target and step counter are not represented there yet.
-* Completion semantics are represented through the currently available container path in some execution-completion logic.
-* Some detailed metrics are deferred or incomplete:
-  * per-second rates,
-  * periodicity,
-  * delayed MCM counters,
-  * DCC transmitted/dropped packets by DP/class,
-  * CAM-specific metrics,
-  * affected NCV counters,
-  * RV trajectory-cost metrics.
-* There is no dedicated SUMO traffic-analysis helper in `tools/` yet.
-* The 200/500-CAV configs are QoS evaluation scaffolding and should not be treated as final benchmark scenarios.
-
-## 13. Suggested Next Steps for Contributors
-
-Start with the 19-CAV merging and emergency lane-change scenarios. Run short headless simulations, inspect the MCM/QoS CSV summaries, and compare logs against the sanity checks above.
-
-When adding a scenario, make one small change at a time: route files, SUMO config, OMNeT++ config, participant roles, then validation expectations. Add or expose metrics before changing maneuver decisions so behavior changes can be measured rather than inferred.
+Future contributions should generalize one boundary at a time and preserve regression evidence for the established scenarios.

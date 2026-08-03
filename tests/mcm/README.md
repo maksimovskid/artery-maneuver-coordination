@@ -1,12 +1,11 @@
-# Maneuver-Coordination Regression Tests
+# Maneuver-Coordination Simulation Regression Tests
 
-This directory contains deterministic headless regression tests for the validated
-maneuver-coordination scenarios.
+This directory contains five deterministic, headless regression tests for the supplied maneuver-coordination validation scenarios. They run complete Artery/SUMO simulations and inspect stable diagnostic events; they are not isolated C++ unit tests.
 
 Run the suite from the repository root:
 
 ```bash
-python3 -m unittest discover -s tests/mcm -p "test_*.py"
+python3 -m unittest discover -s tests/mcm -p 'test_*.py'
 ```
 
 The equivalent convenience target is:
@@ -17,46 +16,55 @@ make test_mcm
 
 ## Covered Scenarios
 
-The tests run these OMNeT++ configurations with `Cmdenv`, run `0`,
-`--sim-time-limit=30s`, and `--cmdenv-express-mode=false`:
+Each test runs configuration run `0` with `Cmdenv`, a 30-second limit, and express mode disabled:
 
-* `envmod-19CAVs-merging`
-* `envmod-19CAVs-merging-baseline`
-* `envmod-19CAVs-emergency-lane-change`
-* `envmod-19CAVs-emergency-lane-change-baseline`
-* `envmod-19CAVs-second-request-smoke`
+1. `envmod-19CAVs-merging`: coordinated merging, two-CV negotiation, execution, restoration, and completion.
+2. `envmod-19CAVs-merging-baseline`: suppression of maneuver coordination.
+3. `envmod-19CAVs-emergency-lane-change`: emergency Abort, follower trigger, HighPriority negotiation, lane-change execution, and completion.
+4. `envmod-19CAVs-emergency-lane-change-baseline`: source braking with emergency MCM and follower coordination suppressed.
+5. `envmod-19CAVs-second-request-smoke`: first-Request rejection, replacement proposal/identity, final agreement, and execution.
 
-## Assertions
+## Regression Evidence
 
-The suite parses stable MCM log tags and key-value fields instead of comparing
-complete logs. It checks protocol progression, baseline suppression,
-emergency-braking behavior, second-request construction, and completion evidence.
+The parser matches tags and stable `key=value` fields instead of comparing complete logs. Covered behavior includes:
 
-Important tags include:
+- Request, Offer, Confirm, Accept, and Reject progression;
+- initial and repeated execution-container Execute;
+- cooperation ID and one/two-participant mapping;
+- CV execution arming and duplicate-entry guards;
+- `EmergencyPriority` execution-container Abort;
+- requested and negotiated trajectory lifecycle;
+- completion through the isolated negotiation-container Cancel workaround;
+- RV/CV reset and failure-state evidence;
+- runtime configuration defaults;
+- second-Request replacement; and
+- baseline suppression.
 
-* `[MCM-NEGOTIATION]`
-* `[MCM-MERGE-TARGET]`
-* `[MCM-GAP-DIAG]`
-* `[MCM-EMERGENCY]`
-* `[MCM-LC-TRIGGER]`
-* `[MCM-LC-3VEH]`
-* `[MCM-LC-EXEC]`
-* `[MCM-BASELINE]`
-* `[MCM-NEGOTIATION-RETRY]`
+Important diagnostic families are:
 
-Exact total message counts are generally avoided because repeated MCM generation
-and retry timing can change without invalidating the protocol flow. Tests prefer
-presence, absence, participant IDs, request IDs, and completion markers.
+- `[MCM-WIRE]`
+- `[MCM-TRAJECTORY]`
+- `[MCM-FAILURE]`
+- `[MCM-STATE]`
+- `[MCM-CONFIG]`
+- `[MCM-NEGOTIATION]`
+- `[MCM-NEGOTIATION-RETRY]`
+- `[MCM-MERGE-TARGET]`
+- `[MCM-GAP-DIAG]`
+- `[MCM-EMERGENCY]`
+- `[MCM-LC-TRIGGER]`
+- `[MCM-LC-3VEH]`
+- `[MCM-LC-EXEC]`
+- `[MCM-BASELINE]`
+
+Exact total message counts are avoided where periodic transmission or retry scheduling can vary without changing the protocol outcome. Assertions prefer sequence evidence, identity, participant IDs, container type, state transitions, and required presence/absence.
 
 ## Temporary Outputs
 
-Each scenario run writes its combined stdout/stderr log and any OMNeT++ result
-files into a temporary `/tmp/mcm-regression-*` directory. Successful tests remove
-their temporary directory. If a run fails validation, the directory is preserved
-and the assertion error reports the log path.
+Each run creates a unique `/tmp/mcm-regression-*` directory. The harness routes the combined log, OMNeT++ results, SUMO trip information, and SUMO statistics into that directory.
 
-## Limitations
+Successful tests remove their temporary directory, leaving a previously clean checkout clean. Failed validation preserves the directory and includes the log path in the assertion error so diagnostic evidence remains available.
 
-These are smoke/regression tests for the supplied 19-CAV scenarios. They do not
-replace unit tests for malformed messages, arbitrary maps, empty trajectories,
-vehicle disappearance, or multi-seed statistical evaluation.
+## Coverage Boundaries
+
+The suite does not currently provide deterministic cases for ordinary timeout, final rejection, forced fallback, invalid NED configuration, pre-execution Cancel rollback, direct TraCI read/control failure, malformed messages, or arbitrary-map geometry. Those are documented coverage gaps, not claims about the behavior exercised by the five passing scenarios. Multi-seed statistical evaluation is also separate from this regression suite.

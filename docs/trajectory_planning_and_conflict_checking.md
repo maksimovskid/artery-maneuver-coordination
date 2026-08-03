@@ -4,7 +4,7 @@
 
 This document describes how trajectory reference paths, local planning horizons, MCM trajectory coordinates, lane-change approximations, and conflict checking work in the current maneuver-coordination implementation.
 
-The implementation deliberately uses several simulation-specific simplifications. These choices are part of the current prototype design and should not be treated as implementation bugs when they are used consistently inside the supplied scenarios.
+The implementation deliberately uses several simulation-specific simplifications. These choices are part of the current research design and should not be treated as implementation bugs when they are used consistently inside the supplied scenarios.
 
 This is not a general-purpose online global motion planner, arbitrary-map lane-geometry framework, or standards-oriented MCM coordinate encoder. The implementation is intended for the provided SUMO/OMNeT++ maneuver-coordination scenarios.
 
@@ -59,17 +59,19 @@ The implemented coordinate flow is:
 | Read current position | `TrajectoryGeneration.cc`, `calculateRefTrajectory`; `McService.cc`, ego-context update paths | `getPositionSumo()` | Current vehicle position | Global SUMO `x/y` | metres |
 | Match nearest point | `TrajectoryGeneration.cc`, `calc_nearest_index` | Current SUMO position and route reference path | Closest reference-path index | Global SUMO `x/y` comparison | metres |
 | Generate local horizon | `TrajectoryGeneration.cc`, `calculateRefTrajectory`, `calculateExecuteTrajectory`, `calculateSecondReqTraj` | Current state, speed profile, route reference path | `std::vector<TrajPointMCM>` | Global SUMO `x/y` | metres, seconds |
-| Select or queue maneuver trajectory | `McApplication.cc` | Ego trajectory, received snapshots, scenario state | Requested, offered, selected, or active trajectory | Global SUMO `x/y` | metres, seconds |
+| Select or queue maneuver trajectory | `McApplicationCvDecision.cc`, `McApplicationMerging.cc`, `McApplicationLaneChange.cc`, `McApplicationNegotiationCommon.cc` | Ego trajectory, received snapshots, scenario state | Requested, selected, or negotiated trajectory | Global SUMO `x/y` | metres, seconds |
 | Serialize MCM trajectory | `McService.cc`, `appendTrajectoryPoint` | `TrajPointMCM` | ASN.1 trajectory point fields | Rounded global SUMO `x/y` stored in delta-named fields | metres, centiseconds for time |
 | Decode received MCM trajectory | `McService.cc`, `extractTrajectory` | ASN.1 trajectory point fields | `TrajPointMCM` | Global SUMO `x/y` by convention | metres, seconds |
 | Check conflict | `TrajectoryConflict.cc` | Ego and received/generated trajectories | Conflict decision | Global SUMO `x/y` comparison | metres |
-| Scenario constants | `McScenarioConfig.cc` | Scenario geometry assumptions | Lane-shift and merge constants | Global SUMO `x/y` | metres |
+| Runtime scenario calibration | `McService.ned`, `McService.cc`, typed `McApplication` configuration | NED/`omnetpp.ini` route, lane, geometry, and control values | Validated merging/lane-change configuration | Global SUMO `x/y` where applicable | metres, seconds, indices |
 
 ## 5. Global Reference Path Versus Local Planning Horizon
 
 The full CSV coordinate sequence is the predefined global reference path. Only a finite subset of future points is used for a maneuver. This finite subset is the local planning horizon.
 
 Both the full reference path and the generated local planning horizon remain in the global SUMO coordinate frame. No global-to-ego-local coordinate transformation is performed before planning, MCM serialization, MCM decoding, or conflict checking.
+
+Application ownership is separate from coordinate representation. `mRvRequestedTrajectory` is the active Request proposal; `mRvNegotiatedTrajectory` is fixed after all required Accepts; `mCvSelectedTrajectory` is the pre-execution CV proposal; and `mCvNegotiatedTrajectory` is fixed when a valid Execute is received. The rolling `mEgoContext.plannedTrajectory` remains live intention-sharing data. Execution-container Execute messages carry no trajectory and do not replace the negotiated reference.
 
 Conceptually:
 
@@ -109,7 +111,7 @@ Lane-change trajectory points may be constructed by shifting the global `x` coor
 The current implementation uses two closely related values:
 
 * approximately `+3.0 m` is used for some planned/requested trajectory paths;
-* approximately `3.2 m` represents the measured lane width more accurately and is used by the execution movement over multiple simulation ticks.
+* `10` increments of `0.32 m` produce a `3.2 m` physical execution movement.
 
 This approximation works in the active highway lane-change scenario because:
 
