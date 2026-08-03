@@ -17,15 +17,8 @@ extern const char* const scHighwayMergingRouteId;
 // Physical speed-control calibration shared by the current validation scenarios.
 extern const double scNormalHighwaySpeed;
 
-// Generic execution-restoration safety calibration shared across maneuvers.
-extern const double scSafetyCriticalTimeGap;
-
 // Cooperation time-gap calibration shared by merging and lane-change planner paths.
 extern const double scMergingTimeGap;
-
-// Generic execution-restoration safety calibration.
-extern const double scExecutionRestoreMinFrontDistance;
-extern const double scExecutionRestoreMinTtc;
 
 // Request trajectory generation and local cache limits used by the validation
 // implementation. These are implementation/scenario controls and should move to

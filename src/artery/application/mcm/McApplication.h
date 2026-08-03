@@ -234,6 +234,12 @@ struct SafetyCriticalLaneChangeConfig {
     omnetpp::SimTime fallbackDecelerationTime = omnetpp::SimTime::ZERO;
 };
 
+struct ExecutionRestorationSafetyConfig {
+    double minFrontDistance = 0.0;
+    omnetpp::SimTime minTimeGap = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime minTtc = omnetpp::SimTime::ZERO;
+};
+
 struct PendingMcmCommand {
     enum class Kind {
         Negotiation,
@@ -275,6 +281,7 @@ public:
     void setMergingCoordinationConfig(const MergingCoordinationConfig&);
     void setMergingExecutionConfig(const MergingExecutionConfig&);
     void setSafetyCriticalLaneChangeConfig(const SafetyCriticalLaneChangeConfig&);
+    void setExecutionRestorationSafetyConfig(const ExecutionRestorationSafetyConfig&);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -452,6 +459,7 @@ private:
     MergingCoordinationConfig mMergingCoordinationConfig;
     MergingExecutionConfig mMergingExecutionConfig;
     SafetyCriticalLaneChangeConfig mSafetyCriticalLaneChangeConfig;
+    ExecutionRestorationSafetyConfig mExecutionRestorationSafetyConfig;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

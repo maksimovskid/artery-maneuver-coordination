@@ -132,6 +132,12 @@ void McApplication::setSafetyCriticalLaneChangeConfig(
     mSafetyCriticalLaneChangeConfig = config;
 }
 
+void McApplication::setExecutionRestorationSafetyConfig(
+    const ExecutionRestorationSafetyConfig& config)
+{
+    mExecutionRestorationSafetyConfig = config;
+}
+
 void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;

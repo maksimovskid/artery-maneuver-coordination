@@ -35,10 +35,7 @@ namespace mcm
 
 namespace
 {
-using scenario::scExecutionRestoreMinFrontDistance;
-using scenario::scExecutionRestoreMinTtc;
 using scenario::scNormalHighwaySpeed;
-using scenario::scSafetyCriticalTimeGap;
 
 } // namespace
 
@@ -101,8 +98,9 @@ bool McApplication::canRestoreNormalSpeedFromLeader(double desiredSpeed)
     // raising max speed is allowed only when the existing environment-model
     // leader is faster or far enough away. This avoids unsafe recovery surges.
     return frontInfo.speed >= desiredSpeed ||
-        (frontInfo.distance > scExecutionRestoreMinFrontDistance &&
-            timeGap >= scSafetyCriticalTimeGap && ttc >= scExecutionRestoreMinTtc);
+        (frontInfo.distance > mExecutionRestorationSafetyConfig.minFrontDistance &&
+            timeGap >= mExecutionRestorationSafetyConfig.minTimeGap.dbl() &&
+            ttc >= mExecutionRestorationSafetyConfig.minTtc.dbl());
 }
 
 /*

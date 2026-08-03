@@ -53,6 +53,11 @@ simple McService like ItsG5Service
         double laneChangeFallbackSpeed @unit(mps) = default(0.1mps);
         double laneChangeFallbackDecelerationTime @unit(s) = default(1.0s);
 
+        // Shared leader-aware normal-speed restoration after execution.
+        double executionRestoreMinFrontDistance @unit(m) = default(10.0m);
+        double executionRestoreMinTimeGap @unit(s) = default(1.0s);
+        double executionRestoreMinTtc @unit(s) = default(2.0s);
+
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate
         // behavior; the named policies will be implemented incrementally.

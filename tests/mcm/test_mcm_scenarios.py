@@ -276,6 +276,18 @@ class McScenarioTestCase(unittest.TestCase):
             fallbackDuration="1",
         )
 
+    def require_execution_restoration_config(
+        self, log: ParsedLog, *, station: str
+    ) -> None:
+        log.require(
+            "MCM-CONFIG",
+            type="execution-restoration",
+            station=station,
+            minFrontDistance="10",
+            minTimeGap="1",
+            minTtc="2",
+        )
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -353,6 +365,7 @@ class CoordinatedMergingTest(McScenarioTestCase):
 
             self.require_merging_coordination_config(log)
             self.require_merging_execution_config(log)
+            self.require_execution_restoration_config(log, station="29")
 
             for subtype in ("Request", "Offer", "Confirm", "Accept"):
                 self.require_negotiation_subtype(log, subtype)
@@ -415,6 +428,19 @@ class CoordinatedMergingTest(McScenarioTestCase):
                 maxSpeed="33.33",
                 speedMode="31",
             )
+            log.require(
+                "MCM-MERGE-CONTROL",
+                event="rv-speedmode-enabled-after-completion",
+                station="29",
+                speedMode="31",
+                normalSpeedEnabled="1",
+            )
+            log.require(
+                "MCM-CV-CONTROL",
+                event="restore-normal-speed",
+                role="CV",
+                reason="leader-condition-safe",
+            )
 
             log.require("MCM-GAP-DIAG", phase="execution-start", vehicleId="car_ml1_1")
             log.require("MCM-GAP-DIAG", summary="rv-completion", rvStation="29")
@@ -457,6 +483,7 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
 
             self.require_emergency_source_config(log, braking_only_baseline="0")
             self.require_lane_change_config(log)
+            self.require_execution_restoration_config(log, station="449")
             log.forbid("MCM-CONFIG", type="merging")
             log.forbid("MCM-CONFIG", type="merging-execution")
 
@@ -558,6 +585,7 @@ class EmergencyBaselineTest(McScenarioTestCase):
 
             self.require_emergency_source_config(log, braking_only_baseline="1")
             self.require_lane_change_config(log)
+            self.require_execution_restoration_config(log, station="449")
             log.forbid("MCM-CONFIG", type="merging")
             log.forbid("MCM-CONFIG", type="merging-execution")
 
@@ -587,6 +615,8 @@ class SecondRequestSmokeTest(McScenarioTestCase):
     def test_second_request_after_forced_reject(self) -> None:
         with self.run_checked_scenario("envmod-19CAVs-second-request-smoke") as run:
             log = run.parsed_log
+
+            self.require_execution_restoration_config(log, station="449")
 
             log.require("MCM-SECOND-REQUEST-SMOKE", event="force-first-cv-reject")
             reject = log.require(

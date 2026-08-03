@@ -1076,6 +1076,37 @@ void McService::initialize()
             << " fallbackDuration=" << laneChangeConfig.fallbackDecelerationTime.dbl()
             << '\n';
     }
+    mcm::ExecutionRestorationSafetyConfig restorationSafetyConfig;
+    restorationSafetyConfig.minFrontDistance =
+        par("executionRestoreMinFrontDistance").doubleValue();
+    const double restorationMinTimeGap = par("executionRestoreMinTimeGap").doubleValue();
+    const double restorationMinTtc = par("executionRestoreMinTtc").doubleValue();
+    if (!std::isfinite(restorationSafetyConfig.minFrontDistance) ||
+            !std::isfinite(restorationMinTimeGap) ||
+            !std::isfinite(restorationMinTtc)) {
+        throw cRuntimeError("execution restoration safety parameters must be finite");
+    }
+    if (restorationSafetyConfig.minFrontDistance < 0.0 ||
+            restorationMinTimeGap < 0.0 || restorationMinTtc < 0.0) {
+        throw cRuntimeError("execution restoration safety parameters must not be negative");
+    }
+    restorationSafetyConfig.minTimeGap = SimTime(restorationMinTimeGap);
+    restorationSafetyConfig.minTtc = SimTime(restorationMinTtc);
+    mApplication->setExecutionRestorationSafetyConfig(restorationSafetyConfig);
+    if (mVehicleController) {
+        const std::string routeId = mVehicleController->getRouteID();
+        if (routeId == mergingCoordinationConfig.requestingRouteId ||
+                routeId == laneChangeConfig.followerRouteId ||
+                routeId == laneChangeConfig.targetCvRouteId) {
+            EV_INFO << "[MCM-CONFIG]"
+                << " type=execution-restoration"
+                << " station=" << mVehicleDataProvider->station_id()
+                << " minFrontDistance=" << restorationSafetyConfig.minFrontDistance
+                << " minTimeGap=" << restorationSafetyConfig.minTimeGap.dbl()
+                << " minTtc=" << restorationSafetyConfig.minTtc.dbl()
+                << '\n';
+        }
+    }
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,
