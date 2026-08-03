@@ -596,7 +596,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mHasRvLastConfirmQueuedAt = false;
     mRvNegotiationStartedAt = now;
     mHasRvNegotiationStartedAt = true;
-    mRvNegotiationTimedOut = false;
+    mRvCoordinationFailed = false;
     mActiveNegotiatedTrajectory = laneChangeTrajectory;
     mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
@@ -807,9 +807,9 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
 }
 
 /*
- * Applies the high-priority fallback path when lane-change negotiation cannot
- * continue safely. It queues an emergency Abort, records fallback measurements,
- * restores pending-command state, and commands conservative braking.
+ * Applies the high-priority fallback path when coordination cannot continue
+ * safely. It commands conservative braking, clears pending coordination state,
+ * and records the second-request rejection measurement when applicable.
  */
 void McApplication::applyEmergencyFallbackBrake(
     const char* event,
@@ -871,7 +871,7 @@ void McApplication::applyEmergencyFallbackBrake(
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mRvNegotiationTimedOut = true;
+    mRvCoordinationFailed = true;
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;

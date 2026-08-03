@@ -866,7 +866,7 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     const uint32_t senderStationId = snapshot.stationId;
     bool fromTarget1 = false;
     bool fromTarget2 = false;
-    if (!markRvResponseFromExpectedCv(senderStationId, fromTarget1, fromTarget2)) {
+    if (!classifyExpectedRvResponseSender(senderStationId, fromTarget1, fromTarget2)) {
         return;
     }
 
@@ -1048,7 +1048,7 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     const uint32_t senderStationId = snapshot.stationId;
     bool fromTarget1 = false;
     bool fromTarget2 = false;
-    if (!markRvResponseFromExpectedCv(senderStationId, fromTarget1, fromTarget2)) {
+    if (!classifyExpectedRvResponseSender(senderStationId, fromTarget1, fromTarget2)) {
         return;
     }
 

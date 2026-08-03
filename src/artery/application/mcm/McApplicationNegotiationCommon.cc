@@ -76,10 +76,9 @@ bool McApplication::isSnapshotTargetingEgo(const McmSnapshot& snapshot) const
         (snapshot.hasNegotiationVehicleId2 && snapshot.negotiationVehicleId2 == egoStationId);
 }
 
-// RV-side duplicate-tolerant response marker. A response from each expected CV
-// is counted once; later retransmissions are ignored by the callers exactly as
-// before, so retry/timeout semantics remain unchanged.
-bool McApplication::markRvResponseFromExpectedCv(
+// Classifies whether an RV response sender is the first or second expected CV.
+// Callers retain responsibility for recording responses and ignoring duplicates.
+bool McApplication::classifyExpectedRvResponseSender(
     uint32_t senderStationId,
     bool& fromTarget1,
     bool& fromTarget2) const

@@ -361,9 +361,8 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
         return;
     }
 
-    // Safety-critical lane-change execution is a scenario-specific
-    // positive-X shift: 3.2 m lane width over 10 ticks, so 0.32 m each step.
-    // The longitudinal step follows the scenario's y -= speed / 10 pattern.
+    // Apply the configured lane-change displacement incrementally. This physical
+    // execution calibration is intentionally separate from the planned shift.
     const double targetX = currentX + scLaneChangeExecutionLateralShiftPerStep;
     const double targetY = currentY - currentSpeed / scLaneChangeExecutionStepCount;
 
@@ -559,7 +558,8 @@ void McApplication::applyCvLaneChangeControl()
     }
 
     // Lateral control transitions ChangeLane to LaneChangeExecution and
-    // uses a 10-step moveToXY loop based on live TraCI lane/position/speed.
+    // uses the configured incremental moveToXY execution based on live TraCI
+    // lane, position, and speed.
     // Keep this milestone state-only until the lane target and step counter are
     // represented explicitly in McApplication.
     EV_INFO << "McApplication CV lane-change control not applied yet"

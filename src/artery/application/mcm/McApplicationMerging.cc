@@ -291,7 +291,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     // a fixed vehicle-ID mapping.
     if (!mHasEgoContext || !mVehicleDataProvider || !mVehicleController ||
             mPendingMcmCommand || mMergingRequestQueuedOrSent ||
-            mRvNegotiationTimedOut) {
+            mRvCoordinationFailed) {
         return;
     }
 

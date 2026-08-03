@@ -151,7 +151,7 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mRvNegotiationTimedOut = true;
+    mRvCoordinationFailed = true;
 
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;

@@ -319,7 +319,7 @@ private:
     bool isNegotiationMessageForActiveRequest(const McmSnapshot&, mcmSubtype, uint8_t requestId) const;
     bool isExecuteEvidenceForActiveRvRequest(const McmSnapshot&) const;
     bool isSnapshotTargetingEgo(const McmSnapshot&) const;
-    bool markRvResponseFromExpectedCv(uint32_t senderStationId, bool& fromTarget1, bool& fromTarget2) const;
+    bool classifyExpectedRvResponseSender(uint32_t senderStationId, bool& fromTarget1, bool& fromTarget2) const;
     PendingMcmCommand makeRvFollowupCommand(mcmSubtype, long cooperationType = 0) const;
     PendingMcmCommand makeCvAcceptCommand(const McmSnapshot&) const;
     void resetRvCoordinationStateAfterComplete();
@@ -405,7 +405,7 @@ private:
     bool mHasRvLastConfirmQueuedAt = false;
     omnetpp::SimTime mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     bool mHasRvNegotiationStartedAt = false;
-    bool mRvNegotiationTimedOut = false;
+    bool mRvCoordinationFailed = false;
 
     // RV-side state for final Accept responses after Confirm.
     bool mRvAcceptReceived1 = false;
