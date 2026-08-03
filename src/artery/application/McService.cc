@@ -267,6 +267,36 @@ const char* mcmSubtypeName(mcm::mcmSubtype subtype)
     }
 }
 
+const char* mcmCategoryName(long category)
+{
+    switch (category) {
+        case McmCategory_request: return "Request";
+        case McmCategory_accept: return "Accept";
+        case McmCategory_reject: return "Reject";
+        case McmCategory_offer: return "Offer";
+        case McmCategory_confirm: return "Confirm";
+        case McmCategory_execute: return "Execute";
+        case McmCategory_cancel: return "Cancel";
+        case McmCategory_abort: return "Abort";
+        case McmCategory_cascadingRequest: return "CascadingRequest";
+        case McmCategory_cascadingAccept: return "CascadingAccept";
+        case McmCategory_cascadingReject: return "CascadingReject";
+        case McmCategory_cascadingExecute: return "CascadingExecute";
+        default: return "Unknown";
+    }
+}
+
+const char* asnPriorityName(long priority)
+{
+    switch (priority) {
+        case PriorityManeuver_low: return "LowPriority";
+        case PriorityManeuver_medium: return "MediumPriority";
+        case PriorityManeuver_high: return "HighPriority";
+        case PriorityManeuver_emergency: return "EmergencyPriority";
+        default: return "Unknown";
+    }
+}
+
 struct McmOperationMetadata {
     mcm::operationMode operationMode = mcm::operationMode::Unknown;
     bool hasNegotiationContainer = false;
@@ -1290,6 +1320,26 @@ void McService::sendMcm(const SimTime& T_now)
     McObject obj(std::move(mcmMessage));
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
+    if (command) {
+        const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+        EV_INFO << "[MCM-WIRE]"
+            << " direction=sent"
+            << " station=" << message.header.stationID
+            << " subtype=" << mcmCategoryName(metadata.mcmCategory)
+            << " kind=" << (command->kind == mcm::PendingMcmCommand::Kind::Negotiation ?
+                    "Negotiation" : "Execution")
+            << " container=" << (metadata.hasNegotiationContainer ? "Negotiation" : "Execution")
+            << " requestId=" << metadata.requestId
+            << " cooperationId=" << metadata.cooperationId
+            << " target1=" << (metadata.hasNegotiationContainer ?
+                    metadata.negotiationVehicleId1 : metadata.cooperationVehicleId1)
+            << " target2=" << (metadata.hasNegotiationContainer ?
+                    metadata.negotiationVehicleId2 : metadata.cooperationVehicleId2)
+            << " hasTarget2=" << (metadata.hasNegotiationContainer ?
+                    metadata.hasNegotiationVehicleId2 : metadata.hasCooperationVehicleId2)
+            << " priority=" << asnPriorityName(metadata.priorityManeuver)
+            << '\n';
+    }
     const mcm::operationMode modeBeforeHandleSent = mApplication->currentOperationMode();
     emitSentMeasurements(message, modeBeforeHandleSent);
     mApplication->handleSentMcm(makeSentMcm(message, T_now));
@@ -1682,7 +1732,28 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             EV_WARN << "McService receive: LocalDynamicMapMCM unavailable; validated MCM awareness not stored\n";
         }
 
-        mApplication->handleReceivedMcm(makeReceivedMcm(message, simTime()));
+        const mcm::ReceivedMcm received = makeReceivedMcm(message, simTime());
+        const mcm::McmSnapshot& snapshot = received.data;
+        if (snapshot.mcmCategory == McmCategory_execute) {
+            EV_INFO << "[MCM-WIRE]"
+                << " direction=received"
+                << " station=" << mVehicleDataProvider->station_id()
+                << " sender=" << snapshot.stationId
+                << " subtype=" << mcmCategoryName(snapshot.mcmCategory)
+                << " kind=" << (snapshot.hasNegotiationContainer ? "Negotiation" : "Execution")
+                << " container=" << (snapshot.hasNegotiationContainer ? "Negotiation" : "Execution")
+                << " requestId=" << snapshot.requestId
+                << " cooperationId=" << snapshot.cooperationId
+                << " target1=" << (snapshot.hasNegotiationContainer ?
+                        snapshot.negotiationVehicleId1 : snapshot.cooperationVehicleId1)
+                << " target2=" << (snapshot.hasNegotiationContainer ?
+                        snapshot.negotiationVehicleId2 : snapshot.cooperationVehicleId2)
+                << " hasTarget2=" << (snapshot.hasNegotiationContainer ?
+                        snapshot.hasNegotiationVehicleId2 : snapshot.hasCooperationVehicleId2)
+                << " priority=" << asnPriorityName(snapshot.priorityManeuver)
+                << '\n';
+        }
+        mApplication->handleReceivedMcm(received);
         emitPlannerMeasurements(mApplication->consumePlannerMeasurements());
         if (auto completedRequestId = mApplication->consumeCompletedRvNegotiationRequestId()) {
             const long completedKey = static_cast<long>(*completedRequestId);

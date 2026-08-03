@@ -30,6 +30,86 @@ class McScenarioTestCase(unittest.TestCase):
         for subtype in subtypes:
             log.forbid("MCM-NEGOTIATION", msg=subtype)
 
+    def require_execute_wire_baseline(
+        self,
+        log: ParsedLog,
+        *,
+        station: str,
+        request_id: str,
+        target1: str,
+        target2: str,
+    ) -> None:
+        expected = {
+            "station": station,
+            "subtype": "Execute",
+            "kind": "Negotiation",
+            "container": "Negotiation",
+            "requestId": request_id,
+            "target1": target1,
+            "target2": target2,
+        }
+        log.require("MCM-WIRE", direction="queued", origin="initial-execute", **expected)
+        sent = log.find("MCM-WIRE", direction="sent", **expected)
+        self.assertGreaterEqual(
+            len(sent),
+            2,
+            "expected the initial and at least one repeated negotiation-container Execute",
+        )
+        log.require("MCM-WIRE", direction="queued", origin="repeated-execute", **expected)
+
+    def require_cv_execution_armed(
+        self,
+        log: ParsedLog,
+        *,
+        station: str,
+        sender: str,
+        request_id: str,
+    ) -> None:
+        log.require(
+            "MCM-WIRE",
+            direction="received",
+            event="execute-guard",
+            station=station,
+            sender=sender,
+            subtype="Execute",
+            container="Negotiation",
+            requestId=request_id,
+            result="pass",
+        )
+        log.require(
+            "MCM-WIRE",
+            direction="received",
+            event="cv-execution-armed",
+            station=station,
+            sender=sender,
+            subtype="Execute",
+            container="Negotiation",
+            requestId=request_id,
+            mode="ManeuverExecutionMode",
+        )
+
+    def require_completion_cancel_workaround(self, log: ParsedLog, request_id: str) -> None:
+        queued = log.require(
+            "MCM-WIRE",
+            direction="queued",
+            subtype="Cancel",
+            kind="Negotiation",
+            container="Negotiation",
+            origin="completion-workaround",
+            requestId=request_id,
+        )
+        log.require(
+            "MCM-WIRE",
+            direction="sent",
+            station=queued.fields["station"],
+            subtype="Cancel",
+            kind="Negotiation",
+            container="Negotiation",
+            requestId=request_id,
+            target1=queued.fields["target1"],
+            target2=queued.fields["target2"],
+        )
+
 
 class CoordinatedMergingTest(McScenarioTestCase):
     def test_coordinated_merging_protocol_and_completion(self) -> None:
@@ -52,6 +132,24 @@ class CoordinatedMergingTest(McScenarioTestCase):
                 target2="309",
             )
             self.assertEqual(request.fields.get("priority"), "MediumPriority")
+            request_id = request.fields["requestId"]
+
+            self.require_execute_wire_baseline(
+                log,
+                station="29",
+                request_id=request_id,
+                target1="169",
+                target2="309",
+            )
+            self.require_cv_execution_armed(
+                log, station="169", sender="29", request_id=request_id
+            )
+            self.require_cv_execution_armed(
+                log, station="309", sender="29", request_id=request_id
+            )
+            # Temporary baseline characterization: successful completion is
+            # still represented as negotiation-container Cancel.
+            self.require_completion_cancel_workaround(log, request_id)
 
             log.require("MCM-GAP-DIAG", phase="execution-start", vehicleId="car_ml1_1")
             log.require("MCM-GAP-DIAG", summary="rv-completion", rvStation="29")
@@ -102,6 +200,16 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 event="sent-emergency-execution-mcm",
                 vehicleId="car_hl0_Emergency",
             )
+            emergency_abort = log.require(
+                "MCM-WIRE",
+                direction="sent",
+                subtype="Abort",
+                kind="Execution",
+                container="Execution",
+                priority="EmergencyPriority",
+            )
+            self.assertNotEqual(emergency_abort.fields.get("cooperationId"), "-1")
+            self.assertNotEqual(emergency_abort.fields.get("target1"), "0")
             log.require(
                 "MCM-LC-TRIGGER",
                 event="safety-critical-trigger-armed",
@@ -129,7 +237,23 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 self.require_negotiation_subtype(log, subtype)
 
             log.require("MCM-LC-3VEH", event="queued-execute-after-all-accepts", requestId=request_id)
+            self.require_execute_wire_baseline(
+                log,
+                station="449",
+                request_id=request_id,
+                target1="309",
+                target2="589",
+            )
+            self.require_cv_execution_armed(
+                log, station="309", sender="449", request_id=request_id
+            )
+            self.require_cv_execution_armed(
+                log, station="589", sender="449", request_id=request_id
+            )
             log.require("MCM-LC-EXEC", event="lane-change-execution-complete", requestId=request_id)
+            # Temporary baseline characterization: successful completion is
+            # still represented as negotiation-container Cancel.
+            self.require_completion_cancel_workaround(log, request_id)
             log.forbid("MCM-LC-FAILSAFE")
             self.report_run(run)
 
@@ -207,6 +331,13 @@ class SecondRequestSmokeTest(McScenarioTestCase):
                 "MCM-LC-3VEH",
                 event="queued-execute-after-all-accepts",
                 requestId=second_request_id,
+            )
+            self.require_execute_wire_baseline(
+                log,
+                station="449",
+                request_id=second_request_id,
+                target1=queued.fields["targetCv1"],
+                target2=queued.fields["targetCv2"],
             )
 
             all_request_ids = request_ids(log.find("MCM-NEGOTIATION", msg="Request"))

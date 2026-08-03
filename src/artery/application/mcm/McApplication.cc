@@ -1105,6 +1105,19 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
 
     mPendingMcmCommand = command;
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=queued"
+        << " station=" << mEgoContext.stationId
+        << " subtype=Execute"
+        << " kind=Negotiation"
+        << " container=Negotiation"
+        << " origin=initial-execute"
+        << " requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " hasTarget2=" << command.hasTargetVehicle2
+        << " priority=" << priorityName(static_cast<long>(command.priority))
+        << '\n';
     if (!mRvNegotiationCompletionReported) {
         mCompletedRvNegotiationRequestId = command.requestId;
         mRvNegotiationCompletionReported = true;
@@ -1381,9 +1394,33 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     }
 
     const auto& snapshot = received.data;
-    if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Execute, mCvRequestId) ||
-            snapshot.stationId != mCvRvStationId ||
-            !isSnapshotTargetingEgo(snapshot)) {
+    const bool activeRequestMatches =
+        isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Execute, mCvRequestId);
+    if (!activeRequestMatches && snapshot.mcmCategory != static_cast<long>(mcmSubtype::Execute)) {
+        return;
+    }
+
+    const bool senderMatches = snapshot.stationId == mCvRvStationId;
+    const bool participantMatches = isSnapshotTargetingEgo(snapshot);
+    const bool guardsPassed = activeRequestMatches && senderMatches && participantMatches;
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=received"
+        << " event=execute-guard"
+        << " station=" << mEgoContext.stationId
+        << " sender=" << snapshot.stationId
+        << " subtype=Execute"
+        << " container=" << (snapshot.hasNegotiationContainer ? "Negotiation" :
+                (snapshot.hasExecutionContainer ? "Execution" : "None"))
+        << " requestId=" << snapshot.requestId
+        << " cooperationId=" << snapshot.cooperationId
+        << " target1=" << snapshot.negotiationVehicleId1
+        << " target2=" << snapshot.negotiationVehicleId2
+        << " activeRequestMatch=" << activeRequestMatches
+        << " senderMatch=" << senderMatches
+        << " participantMatch=" << participantMatches
+        << " result=" << (guardsPassed ? "pass" : "reject")
+        << '\n';
+    if (!guardsPassed) {
         return;
     }
 
@@ -1392,6 +1429,19 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     mMcmSubtype = mcmSubtype::Execute;
     mOperationMode = operationMode::ManeuverExecutionMode;
     mCoordinationProgressCV = coordinationProgressCV::SendExecuteCV;
+
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=received"
+        << " event=cv-execution-armed"
+        << " station=" << egoStationId
+        << " sender=" << snapshot.stationId
+        << " subtype=Execute"
+        << " container=Negotiation"
+        << " requestId=" << snapshot.requestId
+        << " target1=" << snapshot.negotiationVehicleId1
+        << " target2=" << snapshot.negotiationVehicleId2
+        << " mode=ManeuverExecutionMode"
+        << '\n';
 
     if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
         EV_INFO << "[MCM-LC-STATE]"

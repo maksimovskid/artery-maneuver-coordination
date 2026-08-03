@@ -60,6 +60,19 @@ void McApplication::queueRepeatedExecute()
     command.requestedTrajectory = mEgoContext.plannedTrajectory;
 
     mPendingMcmCommand = command;
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=queued"
+        << " station=" << mEgoContext.stationId
+        << " subtype=Execute"
+        << " kind=Negotiation"
+        << " container=Negotiation"
+        << " origin=repeated-execute"
+        << " requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " hasTarget2=" << command.hasTargetVehicle2
+        << " priority=" << priorityName(static_cast<long>(command.priority))
+        << '\n';
     mLastExecuteQueuedAt = mEgoContext.now;
     mHasLastExecuteQueuedAt = true;
 
@@ -114,6 +127,19 @@ void McApplication::evaluateRvExecutionProgress()
     command.requestedTrajectory = mEgoContext.plannedTrajectory;
 
     mPendingMcmCommand = command;
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=queued"
+        << " station=" << mEgoContext.stationId
+        << " subtype=Cancel"
+        << " kind=Negotiation"
+        << " container=Negotiation"
+        << " origin=completion-workaround"
+        << " requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " hasTarget2=" << command.hasTargetVehicle2
+        << " priority=" << priorityName(static_cast<long>(command.priority))
+        << '\n';
     mMcmSubtype = mcmSubtype::Cancel;
     mCoordinationProgressRV = coordinationProgressRV::SendComplete;
     sampleMergingGapDiagnostics("rv-completion-queued");
@@ -172,6 +198,19 @@ void McApplication::evaluateCvExecutionProgress()
     command.requestedTrajectory = mEgoContext.plannedTrajectory;
 
     mPendingMcmCommand = command;
+    EV_INFO << "[MCM-WIRE]"
+        << " direction=queued"
+        << " station=" << mEgoContext.stationId
+        << " subtype=Cancel"
+        << " kind=Negotiation"
+        << " container=Negotiation"
+        << " origin=completion-workaround"
+        << " requestId=" << static_cast<int>(command.requestId)
+        << " target1=" << command.targetVehicle1
+        << " target2=" << command.targetVehicle2
+        << " hasTarget2=" << command.hasTargetVehicle2
+        << " priority=" << priorityName(static_cast<long>(command.priority))
+        << '\n';
     mMcmSubtype = mcmSubtype::Cancel;
     mCoordinationProgressCV = coordinationProgressCV::SendCompleteCV;
 
