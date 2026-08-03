@@ -109,7 +109,7 @@ void TrajectoryPlanner::initialize(const traci::VehicleController* mvc, const Ve
 };
 
 // Function to iterate over different parameters and find a suitable trajectory
-TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajectoryCV(
+TrajectoryPlanner::CvTrajectoryDecisionResult TrajectoryPlanner::findSuitableTrajectoryCV(
 	Trajectory receivedReqTraj,
 	int priority,
 	bool mergingReqTraj,
@@ -1069,7 +1069,14 @@ TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::findSuitableTrajec
 			typeOfTrajectory);
 	}
 
-	return std::make_tuple(trajectory_found, finalTrajectory, plannedTrajValues, foundTrajectoryCost, typeOfTrajectory, possiblePriorityLevelForAccept);
+	CvTrajectoryDecisionResult result;
+	result.found = trajectory_found;
+	result.trajectory = finalTrajectory;
+	result.plannedValues = plannedTrajValues;
+	result.cooperationCost = foundTrajectoryCost;
+	result.trajectoryType = typeOfTrajectory;
+	result.possiblePriorityLevel = possiblePriorityLevelForAccept;
+	return result;
 }		
 
 double TrajectoryPlanner::calculateTrajectoryCost(PlannedTrajValues plannedTrajValues, bool isRouteAffected)
@@ -1100,7 +1107,7 @@ double TrajectoryPlanner::calculateTrajectoryCost(PlannedTrajValues plannedTrajV
 	return trajectoryCost;
 }
 
-TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequestTrajRV(
+TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequestTrajRV(
 	Trajectory estimatedOtherTraj,
 	int requestPriority,
 	int steps,
@@ -1388,7 +1395,13 @@ TrajectoryPlanner::TupleSecondRequestTrajRv TrajectoryPlanner::findSecondRequest
 			<< std::endl;
 	}
 
-	return std::make_tuple(trajectory_found, finalTrajectory, plannedTrajValues, foundTrajectoryCost, typeOfTrajectory);
+	SecondRequestPlanningResult result;
+	result.found = trajectory_found;
+	result.trajectory = finalTrajectory;
+	result.plannedValues = plannedTrajValues;
+	result.trajectoryCost = foundTrajectoryCost;
+	result.trajectoryType = typeOfTrajectory;
+	return result;
 }
 
 TrajectoryPlanner::TupleSuitableTrajectory TrajectoryPlanner::newPlannedTrajRV(

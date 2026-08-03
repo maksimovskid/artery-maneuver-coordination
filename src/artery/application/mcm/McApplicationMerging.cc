@@ -204,7 +204,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         laneChangePossible,
         routeAffected);
 
-    const bool foundSuitableTrajectory = std::get<0>(result);
+    const bool foundSuitableTrajectory = result.found;
     if (!foundSuitableTrajectory) {
         EV_INFO << "McApplication CV station " << mEgoContext.stationId
             << " classified merging control maneuver: DoNothing"
@@ -216,11 +216,11 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         return;
     }
 
-    const auto& selectedTrajectory = std::get<1>(result);
-    const PlannedTrajValues& plannedValues = std::get<2>(result);
-    const double trajectoryCost = std::get<3>(result);
-    const int trajectoryType = std::get<4>(result);
-    const int possiblePriorityLevel = std::get<5>(result);
+    const auto& selectedTrajectory = result.trajectory;
+    const PlannedTrajValues& plannedValues = result.plannedValues;
+    const double trajectoryCost = result.cooperationCost;
+    const int trajectoryType = result.trajectoryType;
+    const int possiblePriorityLevel = result.possiblePriorityLevel;
     recordCvPlannerEvaluation(trajectoryCost, trajectoryType, possiblePriorityLevel);
 
     if (plannedValues.lane_change) {

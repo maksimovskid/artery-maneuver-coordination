@@ -185,12 +185,12 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
             laneChangePossible,
             routeAffected);
 
-        decision.feasible = std::get<0>(result);
-        decision.selectedTrajectory = std::get<1>(result);
-        decision.plannedValues = std::get<2>(result);
-        decision.cooperationCost = std::get<3>(result);
-        decision.trajectoryType = std::get<4>(result);
-        decision.possiblePriorityLevel = std::get<5>(result);
+        decision.feasible = result.found;
+        decision.selectedTrajectory = result.trajectory;
+        decision.plannedValues = result.plannedValues;
+        decision.cooperationCost = result.cooperationCost;
+        decision.trajectoryType = result.trajectoryType;
+        decision.possiblePriorityLevel = result.possiblePriorityLevel;
         decision.responseSubtype = snapshot.numberOfVehicles > 1 ? mcmSubtype::Offer : mcmSubtype::Accept;
 
         if (decision.plannedValues.lane_change) {

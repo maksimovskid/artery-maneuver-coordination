@@ -64,7 +64,23 @@ public:
 	using Vec_f = std::vector<float>;
 
 	using TupleSuitableTrajectory = std::tuple<bool, Trajectory, PlannedTrajValues, double, int, int>;
-	using TupleSecondRequestTrajRv = std::tuple<bool, Trajectory, PlannedTrajValues, double, int>;
+
+	struct CvTrajectoryDecisionResult {
+		bool found = false;
+		Trajectory trajectory;
+		PlannedTrajValues plannedValues {};
+		double cooperationCost = 0.0;
+		int trajectoryType = 0;
+		int possiblePriorityLevel = 10;
+	};
+
+	struct SecondRequestPlanningResult {
+		bool found = false;
+		Trajectory trajectory;
+		PlannedTrajValues plannedValues {};
+		double trajectoryCost = 0.0;
+		int trajectoryType = 0;
+	};
 
 	TrajPointMCM getPoint(TrajPointMCM calculatedPoint) const;
 
@@ -84,7 +100,7 @@ public:
 
 	FrontVehicleInfo getFrontVehicleInfo();
 
-	TupleSuitableTrajectory findSuitableTrajectoryCV(Trajectory received_ReqTraj, int receivedPriority, bool mergingReqTraj, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired, bool isLaneChangePossible, bool isRouteAffected);
+	CvTrajectoryDecisionResult findSuitableTrajectoryCV(Trajectory received_ReqTraj, int receivedPriority, bool mergingReqTraj, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired, bool isLaneChangePossible, bool isRouteAffected);
 
 	double calculateTrajectoryCost(PlannedTrajValues plannedValues, bool isRouteAffected);
 
@@ -96,7 +112,7 @@ public:
 	
 	int findIndexTrajsConflictFree(Trajectory traj_ego, Trajectory traj_other, float time_gap, const Vec_f& cx, const Vec_f& cy, int pind);
 
-    TupleSecondRequestTrajRv findSecondRequestTrajRV(Trajectory estimatedOtherTraj, int requestPriority, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired);
+    SecondRequestPlanningResult findSecondRequestTrajRV(Trajectory estimatedOtherTraj, int requestPriority, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired);
 	
     Trajectory calculateSecondReqTraj(int steps, double dt, const Vec_f& cx, const Vec_f& cy, int target_ind, bool constantVelocity, float targetSpeed, float acceleration, float deceleration, int indexToChangeLane);
 	

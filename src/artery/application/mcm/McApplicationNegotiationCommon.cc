@@ -328,8 +328,8 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
         decelerationRequired,
         accelerationRequired);
 
-    const bool foundTrajectory = std::get<0>(result);
-    const auto& secondRequestTrajectory = std::get<1>(result);
+    const bool foundTrajectory = result.found;
+    const auto& secondRequestTrajectory = result.trajectory;
     if (secondRequestTrajectory.empty()) {
         return std::nullopt;
     }
@@ -350,7 +350,7 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
     command.targetVehicle2 = mRvTargetVehicle2;
     command.requestedTrajectory = secondRequestTrajectory;
     command.hasTrajectoryCostRv = true;
-    command.trajectoryCostRv = std::get<3>(result);
+    command.trajectoryCostRv = result.trajectoryCost;
 
     EV_INFO << "[MCM-LC-STATE]"
         << " simTime=" << mEgoContext.now
@@ -365,8 +365,8 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
         << " targetCv2=" << command.targetVehicle2
         << " numberOfVehicles=" << static_cast<int>(command.numberOfVehicles)
         << " trajectoryFound=" << foundTrajectory
-        << " trajectoryCostRv=" << std::get<3>(result)
-        << " trajectoryTypeRv=" << std::get<4>(result)
+        << " trajectoryCostRv=" << result.trajectoryCost
+        << " trajectoryTypeRv=" << result.trajectoryType
         << " requestedTrajectoryPoints=" << command.requestedTrajectory.size()
         << '\n';
 
