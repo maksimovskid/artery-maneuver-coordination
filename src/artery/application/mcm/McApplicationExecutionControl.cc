@@ -1,6 +1,7 @@
 #include "artery/application/mcm/McApplication.h"
 
 #include "artery/application/mcm/McScenarioConfig.h"
+#include "artery/application/mcm/McmEnumUtils.h"
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
@@ -40,36 +41,6 @@ using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scSafetyCriticalTimeGap;
 using scenario::scTargetLaneChangeRouteId;
 
-const char* priorityName(long priority)
-{
-    if (priority == static_cast<long>(priorityMcmCategory::LowPriority)) {
-        return "LowPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::MediumPriority)) {
-        return "MediumPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::HighPriority)) {
-        return "HighPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::EmergencyPriority)) {
-        return "EmergencyPriority";
-    }
-    return "NoPriority";
-}
-
-const char* controlManeuverName(controlManeuver maneuver)
-{
-    switch (maneuver) {
-        case controlManeuver::Decelerate: return "Decelerate";
-        case controlManeuver::Accelerate: return "Accelerate";
-        case controlManeuver::ChangeLane: return "ChangeLane";
-        case controlManeuver::LaneChangeExecution: return "LaneChangeExecution";
-        case controlManeuver::EmergencyDeceleration: return "EmergencyDeceleration";
-        case controlManeuver::DoNothing:
-        default:
-            return "DoNothing";
-    }
-}
 } // namespace
 
 void McApplication::applyRvExecutionControl()

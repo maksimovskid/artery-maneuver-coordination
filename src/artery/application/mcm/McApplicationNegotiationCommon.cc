@@ -2,6 +2,7 @@
 
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McScenarioConfig.h"
+#include "artery/application/mcm/McmEnumUtils.h"
 #include "artery/traci/VehicleController.h"
 
 #include <algorithm>
@@ -30,18 +31,6 @@ namespace
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
 
-int priorityLevel(priorityMcmCategory priority)
-{
-    switch (priority) {
-        case priorityMcmCategory::LowPriority: return 0;
-        case priorityMcmCategory::MediumPriority: return 1;
-        case priorityMcmCategory::HighPriority: return 2;
-        case priorityMcmCategory::EmergencyPriority: return 3;
-        case priorityMcmCategory::NoPriority: return -1;
-    }
-
-    return -1;
-}
 } // namespace
 
 // Shared message guard used by RV and CV handlers. It preserves retry

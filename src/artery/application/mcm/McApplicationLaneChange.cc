@@ -2,6 +2,7 @@
 
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McScenarioConfig.h"
+#include "artery/application/mcm/McmEnumUtils.h"
 #include "artery/traci/VehicleController.h"
 
 #include <boost/units/systems/si/velocity.hpp>
@@ -62,19 +63,6 @@ bool isSafetyCriticalLaneChangeScenarioVehicle(const std::string& vehicleId)
         vehicleId == "car_hl2_6";
 }
 
-const char* controlManeuverName(controlManeuver maneuver)
-{
-    switch (maneuver) {
-        case controlManeuver::Decelerate: return "Decelerate";
-        case controlManeuver::Accelerate: return "Accelerate";
-        case controlManeuver::ChangeLane: return "ChangeLane";
-        case controlManeuver::LaneChangeExecution: return "LaneChangeExecution";
-        case controlManeuver::EmergencyDeceleration: return "EmergencyDeceleration";
-        case controlManeuver::DoNothing:
-        default:
-            return "DoNothing";
-    }
-}
 } // namespace
 
 /*

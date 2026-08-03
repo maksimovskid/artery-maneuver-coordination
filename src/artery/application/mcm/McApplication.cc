@@ -2,6 +2,7 @@
 
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McScenarioConfig.h"
+#include "artery/application/mcm/McmEnumUtils.h"
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
@@ -94,60 +95,6 @@ bool isNegotiationTraceMessage(long subtype)
         subtype == static_cast<long>(mcmSubtype::Confirm) ||
         subtype == static_cast<long>(mcmSubtype::Accept) ||
         subtype == static_cast<long>(mcmSubtype::Reject);
-}
-
-const char* priorityName(long priority)
-{
-    if (priority == static_cast<long>(priorityMcmCategory::LowPriority)) {
-        return "LowPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::MediumPriority)) {
-        return "MediumPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::HighPriority)) {
-        return "HighPriority";
-    }
-    if (priority == static_cast<long>(priorityMcmCategory::EmergencyPriority)) {
-        return "EmergencyPriority";
-    }
-    return "NoPriority";
-}
-
-const char* operationModeName(operationMode mode)
-{
-    switch (mode) {
-        case operationMode::IntentionSharingMode: return "IntentionSharingMode";
-        case operationMode::ManeuverNegotiationMode: return "ManeuverNegotiationMode";
-        case operationMode::ManeuverExecutionMode: return "ManeuverExecutionMode";
-        default: return "Unknown";
-    }
-}
-
-const char* controlManeuverName(controlManeuver maneuver)
-{
-    switch (maneuver) {
-        case controlManeuver::Decelerate: return "Decelerate";
-        case controlManeuver::Accelerate: return "Accelerate";
-        case controlManeuver::ChangeLane: return "ChangeLane";
-        case controlManeuver::LaneChangeExecution: return "LaneChangeExecution";
-        case controlManeuver::EmergencyDeceleration: return "EmergencyDeceleration";
-        case controlManeuver::DoNothing:
-        default:
-            return "DoNothing";
-    }
-}
-
-double costThresholdForPriority(priorityMcmCategory priority)
-{
-    switch (priority) {
-        case priorityMcmCategory::LowPriority: return 0.20;
-        case priorityMcmCategory::MediumPriority: return 0.40;
-        case priorityMcmCategory::HighPriority: return 0.60;
-        case priorityMcmCategory::EmergencyPriority: return 0.80;
-        case priorityMcmCategory::NoPriority: return 0.0;
-    }
-
-    return 0.0;
 }
 
 }

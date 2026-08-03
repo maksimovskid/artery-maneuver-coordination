@@ -2,6 +2,7 @@
 
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McScenarioConfig.h"
+#include "artery/application/mcm/McmEnumUtils.h"
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
@@ -45,16 +46,6 @@ using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
 using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scTargetLaneChangeRouteId;
-
-const char* operationModeName(operationMode mode)
-{
-    switch (mode) {
-        case operationMode::IntentionSharingMode: return "IntentionSharingMode";
-        case operationMode::ManeuverNegotiationMode: return "ManeuverNegotiationMode";
-        case operationMode::ManeuverExecutionMode: return "ManeuverExecutionMode";
-        default: return "Unknown";
-    }
-}
 
 bool isHighwayMergingCvRoute(const std::string& routeId)
 {
@@ -119,32 +110,6 @@ MergeTargetSelection selectMergeGapTargets(std::vector<MergeTargetCandidate> can
     return selection;
 }
 
-const char* controlManeuverName(controlManeuver maneuver)
-{
-    switch (maneuver) {
-        case controlManeuver::Decelerate: return "Decelerate";
-        case controlManeuver::Accelerate: return "Accelerate";
-        case controlManeuver::ChangeLane: return "ChangeLane";
-        case controlManeuver::LaneChangeExecution: return "LaneChangeExecution";
-        case controlManeuver::EmergencyDeceleration: return "EmergencyDeceleration";
-        case controlManeuver::DoNothing:
-        default:
-            return "DoNothing";
-    }
-}
-
-int priorityLevel(priorityMcmCategory priority)
-{
-    switch (priority) {
-        case priorityMcmCategory::LowPriority: return 0;
-        case priorityMcmCategory::MediumPriority: return 1;
-        case priorityMcmCategory::HighPriority: return 2;
-        case priorityMcmCategory::EmergencyPriority: return 3;
-        case priorityMcmCategory::NoPriority: return -1;
-    }
-
-    return -1;
-}
 }
 
 /*
