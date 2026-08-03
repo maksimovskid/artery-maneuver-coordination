@@ -1513,9 +1513,9 @@ void McService::sendMcm(const SimTime& T_now)
         generatedPriority = command->priority;
         addManeuverExecutionContainer(mcmMessage, *mVehicleDataProvider, *command);
         // The generated MCMextra CooperationID descriptor has no constraint
-        // callback, so asn_check_constraints() dereferences null for execution
-        // containers. Keep validation for minimal/negotiation MCMs, but skip it
-        // here to preserve the execution-container emergency workaround.
+        // callback, so full-object validation dereferences null for execution
+        // containers. Skip it for execution traffic, including Execute and
+        // emergency Abort; ASN.1 encoding is still performed below.
         EV_INFO << "McService serialized " << mcmSubtypeName(command->subtype)
             << " execution MCM: cooperationId="
             << static_cast<int>(command->requestId)

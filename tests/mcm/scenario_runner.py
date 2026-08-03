@@ -48,7 +48,14 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s") -> Scenar
     output_dir = Path(tempfile.mkdtemp(prefix=f"mcm-regression-{config}-"))
     log_path = output_dir / "simulation.log"
     result_dir = output_dir / "results"
+    sumo_result_dir = output_dir / "sumo"
     result_dir.mkdir(parents=True, exist_ok=True)
+    sumo_result_dir.mkdir(parents=True, exist_ok=True)
+
+    sumo_output_options = (
+        f"--tripinfo-output {sumo_result_dir / 'simulation.tripinfo.xml'} "
+        f"--statistic-output {sumo_result_dir / 'simulation.statistic.xml'}"
+    )
 
     cmd = [
         str(RUN_ARTERY),
@@ -67,6 +74,7 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s") -> Scenar
         f"--sim-time-limit={time_limit}",
         "--cmdenv-express-mode=false",
         f"--result-dir={result_dir}",
+        f'--*.traci.launcher.extraOptions="{sumo_output_options}"',
     ]
 
     started = time.perf_counter()

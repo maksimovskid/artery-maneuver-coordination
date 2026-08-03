@@ -295,10 +295,6 @@ public:
     bool hasActiveExecution() const;
     operationMode currentOperationMode() const;
 
-    // TODO: add negotiation strategy and maneuver state handling.
-    // TODO: add scenario-specific maneuver coordination behavior.
-    // TODO: integrate TrajectoryPlanner helpers after the service-level MCM plumbing is stable.
-
 private:
     enum class ExecutionState {
         Idle,
