@@ -145,12 +145,7 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
 void McApplication::resetRvNegotiationAfterTimeout()
 {
     mMergingRequestQueuedOrSent = false;
-    mRvOfferReceived1 = false;
-    mRvOfferReceived2 = false;
-    mRvConfirmQueuedOrSent = false;
-    mRvAcceptReceived1 = false;
-    mRvAcceptReceived2 = false;
-    mRvExecuteQueuedOrSent = false;
+    resetRvResponseTracking();
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
@@ -158,17 +153,8 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvSecondRequestRejectedMeasured = false;
     setRvCoordinationFailure(RvCoordinationFailureReason::Timeout, "negotiation-timeout");
 
-    mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastRequestQueuedAt = false;
-    mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastConfirmQueuedAt = false;
-    mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-    mHasRvNegotiationStartedAt = false;
-
-    mRvRequestedTrajectory.clear();
-    mHasRvRequestedTrajectory = false;
-    mRvNegotiatedTrajectory.clear();
-    mHasRvNegotiatedTrajectory = false;
+    resetRvRetryTracking();
+    clearRvTrajectoryState();
 
     mOperationMode = operationMode::IntentionSharingMode;
     mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
@@ -184,23 +170,11 @@ void McApplication::resetCvNegotiationAfterTimeout()
     mOperationMode = operationMode::IntentionSharingMode;
     mMcmSubtype = mcmSubtype::Regular;
     mCooperatingVehicleType = cooperatingVehicleType::NCV;
-    mCvResponseQueuedOrSent = false;
-    mCvRvStationId = 0;
-    mCvRequestId = 0;
-    mCvResponseNumberOfVehicles = 1;
+    resetCvActiveNegotiationTracking();
     mCvHasRejectedRequest = false;
     mCvRejectedRvStationId = 0;
     mCvRejectedRequestId = 0;
-    mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
-    mHasCvLastOfferQueuedAt = false;
-    mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
-    mHasCvLastAcceptQueuedAt = false;
-    mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-    mHasCvNegotiationStartedAt = false;
-    mCvSelectedTrajectory.clear();
-    mHasCvSelectedTrajectory = false;
-    mCvNegotiatedTrajectory.clear();
-    mHasCvNegotiatedTrajectory = false;
+    clearCvTrajectoryState();
 }
 
 void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)

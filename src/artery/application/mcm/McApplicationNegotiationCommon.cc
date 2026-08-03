@@ -131,6 +131,70 @@ PendingMcmCommand McApplication::makeCvAcceptCommand(const McmSnapshot& snapshot
     return command;
 }
 
+void McApplication::resetRvResponseTracking()
+{
+    mRvOfferReceived1 = false;
+    mRvOfferReceived2 = false;
+    mRvConfirmQueuedOrSent = false;
+    mRvAcceptReceived1 = false;
+    mRvAcceptReceived2 = false;
+    mRvExecuteQueuedOrSent = false;
+}
+
+void McApplication::resetRvRetryTracking()
+{
+    mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
+    mHasRvLastRequestQueuedAt = false;
+    mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
+    mHasRvLastConfirmQueuedAt = false;
+    mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    mHasRvNegotiationStartedAt = false;
+}
+
+void McApplication::clearRvTrajectoryState()
+{
+    mRvRequestedTrajectory.clear();
+    mHasRvRequestedTrajectory = false;
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
+}
+
+void McApplication::resetCvActiveNegotiationTracking()
+{
+    mCvResponseQueuedOrSent = false;
+    mCvRvStationId = 0;
+    mCvRequestId = 0;
+    mCvResponseNumberOfVehicles = 1;
+    mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
+    mHasCvLastOfferQueuedAt = false;
+    mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
+    mHasCvLastAcceptQueuedAt = false;
+    mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
+    mHasCvNegotiationStartedAt = false;
+}
+
+void McApplication::resetCvExecutionControlState()
+{
+    mControlManeuver = controlManeuver::DoNothing;
+    mTargetSpeed = 0.0;
+    mCommandDuration = 0.0;
+    mCvDecelerationControlApplied = false;
+    mCvDecelerationControlSkippedLogged = false;
+    mCvAccelerationControlApplied = false;
+    mCvLaneChangeControlLogged = false;
+    mCvTargetSpeedReachedLogged = false;
+    mCvRestoreNormalSpeedSkippedLogged = false;
+    mCvStoppedDecelerationForRvLogged = false;
+}
+
+void McApplication::clearCvTrajectoryState()
+{
+    mCvSelectedTrajectory.clear();
+    mHasCvSelectedTrajectory = false;
+    mCvNegotiatedTrajectory.clear();
+    mHasCvNegotiatedTrajectory = false;
+}
+
 // RV-side completion reset. This is reached after the Complete-as-Cancel
 // workaround is sent, so retry timestamps, received-response flags, execution
 // state, and scenario diagnostics are cleared together.
@@ -153,27 +217,14 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mMergingRequestQueuedOrSent = false;
     mLaneChangeRequestQueuedOrSent = false;
     mLaneChangeThreeVehiclePath = false;
-    mRvOfferReceived1 = false;
-    mRvOfferReceived2 = false;
-    mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastRequestQueuedAt = false;
-    mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastConfirmQueuedAt = false;
-    mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-    mHasRvNegotiationStartedAt = false;
-    mRvConfirmQueuedOrSent = false;
-    mRvAcceptReceived1 = false;
-    mRvAcceptReceived2 = false;
-    mRvExecuteQueuedOrSent = false;
+    resetRvResponseTracking();
+    resetRvRetryTracking();
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mRvRequestedTrajectory.clear();
-    mHasRvRequestedTrajectory = false;
-    mRvNegotiatedTrajectory.clear();
-    mHasRvNegotiatedTrajectory = false;
+    clearRvTrajectoryState();
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
     mRvMergingExecutionControlLogged = false;
@@ -183,6 +234,15 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mLastSafetyCriticalLaneChangeMoveAt = omnetpp::SimTime::ZERO;
     mControlManeuver = controlManeuver::DoNothing;
     resetMergingGapDiagnostics();
+
+    EV_INFO << "[MCM-STATE]"
+        << " event=rv-coordination-reset"
+        << " reason=completion"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " mode=" << operationModeName(mOperationMode)
+        << " requestedTrajectoryActive=" << mHasRvRequestedTrajectory
+        << " negotiatedTrajectoryActive=" << mHasRvNegotiatedTrajectory
+        << '\n';
 }
 
 // CV-side completion reset for the normal Complete-as-Cancel path. Early
@@ -204,33 +264,21 @@ void McApplication::resetCvCoordinationStateAfterComplete()
     mMcmSubtype = mcmSubtype::Regular;
     mCooperatingVehicleType = cooperatingVehicleType::NCV;
 
-    mCvResponseQueuedOrSent = false;
-    mCvRvStationId = 0;
-    mCvRequestId = 0;
-    mCvResponseNumberOfVehicles = 1;
+    resetCvActiveNegotiationTracking();
     mCvHasRejectedRequest = false;
     mCvRejectedRvStationId = 0;
     mCvRejectedRequestId = 0;
-    mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
-    mHasCvLastOfferQueuedAt = false;
-    mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
-    mHasCvLastAcceptQueuedAt = false;
-    mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-    mHasCvNegotiationStartedAt = false;
-    mCvNegotiatedTrajectory.clear();
-    mHasCvNegotiatedTrajectory = false;
-    mControlManeuver = controlManeuver::DoNothing;
-    mCvSelectedTrajectory.clear();
-    mHasCvSelectedTrajectory = false;
-    mTargetSpeed = 0.0;
-    mCommandDuration = 0.0;
-    mCvDecelerationControlApplied = false;
-    mCvDecelerationControlSkippedLogged = false;
-    mCvAccelerationControlApplied = false;
-    mCvLaneChangeControlLogged = false;
-    mCvTargetSpeedReachedLogged = false;
-    mCvRestoreNormalSpeedSkippedLogged = false;
-    mCvStoppedDecelerationForRvLogged = false;
+    clearCvTrajectoryState();
+    resetCvExecutionControlState();
+
+    EV_INFO << "[MCM-STATE]"
+        << " event=cv-coordination-reset"
+        << " reason=completion"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " mode=" << operationModeName(mOperationMode)
+        << " selectedTrajectoryActive=" << mHasCvSelectedTrajectory
+        << " negotiatedTrajectoryActive=" << mHasCvNegotiatedTrajectory
+        << '\n';
 }
 
 bool McApplication::isHighPriorityLaneChangeRequestActive() const

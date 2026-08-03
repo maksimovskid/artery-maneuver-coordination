@@ -143,6 +143,15 @@ class McScenarioTestCase(unittest.TestCase):
             requestId=request_id,
         )
         log.require(
+            "MCM-STATE",
+            event="rv-coordination-reset",
+            reason="completion",
+            station=rv_queued.fields["station"],
+            mode="IntentionSharingMode",
+            requestedTrajectoryActive="0",
+            negotiatedTrajectoryActive="0",
+        )
+        log.require(
             "MCM-WIRE",
             direction="sent",
             station=rv_queued.fields["station"],
@@ -186,6 +195,15 @@ class McScenarioTestCase(unittest.TestCase):
                 role="CV",
                 station=cv_queued.fields["station"],
                 requestId=request_id,
+            )
+            log.require(
+                "MCM-STATE",
+                event="cv-coordination-reset",
+                reason="completion",
+                station=cv_station,
+                mode="IntentionSharingMode",
+                selectedTrajectoryActive="0",
+                negotiatedTrajectoryActive="0",
             )
 
     def assert_no_rv_coordination_failure(self, log: ParsedLog) -> None:

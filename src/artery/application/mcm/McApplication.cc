@@ -369,28 +369,10 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
             mOperationMode = operationMode::IntentionSharingMode;
             mMcmSubtype = mcmSubtype::Regular;
             mCooperatingVehicleType = cooperatingVehicleType::NCV;
-            mControlManeuver = controlManeuver::DoNothing;
+            resetCvExecutionControlState();
             mCvSelectedTrajectory.clear();
             mHasCvSelectedTrajectory = false;
-            mCvRvStationId = 0;
-            mCvRequestId = 0;
-            mCvResponseNumberOfVehicles = 1;
-            mCvLastOfferQueuedAt = omnetpp::SimTime::ZERO;
-            mHasCvLastOfferQueuedAt = false;
-            mCvLastAcceptQueuedAt = omnetpp::SimTime::ZERO;
-            mHasCvLastAcceptQueuedAt = false;
-            mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-            mHasCvNegotiationStartedAt = false;
-            mCvResponseQueuedOrSent = false;
-            mTargetSpeed = 0.0;
-            mCommandDuration = 0.0;
-            mCvDecelerationControlApplied = false;
-            mCvDecelerationControlSkippedLogged = false;
-            mCvAccelerationControlApplied = false;
-            mCvLaneChangeControlLogged = false;
-            mCvTargetSpeedReachedLogged = false;
-            mCvRestoreNormalSpeedSkippedLogged = false;
-            mCvStoppedDecelerationForRvLogged = false;
+            resetCvActiveNegotiationTracking();
         }
     }
 }
@@ -491,6 +473,8 @@ void McApplication::logNegotiationTrace(
         << std::endl;
 }
 
+// Clears the generic command, execution-control bookkeeping, and pending MCM;
+// role-specific coordination identity and trajectory state are not reset here.
 void McApplication::clearCommand()
 {
     mPendingCommand = CommandKind::None;
@@ -1367,12 +1351,7 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
             mRvNumberOfVehicles = secondRequest->numberOfVehicles;
             mRvTargetVehicle1 = secondRequest->targetVehicle1;
             mRvTargetVehicle2 = secondRequest->hasTargetVehicle2 ? secondRequest->targetVehicle2 : 0;
-            mRvOfferReceived1 = false;
-            mRvOfferReceived2 = false;
-            mRvConfirmQueuedOrSent = false;
-            mRvAcceptReceived1 = false;
-            mRvAcceptReceived2 = false;
-            mRvExecuteQueuedOrSent = false;
+            resetRvResponseTracking();
             mRvNegotiationCompletionReported = false;
             mCompletedRvNegotiationRequestId.reset();
             mRvLastRequestQueuedAt = received.receivedAt;

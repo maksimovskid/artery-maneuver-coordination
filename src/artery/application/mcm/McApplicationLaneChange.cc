@@ -579,12 +579,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mRvNumberOfVehicles = command.numberOfVehicles;
     mRvTargetVehicle1 = command.targetVehicle1;
     mRvTargetVehicle2 = command.hasTargetVehicle2 ? command.targetVehicle2 : 0;
-    mRvOfferReceived1 = false;
-    mRvOfferReceived2 = false;
-    mRvConfirmQueuedOrSent = false;
-    mRvAcceptReceived1 = false;
-    mRvAcceptReceived2 = false;
-    mRvExecuteQueuedOrSent = false;
+    resetRvResponseTracking();
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
@@ -907,12 +902,7 @@ void McApplication::applyEmergencyFallbackBrake(
     mPendingMcmCommand.reset();
     mLaneChangeRequestQueuedOrSent = false;
     mLaneChangeThreeVehiclePath = false;
-    mRvOfferReceived1 = false;
-    mRvOfferReceived2 = false;
-    mRvConfirmQueuedOrSent = false;
-    mRvAcceptReceived1 = false;
-    mRvAcceptReceived2 = false;
-    mRvExecuteQueuedOrSent = false;
+    resetRvResponseTracking();
     if (mRvSecondRequestAttempted &&
             !mRvSecondRequestCompletedMeasured &&
             !mRvSecondRequestRejectedMeasured) {
@@ -923,16 +913,8 @@ void McApplication::applyEmergencyFallbackBrake(
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
     setRvCoordinationFailure(failureReason, reason);
-    mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastRequestQueuedAt = false;
-    mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
-    mHasRvLastConfirmQueuedAt = false;
-    mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
-    mHasRvNegotiationStartedAt = false;
-    mRvRequestedTrajectory.clear();
-    mHasRvRequestedTrajectory = false;
-    mRvNegotiatedTrajectory.clear();
-    mHasRvNegotiatedTrajectory = false;
+    resetRvRetryTracking();
+    clearRvTrajectoryState();
     mSafetyCriticalLaneChangeExecutionActive = false;
     mLaneChangeMoveStepCounter = 0;
     mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;

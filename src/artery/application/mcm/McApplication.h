@@ -334,6 +334,12 @@ private:
     PendingMcmCommand buildCvExecutionCompletionWorkaroundCommand() const;
     bool isRvExecutionCompletionWorkaround(const SentMcm&) const;
     bool isCvExecutionCompletionWorkaround(const SentMcm&) const;
+    void resetRvResponseTracking();
+    void resetRvRetryTracking();
+    void clearRvTrajectoryState();
+    void resetCvActiveNegotiationTracking();
+    void resetCvExecutionControlState();
+    void clearCvTrajectoryState();
     void resetRvCoordinationStateAfterComplete();
     void resetCvCoordinationStateAfterComplete();
     void handleReceivedCancelAsCv(const ReceivedMcm&);

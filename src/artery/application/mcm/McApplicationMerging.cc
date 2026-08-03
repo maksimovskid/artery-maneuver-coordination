@@ -507,14 +507,9 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvTargetVehicle1 = command.targetVehicle1;
     mRvTargetVehicle2 = command.hasTargetVehicle2 ? command.targetVehicle2 : 0;
 
-    mRvOfferReceived1 = false;
-    mRvOfferReceived2 = false;
-    mRvConfirmQueuedOrSent = false;
+    resetRvResponseTracking();
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastConfirmQueuedAt = false;
-    mRvAcceptReceived1 = false;
-    mRvAcceptReceived2 = false;
-    mRvExecuteQueuedOrSent = false;
     mRvNegotiationCompletionReported = false;
     mCompletedRvNegotiationRequestId.reset();
     mRvSecondRequestAttempted = false;
