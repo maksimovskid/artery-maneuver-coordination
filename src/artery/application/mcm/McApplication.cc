@@ -1420,7 +1420,11 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
         mRvSecondRequestRejectedMeasured = true;
     }
 
-    applyEmergencyFallbackBrake("rejected-brake", "received-reject", mRvRequestId);
+    applyEmergencyFallbackBrake(
+        "rejected-brake",
+        "received-reject",
+        mRvRequestId,
+        RvCoordinationFailureReason::Rejected);
 }
 
 /*

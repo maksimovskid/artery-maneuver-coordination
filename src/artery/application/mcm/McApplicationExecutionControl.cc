@@ -249,7 +249,11 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
             << " requestId=" << static_cast<int>(mRvRequestId)
             << " reason=traci-state-read-failed"
             << " error=\"" << e.what() << "\"\n";
-        applyEmergencyFallbackBrake("moveToXY-failed-brake", "traci-state-read-failed", mRvRequestId);
+        applyEmergencyFallbackBrake(
+            "moveToXY-failed-brake",
+            "traci-state-read-failed",
+            mRvRequestId,
+            RvCoordinationFailureReason::ControlFailure);
         return;
     }
 
@@ -335,7 +339,11 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
             << " timeGap=" << timeGap
             << " ttc=" << ttc
             << " reason=unsafe-front-vehicle\n";
-        applyEmergencyFallbackBrake("unsafe-front-vehicle-brake", "unsafe-front-vehicle", mRvRequestId);
+        applyEmergencyFallbackBrake(
+            "unsafe-front-vehicle-brake",
+            "unsafe-front-vehicle",
+            mRvRequestId,
+            RvCoordinationFailureReason::UnsafeEnvironment);
         return;
     }
 
@@ -417,7 +425,11 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
             << " stepCounter=" << mLaneChangeMoveStepCounter
             << " reason=moveToXY-exception"
             << " error=\"" << e.what() << "\"\n";
-        applyEmergencyFallbackBrake("moveToXY-failed-brake", "moveToXY-exception", mRvRequestId);
+        applyEmergencyFallbackBrake(
+            "moveToXY-failed-brake",
+            "moveToXY-exception",
+            mRvRequestId,
+            RvCoordinationFailureReason::ControlFailure);
     }
 }
 

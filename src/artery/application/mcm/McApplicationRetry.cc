@@ -156,7 +156,7 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mRvCoordinationFailed = true;
+    setRvCoordinationFailure(RvCoordinationFailureReason::Timeout, "negotiation-timeout");
 
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;
@@ -240,7 +240,8 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
             applyEmergencyFallbackBrake(
                 "timeout-brake",
                 "timeout-waiting-for-accept",
-                mRvRequestId);
+                mRvRequestId,
+                RvCoordinationFailureReason::Timeout);
         }
         return;
     }
@@ -284,7 +285,8 @@ void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
             applyEmergencyFallbackBrake(
                 "timeout-brake",
                 "timeout-waiting-for-offers",
-                mRvRequestId);
+                mRvRequestId,
+                RvCoordinationFailureReason::Timeout);
             return;
         }
 
@@ -395,7 +397,8 @@ void McApplication::evaluateRvConfirmRetry(omnetpp::SimTime now)
             applyEmergencyFallbackBrake(
                 "timeout-brake",
                 "timeout-waiting-for-accepts",
-                mRvRequestId);
+                mRvRequestId,
+                RvCoordinationFailureReason::Timeout);
             return;
         }
 

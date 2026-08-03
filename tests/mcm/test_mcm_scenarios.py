@@ -188,6 +188,14 @@ class McScenarioTestCase(unittest.TestCase):
                 requestId=request_id,
             )
 
+    def assert_no_rv_coordination_failure(self, log: ParsedLog) -> None:
+        failures = [
+            event
+            for event in log.find("MCM-FAILURE")
+            if event.fields.get("reason") != "None"
+        ]
+        self.assertEqual(failures, [], "successful scenario latched an RV failure reason")
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -311,6 +319,7 @@ class CoordinatedMergingTest(McScenarioTestCase):
             self.require_trajectory_semantics(
                 log, request_id=request_id, cv_stations=("169", "309")
             )
+            self.assert_no_rv_coordination_failure(log)
 
             log.require("MCM-GAP-DIAG", phase="execution-start", vehicleId="car_ml1_1")
             log.require("MCM-GAP-DIAG", summary="rv-completion", rvStation="29")
@@ -429,6 +438,15 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
             self.require_trajectory_semantics(
                 log, request_id=request_id, cv_stations=("309", "589")
             )
+            log.require(
+                "MCM-FAILURE",
+                station="449",
+                role="RV",
+                requestId=request_id,
+                reason="None",
+                source="new-lane-change-request",
+            )
+            self.assert_no_rv_coordination_failure(log)
             log.forbid("MCM-LC-FAILSAFE")
             self.report_run(run)
 
@@ -490,6 +508,15 @@ class SecondRequestSmokeTest(McScenarioTestCase):
             self.assertEqual(queued.fields.get("requestId"), ready.fields.get("requestId"))
 
             second_request_id = queued.fields["requestId"]
+            log.require(
+                "MCM-FAILURE",
+                station="449",
+                role="RV",
+                requestId=first_request_id,
+                reason="None",
+                source="new-lane-change-request",
+            )
+            self.assert_no_rv_coordination_failure(log)
             first_requested = log.require(
                 "MCM-TRAJECTORY",
                 event="rv-requested-trajectory-active",

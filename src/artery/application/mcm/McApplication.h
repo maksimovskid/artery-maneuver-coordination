@@ -258,6 +258,14 @@ private:
         RestoreNormalSpeed
     };
 
+    enum class RvCoordinationFailureReason {
+        None,
+        Timeout,
+        Rejected,
+        UnsafeEnvironment,
+        ControlFailure
+    };
+
     struct CvCooperationDecision {
         bool feasible = false;
         mcmSubtype responseSubtype = mcmSubtype::Reject;
@@ -339,7 +347,14 @@ private:
     void handleReceivedEmergencyAsFollower(const ReceivedMcm&);
     void logNegotiationTrace(const char* action, const McmSnapshot& snapshot, omnetpp::SimTime time) const;
     bool hasReachedActiveNegotiatedTrajectoryEnd() const;
-    void applyEmergencyFallbackBrake(const char* event, const char* reason, uint8_t requestId);
+    void applyEmergencyFallbackBrake(
+        const char* event,
+        const char* reason,
+        uint8_t requestId,
+        RvCoordinationFailureReason failureReason);
+    void setRvCoordinationFailure(RvCoordinationFailureReason, const char* source);
+    bool hasRvCoordinationFailure() const;
+    static const char* rvCoordinationFailureReasonName(RvCoordinationFailureReason);
     void queueRepeatedExecute();
     void resetMergingGapDiagnostics();
     void sampleMergingGapDiagnostics(const char* phase);
@@ -409,7 +424,8 @@ private:
     bool mHasRvLastConfirmQueuedAt = false;
     omnetpp::SimTime mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     bool mHasRvNegotiationStartedAt = false;
-    bool mRvCoordinationFailed = false;
+    RvCoordinationFailureReason mRvCoordinationFailureReason =
+        RvCoordinationFailureReason::None;
 
     // RV-side state for final Accept responses after Confirm.
     bool mRvAcceptReceived1 = false;

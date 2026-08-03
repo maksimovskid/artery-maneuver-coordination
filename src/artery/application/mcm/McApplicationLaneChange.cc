@@ -596,7 +596,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mHasRvLastConfirmQueuedAt = false;
     mRvNegotiationStartedAt = now;
     mHasRvNegotiationStartedAt = true;
-    mRvCoordinationFailed = false;
+    setRvCoordinationFailure(RvCoordinationFailureReason::None, "new-lane-change-request");
     mRvRequestedTrajectory = laneChangeTrajectory;
     mHasRvRequestedTrajectory = !mRvRequestedTrajectory.empty();
     mRvNegotiatedTrajectory.clear();
@@ -816,6 +816,46 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         << " controlManeuver=ChangeLane\n";
 }
 
+const char* McApplication::rvCoordinationFailureReasonName(
+    RvCoordinationFailureReason reason)
+{
+    switch (reason) {
+    case RvCoordinationFailureReason::None:
+        return "None";
+    case RvCoordinationFailureReason::Timeout:
+        return "Timeout";
+    case RvCoordinationFailureReason::Rejected:
+        return "Rejected";
+    case RvCoordinationFailureReason::UnsafeEnvironment:
+        return "UnsafeEnvironment";
+    case RvCoordinationFailureReason::ControlFailure:
+        return "ControlFailure";
+    }
+
+    return "Unknown";
+}
+
+void McApplication::setRvCoordinationFailure(
+    RvCoordinationFailureReason reason,
+    const char* source)
+{
+    EV_STATICCONTEXT;
+
+    mRvCoordinationFailureReason = reason;
+    EV_INFO << "[MCM-FAILURE]"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " role=RV"
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " reason=" << rvCoordinationFailureReasonName(reason)
+        << " source=" << source
+        << '\n';
+}
+
+bool McApplication::hasRvCoordinationFailure() const
+{
+    return mRvCoordinationFailureReason != RvCoordinationFailureReason::None;
+}
+
 /*
  * Applies the high-priority fallback path when coordination cannot continue
  * safely. It commands conservative braking, clears pending coordination state,
@@ -824,7 +864,8 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
 void McApplication::applyEmergencyFallbackBrake(
     const char* event,
     const char* reason,
-    uint8_t requestId)
+    uint8_t requestId,
+    RvCoordinationFailureReason failureReason)
 {
     EV_STATICCONTEXT;
 
@@ -881,7 +922,7 @@ void McApplication::applyEmergencyFallbackBrake(
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mRvCoordinationFailed = true;
+    setRvCoordinationFailure(failureReason, reason);
     mRvLastRequestQueuedAt = omnetpp::SimTime::ZERO;
     mHasRvLastRequestQueuedAt = false;
     mRvLastConfirmQueuedAt = omnetpp::SimTime::ZERO;
