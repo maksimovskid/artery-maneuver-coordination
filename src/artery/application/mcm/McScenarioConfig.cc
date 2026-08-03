@@ -26,8 +26,6 @@ const double scLaneChangeEmergencyFallbackSpeed = 0.1;
 const double scLaneChangeEmergencyFallbackDecelerationTime = 1.0;
 
 const double scMergingTimeGap = 1.2;
-const double scMergingRvExecutionSpeed = 22.22;
-const double scHighwayCvAccelerationTargetSpeed = 33.33;
 const double scExecutionRestoreMinFrontDistance = 10.0;
 const double scExecutionRestoreMinTtc = 2.0;
 

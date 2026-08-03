@@ -37,13 +37,11 @@ namespace
 {
 using scenario::scExecutionRestoreMinFrontDistance;
 using scenario::scExecutionRestoreMinTtc;
-using scenario::scHighwayCvAccelerationTargetSpeed;
 using scenario::scLaneChangeExecutionLateralShiftPerStep;
 using scenario::scLaneChangeExecutionMinFrontDistance;
 using scenario::scLaneChangeExecutionMinTimeGap;
 using scenario::scLaneChangeExecutionMinTtc;
 using scenario::scLaneChangeExecutionStepCount;
-using scenario::scMergingRvExecutionSpeed;
 using scenario::scNormalHighwaySpeed;
 using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scSafetyCriticalTimeGap;
@@ -72,14 +70,17 @@ void McApplication::applyRvExecutionControl()
     // acceleration/deceleration, should use speedMode 31 so SUMO safety checks
     // remain active and speed changes stay realistic.
     mVehicleController->setSpeedMode(vehicleId, 0);
-    mVehicleController->setMaxSpeed(scMergingRvExecutionSpeed * boost::units::si::meter_per_second);
-    mVehicleController->setSpeed(scMergingRvExecutionSpeed * boost::units::si::meter_per_second);
+    mVehicleController->setMaxSpeed(
+        mMergingExecutionConfig.rvExecutionSpeed * boost::units::si::meter_per_second);
+    mVehicleController->setSpeed(
+        mMergingExecutionConfig.rvExecutionSpeed * boost::units::si::meter_per_second);
 
     if (!mRvMergingExecutionControlLogged) {
         EV_INFO << "McApplication applied route_merging_1 RV execution control"
             << ": station=" << mEgoContext.stationId
             << " vehicleId=" << vehicleId
-            << " speedMode=0 targetSpeed=22.22 maxSpeed=22.22\n";
+            << " speedMode=0 targetSpeed=" << mMergingExecutionConfig.rvExecutionSpeed
+            << " maxSpeed=" << mMergingExecutionConfig.rvExecutionSpeed << '\n';
         mRvMergingExecutionControlLogged = true;
     }
 }
@@ -523,7 +524,7 @@ void McApplication::applyCvAccelerationControl()
         mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
         mEgoContext.routeId == scTargetLaneChangeRouteId;
     const double targetSpeed = highPriorityLaneChange && mTargetSpeed > mEgoContext.speed ?
-        mTargetSpeed : scHighwayCvAccelerationTargetSpeed;
+        mTargetSpeed : mMergingExecutionConfig.cvAccelerationTargetSpeed;
 
     // Highway CV acceleration uses speedMode 31 so SUMO safety checks stay
     // active while raising the speed toward 120 km/h.

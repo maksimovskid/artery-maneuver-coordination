@@ -971,6 +971,29 @@ void McService::initialize()
             << " gapWindowFactor=" << mergingCoordinationConfig.gapWindowFactor
             << '\n';
     }
+    mcm::MergingExecutionConfig mergingExecutionConfig;
+    mergingExecutionConfig.rvExecutionSpeed = par("mergingRvExecutionSpeed").doubleValue();
+    mergingExecutionConfig.cvAccelerationTargetSpeed =
+        par("mergingCvAccelerationTargetSpeed").doubleValue();
+    if (!std::isfinite(mergingExecutionConfig.rvExecutionSpeed) ||
+            !std::isfinite(mergingExecutionConfig.cvAccelerationTargetSpeed)) {
+        throw cRuntimeError("merging execution speeds must be finite");
+    }
+    if (mergingExecutionConfig.rvExecutionSpeed < 0.0 ||
+            mergingExecutionConfig.cvAccelerationTargetSpeed < 0.0) {
+        throw cRuntimeError("merging execution speeds must not be negative");
+    }
+    mApplication->setMergingExecutionConfig(mergingExecutionConfig);
+    if (mVehicleController &&
+            mVehicleController->getRouteID() == mergingCoordinationConfig.requestingRouteId) {
+        EV_INFO << "[MCM-CONFIG]"
+            << " type=merging-execution"
+            << " station=" << mVehicleDataProvider->station_id()
+            << " rvExecutionSpeed=" << mergingExecutionConfig.rvExecutionSpeed
+            << " cvAccelerationTargetSpeed="
+            << mergingExecutionConfig.cvAccelerationTargetSpeed
+            << '\n';
+    }
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,

@@ -246,6 +246,15 @@ class McScenarioTestCase(unittest.TestCase):
             gapWindowFactor="2.5",
         )
 
+    def require_merging_execution_config(self, log: ParsedLog) -> None:
+        log.require(
+            "MCM-CONFIG",
+            type="merging-execution",
+            station="29",
+            rvExecutionSpeed="22.22",
+            cvAccelerationTargetSpeed="33.33",
+        )
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -322,6 +331,7 @@ class CoordinatedMergingTest(McScenarioTestCase):
             log = run.parsed_log
 
             self.require_merging_coordination_config(log)
+            self.require_merging_execution_config(log)
 
             for subtype in ("Request", "Offer", "Confirm", "Accept"):
                 self.require_negotiation_subtype(log, subtype)
@@ -372,6 +382,18 @@ class CoordinatedMergingTest(McScenarioTestCase):
                 log, request_id=request_id, cv_stations=("169", "309")
             )
             self.assert_no_rv_coordination_failure(log)
+            self.assertIn(
+                "speedMode=0 targetSpeed=22.22 maxSpeed=22.22",
+                log.text,
+            )
+            log.require(
+                "MCM-CV-CONTROL",
+                event="apply-acceleration",
+                priority="MediumPriority",
+                targetSpeed="33.33",
+                maxSpeed="33.33",
+                speedMode="31",
+            )
 
             log.require("MCM-GAP-DIAG", phase="execution-start", vehicleId="car_ml1_1")
             log.require("MCM-GAP-DIAG", summary="rv-completion", rvStation="29")
@@ -414,6 +436,7 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
 
             self.require_emergency_source_config(log, braking_only_baseline="0")
             log.forbid("MCM-CONFIG", type="merging")
+            log.forbid("MCM-CONFIG", type="merging-execution")
 
             log.require(
                 "MCM-EMERGENCY",
@@ -513,6 +536,7 @@ class EmergencyBaselineTest(McScenarioTestCase):
 
             self.require_emergency_source_config(log, braking_only_baseline="1")
             log.forbid("MCM-CONFIG", type="merging")
+            log.forbid("MCM-CONFIG", type="merging-execution")
 
             log.require(
                 "MCM-BASELINE",

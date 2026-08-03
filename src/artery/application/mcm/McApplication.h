@@ -212,6 +212,11 @@ struct MergingCoordinationConfig {
     double gapWindowFactor = 0.0;
 };
 
+struct MergingExecutionConfig {
+    double rvExecutionSpeed = 0.0;
+    double cvAccelerationTargetSpeed = 0.0;
+};
+
 struct PendingMcmCommand {
     enum class Kind {
         Negotiation,
@@ -251,6 +256,7 @@ public:
     void setSecondRequestSmokeReject(bool enabled, uint32_t stationId);
     void setEmergencySourceConfig(const EmergencySourceConfig&);
     void setMergingCoordinationConfig(const MergingCoordinationConfig&);
+    void setMergingExecutionConfig(const MergingExecutionConfig&);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -426,6 +432,7 @@ private:
     bool mSecondRequestSmokeRejectConsumed = false;
     EmergencySourceConfig mEmergencySourceConfig;
     MergingCoordinationConfig mMergingCoordinationConfig;
+    MergingExecutionConfig mMergingExecutionConfig;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

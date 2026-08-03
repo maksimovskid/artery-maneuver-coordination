@@ -33,6 +33,10 @@ simple McService like ItsG5Service
         double mergingMinimumGapSpeed @unit(mps) = default(1.0mps);
         double mergingGapWindowFactor = default(2.5);
 
+        // Physical actuation values for medium-priority merging execution.
+        double mergingRvExecutionSpeed @unit(mps) = default(22.22mps);
+        double mergingCvAccelerationTargetSpeed @unit(mps) = default(33.33mps);
+
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate
         // behavior; the named policies will be implemented incrementally.

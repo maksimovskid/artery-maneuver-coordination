@@ -41,9 +41,7 @@ extern const double scLaneChangeEmergencyFallbackDecelerationTime;
 // Cooperation time-gap calibration shared by merging and lane-change planner paths.
 extern const double scMergingTimeGap;
 
-// Physical speed-control calibration for the current validation scenarios.
-extern const double scMergingRvExecutionSpeed;
-extern const double scHighwayCvAccelerationTargetSpeed;
+// Generic execution-restoration safety calibration.
 extern const double scExecutionRestoreMinFrontDistance;
 extern const double scExecutionRestoreMinTtc;
 

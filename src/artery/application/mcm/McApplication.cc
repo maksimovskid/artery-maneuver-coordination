@@ -127,6 +127,11 @@ void McApplication::setMergingCoordinationConfig(const MergingCoordinationConfig
     mMergingCoordinationConfig = config;
 }
 
+void McApplication::setMergingExecutionConfig(const MergingExecutionConfig& config)
+{
+    mMergingExecutionConfig = config;
+}
+
 void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;
