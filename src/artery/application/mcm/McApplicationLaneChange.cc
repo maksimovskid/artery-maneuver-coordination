@@ -42,12 +42,15 @@ using scenario::scEmergencyStartTime;
 using scenario::scEmergencyVehicleId;
 using scenario::scInitialPaperTimeGap;
 using scenario::scLaneChangeShiftX;
+using scenario::scLaneChangeEmergencyFallbackDecelerationTime;
+using scenario::scLaneChangeEmergencyFallbackSpeed;
 using scenario::scMergingTimeGap;
 using scenario::scNormalHighwaySpeed;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
 using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scSafetyCriticalTimeGap;
+using scenario::scValidationMapLaneIndexCorrectionThresholdY;
 
 bool isSafetyCriticalLaneChangeScenarioVehicle(const std::string& vehicleId)
 {
@@ -457,7 +460,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
         const auto& first = snapshot.plannedTrajectory.front();
         const int rawLaneReceived = static_cast<int>(snapshot.laneId);
         int laneReceived = rawLaneReceived;
-        const bool laneWorkaroundApplied = first.mY > 452365.0;
+        const bool laneWorkaroundApplied = first.mY > scValidationMapLaneIndexCorrectionThresholdY;
         if (laneWorkaroundApplied) {
             laneReceived += 1;
         }
@@ -816,8 +819,8 @@ void McApplication::applyEmergencyFallbackBrake(
     EV_STATICCONTEXT;
 
     const double currentSpeed = mHasEgoContext ? mEgoContext.speed : 0.0;
-    constexpr double targetSpeed = 0.1;
-    constexpr double decelerationTime = 1.0;
+    const double targetSpeed = scLaneChangeEmergencyFallbackSpeed;
+    const double decelerationTime = scLaneChangeEmergencyFallbackDecelerationTime;
 
     // Reject, negotiation timeout, unsafe front vehicle, and moveToXY failure
     // all use the same RV safety fallback: brake and clear active coordination.

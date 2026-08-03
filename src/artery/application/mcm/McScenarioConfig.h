@@ -37,6 +37,17 @@ extern const double scSafetyCriticalTimeGap;
 extern const double scEmergencyCoordinationTimeGap;
 extern const double scInitialPaperTimeGap;
 
+// Current validation-map lane correction and physical lane-change execution
+// calibration. These are scenario workarounds, not general protocol rules.
+extern const double scValidationMapLaneIndexCorrectionThresholdY;
+extern const std::size_t scLaneChangeExecutionStepCount;
+extern const double scLaneChangeExecutionLateralShiftPerStep;
+extern const double scLaneChangeExecutionMinFrontDistance;
+extern const double scLaneChangeExecutionMinTimeGap;
+extern const double scLaneChangeExecutionMinTtc;
+extern const double scLaneChangeEmergencyFallbackSpeed;
+extern const double scLaneChangeEmergencyFallbackDecelerationTime;
+
 // Medium-priority merging validation geometry. The trigger point and highway
 // lane-0 coordinate window come from the current SUMO map/route setup.
 extern const double scMergeStartX;
@@ -45,6 +56,12 @@ extern const double scHighwayLane0MinY;
 extern const double scHighwayLane0MaxY;
 extern const double scMergingTimeGap;
 extern const double scMergeTargetMaxSnapshotAge;
+
+// Physical speed-control calibration for the current validation scenarios.
+extern const double scMergingRvExecutionSpeed;
+extern const double scHighwayCvAccelerationTargetSpeed;
+extern const double scExecutionRestoreMinFrontDistance;
+extern const double scExecutionRestoreMinTtc;
 
 // Request trajectory generation and local cache limits used by the validation
 // implementation. These are implementation/scenario controls and should move to

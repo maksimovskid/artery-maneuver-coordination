@@ -36,10 +36,20 @@ namespace mcm
 namespace
 {
 using scenario::scMergingRouteId;
+using scenario::scExecutionRestoreMinFrontDistance;
+using scenario::scExecutionRestoreMinTtc;
+using scenario::scHighwayCvAccelerationTargetSpeed;
+using scenario::scLaneChangeExecutionLateralShiftPerStep;
+using scenario::scLaneChangeExecutionMinFrontDistance;
+using scenario::scLaneChangeExecutionMinTimeGap;
+using scenario::scLaneChangeExecutionMinTtc;
+using scenario::scLaneChangeExecutionStepCount;
+using scenario::scMergingRvExecutionSpeed;
 using scenario::scNormalHighwaySpeed;
 using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scSafetyCriticalTimeGap;
 using scenario::scTargetLaneChangeRouteId;
+using scenario::scValidationMapLaneIndexCorrectionThresholdY;
 
 } // namespace
 
@@ -63,8 +73,8 @@ void McApplication::applyRvExecutionControl()
     // acceleration/deceleration, should use speedMode 31 so SUMO safety checks
     // remain active and speed changes stay realistic.
     mVehicleController->setSpeedMode(vehicleId, 0);
-    mVehicleController->setMaxSpeed(22.22 * boost::units::si::meter_per_second);
-    mVehicleController->setSpeed(22.22 * boost::units::si::meter_per_second);
+    mVehicleController->setMaxSpeed(scMergingRvExecutionSpeed * boost::units::si::meter_per_second);
+    mVehicleController->setSpeed(scMergingRvExecutionSpeed * boost::units::si::meter_per_second);
 
     if (!mRvMergingExecutionControlLogged) {
         EV_INFO << "McApplication applied route_merging_1 RV execution control"
@@ -99,7 +109,8 @@ bool McApplication::canRestoreNormalSpeedFromLeader(double desiredSpeed)
     // raising max speed is allowed only when the existing environment-model
     // leader is faster or far enough away. This avoids unsafe recovery surges.
     return frontInfo.speed >= desiredSpeed ||
-        (frontInfo.distance > 10.0 && timeGap >= scSafetyCriticalTimeGap && ttc >= 2.0);
+        (frontInfo.distance > scExecutionRestoreMinFrontDistance &&
+            timeGap >= scSafetyCriticalTimeGap && ttc >= scExecutionRestoreMinTtc);
 }
 
 /*
@@ -304,7 +315,8 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
 
     const bool unsafeFrontVehicle =
         frontInfo.sameEdgeLane &&
-        (frontInfo.distance < 5.0 || timeGap < 0.3 || ttc < 1.0);
+        (frontInfo.distance < scLaneChangeExecutionMinFrontDistance ||
+            timeGap < scLaneChangeExecutionMinTimeGap || ttc < scLaneChangeExecutionMinTtc);
     if (unsafeFrontVehicle) {
         EV_WARN << "[MCM-LC-FAILSAFE]"
             << " simTime=" << mEgoContext.now
@@ -327,7 +339,7 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
         return;
     }
 
-    if (mLaneChangeMoveStepCounter >= 10) {
+    if (mLaneChangeMoveStepCounter >= scLaneChangeExecutionStepCount) {
         if (mSafetyCriticalLaneChangeExecutionActive) {
             EV_INFO << "[MCM-LC-EXEC]"
                 << " simTime=" << mEgoContext.now
@@ -352,8 +364,8 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
     // Safety-critical lane-change execution is a scenario-specific
     // positive-X shift: 3.2 m lane width over 10 ticks, so 0.32 m each step.
     // The longitudinal step follows the scenario's y -= speed / 10 pattern.
-    const double targetX = currentX + 0.32;
-    const double targetY = currentY - currentSpeed / 10.0;
+    const double targetX = currentX + scLaneChangeExecutionLateralShiftPerStep;
+    const double targetY = currentY - currentSpeed / scLaneChangeExecutionStepCount;
 
     try {
         // Use SUMO/libsumo's invalid-angle sentinel. A NaN angle produced
@@ -501,7 +513,7 @@ void McApplication::applyCvAccelerationControl()
         mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
         mEgoContext.routeId == scTargetLaneChangeRouteId;
     const double targetSpeed = highPriorityLaneChange && mTargetSpeed > mEgoContext.speed ?
-        mTargetSpeed : 33.33;
+        mTargetSpeed : scHighwayCvAccelerationTargetSpeed;
 
     // Highway CV acceleration uses speedMode 31 so SUMO safety checks stay
     // active while raising the speed toward 120 km/h.
@@ -658,7 +670,7 @@ void McApplication::monitorCvExecutionControl()
         rvX = rvPoint.mX;
         rvY = rvPoint.mY;
         rvLane = rvSnapshot->hasLaneId ? static_cast<int>(rvSnapshot->laneId) : -1;
-        if (rvPoint.mY > 452365.0 && rvLane >= 0) {
+        if (rvPoint.mY > scValidationMapLaneIndexCorrectionThresholdY && rvLane >= 0) {
             ++rvLane;
             laneWorkaroundApplied = true;
         }
