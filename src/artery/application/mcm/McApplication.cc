@@ -1128,8 +1128,15 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
         snapshot.cooperationTypeMcm >= 0 ? snapshot.cooperationTypeMcm : 0);
     command.kind = PendingMcmCommand::Kind::Execution;
 
-    mActiveNegotiatedTrajectory = command.requestedTrajectory;
-    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+    mRvNegotiatedTrajectory = mRvRequestedTrajectory;
+    mHasRvNegotiatedTrajectory = !mRvNegotiatedTrajectory.empty();
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=rv-negotiated-trajectory-established"
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=negotiated"
+        << " trajectoryPoints=" << mRvNegotiatedTrajectory.size()
+        << '\n';
 
     mPendingMcmCommand = command;
     EV_INFO << "[MCM-WIRE]"
@@ -1374,8 +1381,18 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
             mHasRvLastConfirmQueuedAt = false;
             mRvNegotiationStartedAt = received.receivedAt;
             mHasRvNegotiationStartedAt = true;
-            mActiveNegotiatedTrajectory = secondRequest->requestedTrajectory;
-            mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+            mRvRequestedTrajectory = secondRequest->requestedTrajectory;
+            mHasRvRequestedTrajectory = !mRvRequestedTrajectory.empty();
+            mRvNegotiatedTrajectory.clear();
+            mHasRvNegotiatedTrajectory = false;
+            EV_INFO << "[MCM-TRAJECTORY]"
+                << " event=rv-requested-trajectory-active"
+                << " station=" << mEgoContext.stationId
+                << " requestId=" << static_cast<int>(mRvRequestId)
+                << " trajectoryRole=requested"
+                << " source=second-request"
+                << " trajectoryPoints=" << mRvRequestedTrajectory.size()
+                << '\n';
             mMcmSubtype = mcmSubtype::Request;
             mOperationMode = operationMode::ManeuverNegotiationMode;
             mCoordinationProgressRV = coordinationProgressRV::SecondRequest;
@@ -1509,9 +1526,16 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     // Store the CV-side negotiated trajectory reference.
     // During execution, the live plannedTrajectory/intent may continue updating;
     // this saved trajectory is used only to detect maneuver completion.
-    mActiveNegotiatedTrajectory = mHasCvSelectedTrajectory ?
+    mCvNegotiatedTrajectory = mHasCvSelectedTrajectory ?
         mCvSelectedTrajectory : mEgoContext.plannedTrajectory;
-    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+    mHasCvNegotiatedTrajectory = !mCvNegotiatedTrajectory.empty();
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=cv-negotiated-trajectory-established"
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mCvRequestId)
+        << " trajectoryRole=negotiated"
+        << " trajectoryPoints=" << mCvNegotiatedTrajectory.size()
+        << '\n';
 
     EV_INFO << "McApplication CV station " << egoStationId
         << " received Execute from RV " << mCvRvStationId

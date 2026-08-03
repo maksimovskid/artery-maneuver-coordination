@@ -520,8 +520,18 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mActiveNegotiatedTrajectory.clear();
-    mHasActiveNegotiatedTrajectory = false;
+    mRvRequestedTrajectory = command.requestedTrajectory;
+    mHasRvRequestedTrajectory = !mRvRequestedTrajectory.empty();
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=rv-requested-trajectory-active"
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=requested"
+        << " source=initial-request"
+        << " trajectoryPoints=" << mRvRequestedTrajectory.size()
+        << '\n';
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
     mSafetyCriticalLaneChangeExecutionActive = false;

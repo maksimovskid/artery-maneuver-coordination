@@ -597,8 +597,18 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     mRvNegotiationStartedAt = now;
     mHasRvNegotiationStartedAt = true;
     mRvCoordinationFailed = false;
-    mActiveNegotiatedTrajectory = laneChangeTrajectory;
-    mHasActiveNegotiatedTrajectory = !mActiveNegotiatedTrajectory.empty();
+    mRvRequestedTrajectory = laneChangeTrajectory;
+    mHasRvRequestedTrajectory = !mRvRequestedTrajectory.empty();
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=rv-requested-trajectory-active"
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=requested"
+        << " source=initial-request"
+        << " trajectoryPoints=" << mRvRequestedTrajectory.size()
+        << '\n';
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
 
@@ -878,8 +888,10 @@ void McApplication::applyEmergencyFallbackBrake(
     mHasRvLastConfirmQueuedAt = false;
     mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     mHasRvNegotiationStartedAt = false;
-    mActiveNegotiatedTrajectory.clear();
-    mHasActiveNegotiatedTrajectory = false;
+    mRvRequestedTrajectory.clear();
+    mHasRvRequestedTrajectory = false;
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
     mSafetyCriticalLaneChangeExecutionActive = false;
     mLaneChangeMoveStepCounter = 0;
     mSafetyCriticalLaneChangeExecutionStartedAt = omnetpp::SimTime::ZERO;

@@ -421,11 +421,16 @@ private:
     bool mRvSecondRequestCompletedMeasured = false;
     bool mRvSecondRequestRejectedMeasured = false;
 
-    // Fixed trajectory agreed during negotiation.
-    // During execution this is used only as the completion reference;
-    // the live plannedTrajectory/intent may continue updating beyond this horizon.
-    TrajectoryPlanner::Trajectory mActiveNegotiatedTrajectory;
-    bool mHasActiveNegotiatedTrajectory = false;
+    // RV proposal carried by the active Request and its retries.
+    TrajectoryPlanner::Trajectory mRvRequestedTrajectory;
+    bool mHasRvRequestedTrajectory = false;
+    // Fixed role-specific execution references established after agreement.
+    // Live plannedTrajectory intent continues to come from mEgoContext.
+    TrajectoryPlanner::Trajectory mRvNegotiatedTrajectory;
+    bool mHasRvNegotiatedTrajectory = false;
+    TrajectoryPlanner::Trajectory mCvNegotiatedTrajectory;
+    bool mHasCvNegotiatedTrajectory = false;
+    // CV proposal selected while responding to the active Request.
     TrajectoryPlanner::Trajectory mCvSelectedTrajectory;
     bool mHasCvSelectedTrajectory = false;
 

@@ -76,7 +76,7 @@ void McApplication::queueRepeatedExecute()
     if (!mHasEgoContext || mPendingMcmCommand ||
             mCooperatingVehicleType != cooperatingVehicleType::RV ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
-            !mHasActiveNegotiatedTrajectory) {
+            !mHasRvNegotiatedTrajectory) {
         return;
     }
 
@@ -110,6 +110,14 @@ void McApplication::queueRepeatedExecute()
         << " hasTarget2=" << command.hasTargetVehicle2
         << " priority=" << priorityName(static_cast<long>(command.priority))
         << '\n';
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=repeated-execute-retains-negotiated-trajectory"
+        << " station=" << mEgoContext.stationId
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=negotiated"
+        << " trajectoryPoints=" << mRvNegotiatedTrajectory.size()
+        << " liveTrajectoryPoints=" << mEgoContext.plannedTrajectory.size()
+        << '\n';
     mLastExecuteQueuedAt = mEgoContext.now;
     mHasLastExecuteQueuedAt = true;
 
@@ -140,7 +148,7 @@ void McApplication::evaluateRvExecutionProgress()
             mCooperatingVehicleType != cooperatingVehicleType::RV ||
             mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
-            !mHasActiveNegotiatedTrajectory) {
+            !mHasRvNegotiatedTrajectory) {
         return;
     }
 
@@ -176,14 +184,14 @@ void McApplication::evaluateRvExecutionProgress()
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
         << " currentY=" << mEgoContext.y
-        << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+        << " finalY=" << mRvNegotiatedTrajectory.back().mY
         << '\n';
 
     // std::cout << "MCM_DEBUG RV station " << mEgoContext.stationId
     //     << " queued Complete workaround using Cancel for requestId "
     //     << static_cast<int>(command.requestId)
     //     << " currentY=" << mEgoContext.y
-    //     << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+    //     << " finalY=" << mRvNegotiatedTrajectory.back().mY
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
@@ -200,7 +208,7 @@ void McApplication::evaluateCvExecutionProgress()
             mCooperatingVehicleType != cooperatingVehicleType::CV ||
             mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressCV != coordinationProgressCV::SendExecuteCV ||
-            !mHasActiveNegotiatedTrajectory) {
+            !mHasCvNegotiatedTrajectory) {
         return;
     }
 
@@ -240,8 +248,8 @@ void McApplication::evaluateCvExecutionProgress()
         << " selectedAction=" << controlManeuverName(mControlManeuver)
         << " currentX=" << mEgoContext.x
         << " currentY=" << mEgoContext.y
-        << " finalX=" << mActiveNegotiatedTrajectory.back().mX
-        << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+        << " finalX=" << mCvNegotiatedTrajectory.back().mX
+        << " finalY=" << mCvNegotiatedTrajectory.back().mY
         << '\n';
 
     EV_INFO << "McApplication CV station " << mEgoContext.stationId
@@ -249,14 +257,14 @@ void McApplication::evaluateCvExecutionProgress()
         << ": requestId=" << static_cast<int>(command.requestId)
         << " rvStation=" << command.targetVehicle1
         << " currentY=" << mEgoContext.y
-        << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+        << " finalY=" << mCvNegotiatedTrajectory.back().mY
         << '\n';
 
     // std::cout << "MCM_DEBUG CV station " << mEgoContext.stationId
     //     << " queued Complete workaround using Cancel for requestId "
     //     << static_cast<int>(command.requestId)
     //     << " currentY=" << mEgoContext.y
-    //     << " finalY=" << mActiveNegotiatedTrajectory.back().mY
+    //     << " finalY=" << mCvNegotiatedTrajectory.back().mY
     //     << " at " << omnetpp::simTime() << " s" << std::endl;
 }
 
@@ -267,13 +275,19 @@ void McApplication::evaluateCvExecutionProgress()
  */
 bool McApplication::hasReachedActiveNegotiatedTrajectoryEnd() const
 {
-    if (!mHasEgoContext || !mHasActiveNegotiatedTrajectory ||
-            mActiveNegotiatedTrajectory.empty()) {
+    const TrajectoryPlanner::Trajectory* negotiatedTrajectory = nullptr;
+    if (mCooperatingVehicleType == cooperatingVehicleType::RV && mHasRvNegotiatedTrajectory) {
+        negotiatedTrajectory = &mRvNegotiatedTrajectory;
+    } else if (mCooperatingVehicleType == cooperatingVehicleType::CV && mHasCvNegotiatedTrajectory) {
+        negotiatedTrajectory = &mCvNegotiatedTrajectory;
+    }
+
+    if (!mHasEgoContext || !negotiatedTrajectory || negotiatedTrajectory->empty()) {
         return false;
     }
 
-    const auto& firstPoint = mActiveNegotiatedTrajectory.front();
-    const auto& lastPoint = mActiveNegotiatedTrajectory.back();
+    const auto& firstPoint = negotiatedTrajectory->front();
+    const auto& lastPoint = negotiatedTrajectory->back();
 
     if (mEgoContext.routeId == scMergingRouteId) {
         // The route_merging_1 RV behavior:

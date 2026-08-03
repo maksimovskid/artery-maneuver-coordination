@@ -136,6 +136,15 @@ PendingMcmCommand McApplication::makeCvAcceptCommand(const McmSnapshot& snapshot
 // state, and scenario diagnostics are cleared together.
 void McApplication::resetRvCoordinationStateAfterComplete()
 {
+    EV_STATICCONTEXT;
+
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=rv-negotiated-trajectory-cleared"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=negotiated"
+        << " trajectoryPoints=" << mRvNegotiatedTrajectory.size()
+        << '\n';
     mCoordinationProgressRV = coordinationProgressRV::CompleteSent;
     mOperationMode = operationMode::IntentionSharingMode;
     mMcmSubtype = mcmSubtype::Regular;
@@ -161,8 +170,10 @@ void McApplication::resetRvCoordinationStateAfterComplete()
     mRvSecondRequestAttempted = false;
     mRvSecondRequestCompletedMeasured = false;
     mRvSecondRequestRejectedMeasured = false;
-    mActiveNegotiatedTrajectory.clear();
-    mHasActiveNegotiatedTrajectory = false;
+    mRvRequestedTrajectory.clear();
+    mHasRvRequestedTrajectory = false;
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
     mLastExecuteQueuedAt = omnetpp::SimTime::ZERO;
     mHasLastExecuteQueuedAt = false;
     mRvMergingExecutionControlLogged = false;
@@ -179,6 +190,15 @@ void McApplication::resetRvCoordinationStateAfterComplete()
 // progress state afterwards.
 void McApplication::resetCvCoordinationStateAfterComplete()
 {
+    EV_STATICCONTEXT;
+
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=cv-negotiated-trajectory-cleared"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " requestId=" << static_cast<int>(mCvRequestId)
+        << " trajectoryRole=negotiated"
+        << " trajectoryPoints=" << mCvNegotiatedTrajectory.size()
+        << '\n';
     mCoordinationProgressCV = coordinationProgressCV::CompleteSentCV;
     mOperationMode = operationMode::IntentionSharingMode;
     mMcmSubtype = mcmSubtype::Regular;
@@ -197,8 +217,8 @@ void McApplication::resetCvCoordinationStateAfterComplete()
     mHasCvLastAcceptQueuedAt = false;
     mCvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     mHasCvNegotiationStartedAt = false;
-    mActiveNegotiatedTrajectory.clear();
-    mHasActiveNegotiatedTrajectory = false;
+    mCvNegotiatedTrajectory.clear();
+    mHasCvNegotiatedTrajectory = false;
     mControlManeuver = controlManeuver::DoNothing;
     mCvSelectedTrajectory.clear();
     mHasCvSelectedTrajectory = false;

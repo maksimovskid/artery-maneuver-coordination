@@ -188,6 +188,75 @@ class McScenarioTestCase(unittest.TestCase):
                 requestId=request_id,
             )
 
+    def require_trajectory_semantics(
+        self,
+        log: ParsedLog,
+        *,
+        request_id: str,
+        cv_stations: tuple[str, ...],
+        request_source: str = "initial-request",
+    ) -> None:
+        requested = log.require(
+            "MCM-TRAJECTORY",
+            event="rv-requested-trajectory-active",
+            requestId=request_id,
+            trajectoryRole="requested",
+            source=request_source,
+        )
+        self.assertGreater(int(requested.fields["trajectoryPoints"]), 0)
+
+        retry = log.require(
+            "MCM-TRAJECTORY",
+            event="rv-request-retry",
+            requestId=request_id,
+            trajectoryRole="requested",
+        )
+        self.assertEqual(retry.fields["trajectoryPoints"], requested.fields["trajectoryPoints"])
+
+        negotiated = log.require(
+            "MCM-TRAJECTORY",
+            event="rv-negotiated-trajectory-established",
+            requestId=request_id,
+            trajectoryRole="negotiated",
+        )
+        self.assertEqual(
+            negotiated.fields["trajectoryPoints"], requested.fields["trajectoryPoints"]
+        )
+        retained = log.require(
+            "MCM-TRAJECTORY",
+            event="repeated-execute-retains-negotiated-trajectory",
+            requestId=request_id,
+            trajectoryRole="negotiated",
+        )
+        self.assertEqual(retained.fields["trajectoryPoints"], negotiated.fields["trajectoryPoints"])
+        self.assertIn("liveTrajectoryPoints", retained.fields)
+
+        for cv_station in cv_stations:
+            cv_established = log.require(
+                "MCM-TRAJECTORY",
+                event="cv-negotiated-trajectory-established",
+                requestId=request_id,
+                trajectoryRole="negotiated",
+                station=cv_station,
+            )
+            self.assertGreater(int(cv_established.fields["trajectoryPoints"]), 0)
+            log.require(
+                "MCM-TRAJECTORY",
+                event="cv-negotiated-trajectory-cleared",
+                requestId=request_id,
+                trajectoryRole="negotiated",
+                station=cv_station,
+                trajectoryPoints=cv_established.fields["trajectoryPoints"],
+            )
+
+        log.require(
+            "MCM-TRAJECTORY",
+            event="rv-negotiated-trajectory-cleared",
+            requestId=request_id,
+            trajectoryRole="negotiated",
+            trajectoryPoints=negotiated.fields["trajectoryPoints"],
+        )
+
 
 class CoordinatedMergingTest(McScenarioTestCase):
     def test_coordinated_merging_protocol_and_completion(self) -> None:
@@ -239,6 +308,9 @@ class CoordinatedMergingTest(McScenarioTestCase):
             # Temporary baseline characterization: successful completion is
             # still represented as negotiation-container Cancel.
             self.require_completion_cancel_workaround(log, request_id)
+            self.require_trajectory_semantics(
+                log, request_id=request_id, cv_stations=("169", "309")
+            )
 
             log.require("MCM-GAP-DIAG", phase="execution-start", vehicleId="car_ml1_1")
             log.require("MCM-GAP-DIAG", summary="rv-completion", rvStation="29")
@@ -354,6 +426,9 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
             # Temporary baseline characterization: successful completion is
             # still represented as negotiation-container Cancel.
             self.require_completion_cancel_workaround(log, request_id)
+            self.require_trajectory_semantics(
+                log, request_id=request_id, cv_stations=("309", "589")
+            )
             log.forbid("MCM-LC-FAILSAFE")
             self.report_run(run)
 
@@ -415,6 +490,21 @@ class SecondRequestSmokeTest(McScenarioTestCase):
             self.assertEqual(queued.fields.get("requestId"), ready.fields.get("requestId"))
 
             second_request_id = queued.fields["requestId"]
+            first_requested = log.require(
+                "MCM-TRAJECTORY",
+                event="rv-requested-trajectory-active",
+                requestId=first_request_id,
+                source="initial-request",
+            )
+            second_requested = log.require(
+                "MCM-TRAJECTORY",
+                event="rv-requested-trajectory-active",
+                requestId=second_request_id,
+                source="second-request",
+            )
+            self.assertNotEqual(first_request_id, second_request_id)
+            self.assertGreater(int(first_requested.fields["trajectoryPoints"]), 0)
+            self.assertGreater(int(second_requested.fields["trajectoryPoints"]), 0)
             log.require(
                 "MCM-NEGOTIATION",
                 action="SEND",
@@ -439,6 +529,15 @@ class SecondRequestSmokeTest(McScenarioTestCase):
                 target1=queued.fields["targetCv1"],
                 target2=queued.fields["targetCv2"],
                 priority="HighPriority",
+            )
+            negotiated = log.require(
+                "MCM-TRAJECTORY",
+                event="rv-negotiated-trajectory-established",
+                requestId=second_request_id,
+            )
+            self.assertEqual(
+                negotiated.fields["trajectoryPoints"],
+                second_requested.fields["trajectoryPoints"],
             )
 
             all_request_ids = request_ids(log.find("MCM-NEGOTIATION", msg="Request"))

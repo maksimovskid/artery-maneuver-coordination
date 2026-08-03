@@ -55,6 +55,8 @@ bool McApplication::shouldRetryAfter(
 // and request ID; one-CV and two-CV behavior is decided by mRvNumberOfVehicles.
 PendingMcmCommand McApplication::makeRvRequestRetryCommand() const
 {
+    EV_STATICCONTEXT;
+
     PendingMcmCommand command;
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = mcmSubtype::Request;
@@ -65,13 +67,18 @@ PendingMcmCommand McApplication::makeRvRequestRetryCommand() const
     command.targetVehicle1 = mRvTargetVehicle1;
     command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
     command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mActiveNegotiatedTrajectory;
+    command.requestedTrajectory = mRvRequestedTrajectory;
+    EV_INFO << "[MCM-TRAJECTORY]"
+        << " event=rv-request-retry"
+        << " station=" << (mHasEgoContext ? mEgoContext.stationId : 0)
+        << " requestId=" << static_cast<int>(mRvRequestId)
+        << " trajectoryRole=requested"
+        << " trajectoryPoints=" << command.requestedTrajectory.size()
+        << '\n';
     return command;
 }
 
-// RV-side Confirm retransmission. Confirm uses the fixed negotiated trajectory
-// when present, otherwise the current ego trajectory, matching the previous
-// retry behavior.
+// RV-side Confirm retransmission. Confirm retains the active Request proposal.
 PendingMcmCommand McApplication::makeRvConfirmRetryCommand() const
 {
     PendingMcmCommand command;
@@ -84,9 +91,9 @@ PendingMcmCommand McApplication::makeRvConfirmRetryCommand() const
     command.targetVehicle1 = mRvTargetVehicle1;
     command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
     command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mActiveNegotiatedTrajectory.empty()
+    command.requestedTrajectory = mRvRequestedTrajectory.empty()
         ? mEgoContext.plannedTrajectory
-        : mActiveNegotiatedTrajectory;
+        : mRvRequestedTrajectory;
     return command;
 }
 
@@ -104,9 +111,8 @@ PendingMcmCommand McApplication::makeCvOfferRetryCommand() const
     command.targetVehicle1 = mCvRvStationId;
     command.hasTargetVehicle2 = false;
     command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
-        ? mActiveNegotiatedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    command.requestedTrajectory = mHasEgoContext ?
+        mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
     command.offeredTrajectory = mHasCvSelectedTrajectory
         ? mCvSelectedTrajectory
         : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
@@ -128,9 +134,8 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
     command.targetVehicle1 = mCvRvStationId;
     command.hasTargetVehicle2 = false;
     command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasActiveNegotiatedTrajectory
-        ? mActiveNegotiatedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    command.requestedTrajectory = mHasEgoContext ?
+        mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
     return command;
 }
 
@@ -160,8 +165,10 @@ void McApplication::resetRvNegotiationAfterTimeout()
     mRvNegotiationStartedAt = omnetpp::SimTime::ZERO;
     mHasRvNegotiationStartedAt = false;
 
-    mActiveNegotiatedTrajectory.clear();
-    mHasActiveNegotiatedTrajectory = false;
+    mRvRequestedTrajectory.clear();
+    mHasRvRequestedTrajectory = false;
+    mRvNegotiatedTrajectory.clear();
+    mHasRvNegotiatedTrajectory = false;
 
     mOperationMode = operationMode::IntentionSharingMode;
     mCoordinationProgressRV = coordinationProgressRV::NoCoordination;
@@ -192,6 +199,8 @@ void McApplication::resetCvNegotiationAfterTimeout()
     mHasCvNegotiationStartedAt = false;
     mCvSelectedTrajectory.clear();
     mHasCvSelectedTrajectory = false;
+    mCvNegotiatedTrajectory.clear();
+    mHasCvNegotiatedTrajectory = false;
 }
 
 void McApplication::evaluateRvRequestRetry(omnetpp::SimTime now)
