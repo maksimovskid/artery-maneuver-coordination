@@ -1388,43 +1388,65 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
     EV_STATICCONTEXT;
 
     if (!mHasEgoContext || !mVehicleDataProvider ||
-            mCooperatingVehicleType != cooperatingVehicleType::CV ||
-            mCoordinationProgressCV != coordinationProgressCV::AcceptSent) {
+            mCooperatingVehicleType != cooperatingVehicleType::CV) {
         return;
     }
 
     const auto& snapshot = received.data;
-    const bool activeRequestMatches =
-        isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Execute, mCvRequestId);
-    if (!activeRequestMatches && snapshot.mcmCategory != static_cast<long>(mcmSubtype::Execute)) {
+    if (snapshot.mcmCategory != static_cast<long>(mcmSubtype::Execute) ||
+            (!snapshot.hasNegotiationContainer && !snapshot.hasExecutionContainer)) {
         return;
     }
 
+    const bool usesExecutionContainer = snapshot.hasExecutionContainer;
+    const char* containerName = usesExecutionContainer ? "Execution" : "Negotiation";
+    const long identity = usesExecutionContainer ? snapshot.cooperationId : snapshot.requestId;
+    const uint32_t target1 = usesExecutionContainer ?
+        snapshot.cooperationVehicleId1 : snapshot.negotiationVehicleId1;
+    const bool hasTarget2 = usesExecutionContainer ?
+        snapshot.hasCooperationVehicleId2 : snapshot.hasNegotiationVehicleId2;
+    const uint32_t target2 = usesExecutionContainer ?
+        snapshot.cooperationVehicleId2 : snapshot.negotiationVehicleId2;
+    const uint32_t egoStationId = mVehicleDataProvider->station_id();
+    const bool eligibleState = mCoordinationProgressCV == coordinationProgressCV::AcceptSent;
+    const bool identityMatches = identity >= 0 && static_cast<uint8_t>(identity) == mCvRequestId;
     const bool senderMatches = snapshot.stationId == mCvRvStationId;
-    const bool participantMatches = isSnapshotTargetingEgo(snapshot);
-    const bool guardsPassed = activeRequestMatches && senderMatches && participantMatches;
+    const bool participantMatches = target1 == egoStationId ||
+        (hasTarget2 && target2 == egoStationId);
+    const bool guardsPassed = eligibleState && identityMatches && senderMatches && participantMatches;
+    const char* rejectionReason = "none";
+    if (!eligibleState) {
+        rejectionReason = "invalid-cv-state";
+    } else if (!identityMatches) {
+        rejectionReason = "identity-mismatch";
+    } else if (!senderMatches) {
+        rejectionReason = "sender-mismatch";
+    } else if (!participantMatches) {
+        rejectionReason = "missing-ego-participant";
+    }
+
     EV_INFO << "[MCM-WIRE]"
         << " direction=received"
         << " event=execute-guard"
         << " station=" << mEgoContext.stationId
         << " sender=" << snapshot.stationId
         << " subtype=Execute"
-        << " container=" << (snapshot.hasNegotiationContainer ? "Negotiation" :
-                (snapshot.hasExecutionContainer ? "Execution" : "None"))
+        << " container=" << containerName
         << " requestId=" << snapshot.requestId
         << " cooperationId=" << snapshot.cooperationId
-        << " target1=" << snapshot.negotiationVehicleId1
-        << " target2=" << snapshot.negotiationVehicleId2
-        << " activeRequestMatch=" << activeRequestMatches
+        << " target1=" << target1
+        << " target2=" << target2
+        << " hasTarget2=" << hasTarget2
+        << " eligibleState=" << eligibleState
+        << " activeRequestMatch=" << identityMatches
         << " senderMatch=" << senderMatches
         << " participantMatch=" << participantMatches
         << " result=" << (guardsPassed ? "pass" : "reject")
+        << " reason=" << rejectionReason
         << '\n';
     if (!guardsPassed) {
         return;
     }
-
-    const uint32_t egoStationId = mVehicleDataProvider->station_id();
 
     mMcmSubtype = mcmSubtype::Execute;
     mOperationMode = operationMode::ManeuverExecutionMode;
@@ -1436,10 +1458,12 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
         << " station=" << egoStationId
         << " sender=" << snapshot.stationId
         << " subtype=Execute"
-        << " container=Negotiation"
+        << " container=" << containerName
         << " requestId=" << snapshot.requestId
-        << " target1=" << snapshot.negotiationVehicleId1
-        << " target2=" << snapshot.negotiationVehicleId2
+        << " cooperationId=" << snapshot.cooperationId
+        << " target1=" << target1
+        << " target2=" << target2
+        << " hasTarget2=" << hasTarget2
         << " mode=ManeuverExecutionMode"
         << '\n';
 

@@ -75,6 +75,7 @@ class McScenarioTestCase(unittest.TestCase):
             container="Negotiation",
             requestId=request_id,
             result="pass",
+            reason="none",
         )
         log.require(
             "MCM-WIRE",
@@ -86,6 +87,18 @@ class McScenarioTestCase(unittest.TestCase):
             container="Negotiation",
             requestId=request_id,
             mode="ManeuverExecutionMode",
+        )
+        log.require(
+            "MCM-WIRE",
+            direction="received",
+            event="execute-guard",
+            station=station,
+            sender=sender,
+            subtype="Execute",
+            container="Negotiation",
+            requestId=request_id,
+            result="reject",
+            reason="invalid-cv-state",
         )
 
     def require_completion_cancel_workaround(self, log: ParsedLog, request_id: str) -> None:
