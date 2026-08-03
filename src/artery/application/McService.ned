@@ -13,6 +13,12 @@ simple McService like ItsG5Service
         // source vehicle still brakes, but emergency MCM broadcasting and
         // maneuver-coordination behavior are suppressed.
         bool emergencyBrakingOnlyBaseline = default(false);
+        string emergencySourceVehicleId = default("car_hl0_Emergency");
+        double emergencyStartTime @unit(s) = default(12s);
+        double emergencyDuration @unit(s) = default(15s);
+        double emergencyBroadcastInterval @unit(s) = default(0.1s);
+        double emergencyNormalSpeed @unit(mps) = default(27.77mps);
+        double emergencyTargetSpeed @unit(mps) = default(0.1mps);
 
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate

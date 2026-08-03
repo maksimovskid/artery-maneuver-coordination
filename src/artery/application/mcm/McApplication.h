@@ -188,6 +188,16 @@ struct McEgoContext {
     int routeReferenceIndex = -1;
 };
 
+struct EmergencySourceConfig {
+    std::string vehicleId;
+    omnetpp::SimTime startTime = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime duration = omnetpp::SimTime::ZERO;
+    omnetpp::SimTime broadcastInterval = omnetpp::SimTime::ZERO;
+    double normalSpeed = 0.0;
+    double targetSpeed = 0.0;
+    bool brakingOnlyBaseline = false;
+};
+
 struct PendingMcmCommand {
     enum class Kind {
         Negotiation,
@@ -225,7 +235,7 @@ public:
     void setNegotiationRetryInterval(omnetpp::SimTime interval);
     void setNegotiationLimits(omnetpp::SimTime mergingLimit, omnetpp::SimTime laneChangeLimit);
     void setSecondRequestSmokeReject(bool enabled, uint32_t stationId);
-    void setEmergencyBrakingOnlyBaseline(bool enabled);
+    void setEmergencySourceConfig(const EmergencySourceConfig&);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -399,7 +409,7 @@ private:
     bool mSecondRequestSmokeRejectEnabled = false;
     uint32_t mSecondRequestSmokeRejectStationId = 0;
     bool mSecondRequestSmokeRejectConsumed = false;
-    bool mEmergencyBrakingOnlyBaseline = false;
+    EmergencySourceConfig mEmergencySourceConfig;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

@@ -36,12 +36,7 @@ namespace mcm
 
 namespace
 {
-using scenario::scEmergencyBroadcastDuration;
-using scenario::scEmergencyBroadcastInterval;
 using scenario::scEmergencyCoordinationTimeGap;
-using scenario::scEmergencyMaxSpeed;
-using scenario::scEmergencyStartTime;
-using scenario::scEmergencyVehicleId;
 using scenario::scHighwayLane0MaxY;
 using scenario::scHighwayLane0MinY;
 using scenario::scHighwayMergingRouteId;
@@ -129,9 +124,9 @@ void McApplication::setSecondRequestSmokeReject(bool enabled, uint32_t stationId
     mSecondRequestSmokeRejectStationId = stationId;
 }
 
-void McApplication::setEmergencyBrakingOnlyBaseline(bool enabled)
+void McApplication::setEmergencySourceConfig(const EmergencySourceConfig& config)
 {
-    mEmergencyBrakingOnlyBaseline = enabled;
+    mEmergencySourceConfig = config;
 }
 
 void McApplication::updateEgoContext(const McEgoContext& context)
@@ -150,7 +145,7 @@ void McApplication::tick(omnetpp::SimTime now)
 {
     logScenarioVehicleLifetime(now);
     evaluateEmergencyBrakingTrigger(now);
-    if (mEmergencyBrakingOnlyBaseline) {
+    if (mEmergencySourceConfig.brakingOnlyBaseline) {
         return;
     }
     evaluateMergingRequestTrigger(now);

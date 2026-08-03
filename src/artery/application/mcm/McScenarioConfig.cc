@@ -11,12 +11,6 @@ const char* const scMergingRouteId = "route_merging_1";
 const char* const scHighwayMergingRouteId = "route_highway_0";
 const char* const scSafetyCriticalLaneChangeRouteId = "route_highway_1";
 const char* const scTargetLaneChangeRouteId = "route_highway_2";
-const char* const scEmergencyVehicleId = "car_hl0_Emergency";
-
-const double scEmergencyStartTime = 12.0;
-const double scEmergencyBroadcastDuration = 15.0;
-const double scEmergencyBroadcastInterval = 0.1;
-const double scEmergencyMaxSpeed = 0.1;
 const double scNormalHighwaySpeed = 27.77;
 
 const double scLaneChangeShiftX = 3.0;

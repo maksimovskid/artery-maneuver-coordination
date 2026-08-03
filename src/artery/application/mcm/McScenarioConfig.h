@@ -17,16 +17,7 @@ extern const char* const scHighwayMergingRouteId;
 extern const char* const scSafetyCriticalLaneChangeRouteId;
 extern const char* const scTargetLaneChangeRouteId;
 
-// The emergency vehicle is intentionally singled out only in the emergency
-// lane-change validation scenario. The MCM protocol itself does not depend on
-// this vehicle name.
-extern const char* const scEmergencyVehicleId;
-
-// Timing and speed values are scenario parameters, not ASN.1/protocol constants.
-extern const double scEmergencyStartTime;
-extern const double scEmergencyBroadcastDuration;
-extern const double scEmergencyBroadcastInterval;
-extern const double scEmergencyMaxSpeed;
+// Physical speed-control calibration shared by the current validation scenarios.
 extern const double scNormalHighwaySpeed;
 
 // Safety-critical lane-change validation knobs. The lane shift is tied to the

@@ -589,7 +589,6 @@ void McService::loadCommunicationConfig()
     mCommunicationConfig.freqReduceCbrMedium = par("freqReduceCBRmedium").doubleValue();
     mCommunicationConfig.freqReduceCbrMax = par("freqReduceCBRmax").doubleValue();
     mCommunicationConfig.freqReduceCbrMco = par("freqReduceCBRmco").doubleValue();
-    mCommunicationConfig.emergencyBrakingOnlyBaseline = par("emergencyBrakingOnlyBaseline").boolValue();
 }
 
 void McService::logCommunicationConfig() const
@@ -614,7 +613,6 @@ void McService::logCommunicationConfig() const
         << " freqReduceCBRmedium=" << mCommunicationConfig.freqReduceCbrMedium
         << " freqReduceCBRmax=" << mCommunicationConfig.freqReduceCbrMax
         << " freqReduceCBRmco=" << mCommunicationConfig.freqReduceCbrMco
-        << " emergencyBrakingOnlyBaseline=" << mCommunicationConfig.emergencyBrakingOnlyBaseline
         << " note=configuration-hooks-active-behavior-staged\n";
 }
 
@@ -880,6 +878,41 @@ void McService::initialize()
     }
     mApplication.reset(new mcm::McApplication());
     mApplication->initialize(mVehicleController, mVehicleDataProvider, mLocalEnvironmentModel);
+    mcm::EmergencySourceConfig emergencySourceConfig;
+    emergencySourceConfig.vehicleId = par("emergencySourceVehicleId").stdstringValue();
+    emergencySourceConfig.startTime = par("emergencyStartTime");
+    emergencySourceConfig.duration = par("emergencyDuration");
+    emergencySourceConfig.broadcastInterval = par("emergencyBroadcastInterval");
+    emergencySourceConfig.normalSpeed = par("emergencyNormalSpeed").doubleValue();
+    emergencySourceConfig.targetSpeed = par("emergencyTargetSpeed").doubleValue();
+    emergencySourceConfig.brakingOnlyBaseline = par("emergencyBrakingOnlyBaseline").boolValue();
+    if (emergencySourceConfig.vehicleId.empty()) {
+        throw cRuntimeError("emergencySourceVehicleId must not be empty");
+    }
+    if (emergencySourceConfig.startTime < SimTime::ZERO) {
+        throw cRuntimeError("emergencyStartTime must not be negative");
+    }
+    if (emergencySourceConfig.duration < SimTime::ZERO) {
+        throw cRuntimeError("emergencyDuration must not be negative");
+    }
+    if (emergencySourceConfig.broadcastInterval <= SimTime::ZERO) {
+        throw cRuntimeError("emergencyBroadcastInterval must be positive");
+    }
+    if (emergencySourceConfig.normalSpeed < 0.0 || emergencySourceConfig.targetSpeed < 0.0) {
+        throw cRuntimeError("emergency source speeds must not be negative");
+    }
+    mApplication->setEmergencySourceConfig(emergencySourceConfig);
+    if (mVehicleController && mVehicleController->getVehicleId() == emergencySourceConfig.vehicleId) {
+        EV_INFO << "[MCM-CONFIG]"
+            << " emergencySourceVehicleId=" << emergencySourceConfig.vehicleId
+            << " startTime=" << emergencySourceConfig.startTime.dbl()
+            << " duration=" << emergencySourceConfig.duration.dbl()
+            << " broadcastInterval=" << emergencySourceConfig.broadcastInterval.dbl()
+            << " normalSpeed=" << emergencySourceConfig.normalSpeed
+            << " emergencySpeed=" << emergencySourceConfig.targetSpeed
+            << " brakingOnlyBaseline=" << emergencySourceConfig.brakingOnlyBaseline
+            << '\n';
+    }
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,
@@ -887,7 +920,6 @@ void McService::initialize()
     mApplication->setSecondRequestSmokeReject(
         mForceFirstCvRejectForSecondRequestSmoke,
         mForceFirstCvRejectStationId);
-    mApplication->setEmergencyBrakingOnlyBaseline(mCommunicationConfig.emergencyBrakingOnlyBaseline);
 }
 
 void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)

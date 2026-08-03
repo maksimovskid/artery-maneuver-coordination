@@ -214,6 +214,20 @@ class McScenarioTestCase(unittest.TestCase):
         ]
         self.assertEqual(failures, [], "successful scenario latched an RV failure reason")
 
+    def require_emergency_source_config(
+        self, log: ParsedLog, *, braking_only_baseline: str
+    ) -> None:
+        log.require(
+            "MCM-CONFIG",
+            emergencySourceVehicleId="car_hl0_Emergency",
+            startTime="12",
+            duration="15",
+            broadcastInterval="0.1",
+            normalSpeed="27.77",
+            emergencySpeed="0.1",
+            brakingOnlyBaseline=braking_only_baseline,
+        )
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -288,6 +302,8 @@ class CoordinatedMergingTest(McScenarioTestCase):
     def test_coordinated_merging_protocol_and_completion(self) -> None:
         with self.run_checked_scenario("envmod-19CAVs-merging") as run:
             log = run.parsed_log
+
+            log.forbid("MCM-CONFIG")
 
             for subtype in ("Request", "Offer", "Confirm", "Accept"):
                 self.require_negotiation_subtype(log, subtype)
@@ -377,6 +393,8 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
     def test_coordinated_emergency_lane_change_protocol_and_completion(self) -> None:
         with self.run_checked_scenario("envmod-19CAVs-emergency-lane-change") as run:
             log = run.parsed_log
+
+            self.require_emergency_source_config(log, braking_only_baseline="0")
 
             log.require(
                 "MCM-EMERGENCY",
@@ -473,6 +491,8 @@ class EmergencyBaselineTest(McScenarioTestCase):
     def test_emergency_baseline_preserves_braking_and_suppresses_coordination(self) -> None:
         with self.run_checked_scenario("envmod-19CAVs-emergency-lane-change-baseline") as run:
             log = run.parsed_log
+
+            self.require_emergency_source_config(log, braking_only_baseline="1")
 
             log.require(
                 "MCM-BASELINE",
