@@ -37,16 +37,8 @@ namespace
 {
 using scenario::scExecutionRestoreMinFrontDistance;
 using scenario::scExecutionRestoreMinTtc;
-using scenario::scLaneChangeExecutionLateralShiftPerStep;
-using scenario::scLaneChangeExecutionMinFrontDistance;
-using scenario::scLaneChangeExecutionMinTimeGap;
-using scenario::scLaneChangeExecutionMinTtc;
-using scenario::scLaneChangeExecutionStepCount;
 using scenario::scNormalHighwaySpeed;
-using scenario::scSafetyCriticalLaneChangeRouteId;
 using scenario::scSafetyCriticalTimeGap;
-using scenario::scTargetLaneChangeRouteId;
-using scenario::scValidationMapLaneIndexCorrectionThresholdY;
 
 } // namespace
 
@@ -221,7 +213,7 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
             mPriorityMcmCategory != priorityMcmCategory::HighPriority ||
             mOperationMode != operationMode::ManeuverExecutionMode ||
             mCoordinationProgressRV != coordinationProgressRV::SendExecute ||
-            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            mEgoContext.routeId != mSafetyCriticalLaneChangeConfig.followerRouteId ||
             (mControlManeuver != controlManeuver::ChangeLane &&
                 mControlManeuver != controlManeuver::LaneChangeExecution)) {
         return;
@@ -319,8 +311,9 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
 
     const bool unsafeFrontVehicle =
         frontInfo.sameEdgeLane &&
-        (frontInfo.distance < scLaneChangeExecutionMinFrontDistance ||
-            timeGap < scLaneChangeExecutionMinTimeGap || ttc < scLaneChangeExecutionMinTtc);
+        (frontInfo.distance < mSafetyCriticalLaneChangeConfig.executionMinFrontDistance ||
+            timeGap < mSafetyCriticalLaneChangeConfig.executionMinTimeGap ||
+            ttc < mSafetyCriticalLaneChangeConfig.executionMinTtc);
     if (unsafeFrontVehicle) {
         EV_WARN << "[MCM-LC-FAILSAFE]"
             << " simTime=" << mEgoContext.now
@@ -347,7 +340,7 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
         return;
     }
 
-    if (mLaneChangeMoveStepCounter >= scLaneChangeExecutionStepCount) {
+    if (mLaneChangeMoveStepCounter >= mSafetyCriticalLaneChangeConfig.executionStepCount) {
         if (mSafetyCriticalLaneChangeExecutionActive) {
             EV_INFO << "[MCM-LC-EXEC]"
                 << " simTime=" << mEgoContext.now
@@ -371,8 +364,10 @@ void McApplication::applySafetyCriticalLaneChangeExecutionControl()
 
     // Apply the configured lane-change displacement incrementally. This physical
     // execution calibration is intentionally separate from the planned shift.
-    const double targetX = currentX + scLaneChangeExecutionLateralShiftPerStep;
-    const double targetY = currentY - currentSpeed / scLaneChangeExecutionStepCount;
+    const double targetX =
+        currentX + mSafetyCriticalLaneChangeConfig.executionLateralShiftPerStep;
+    const double targetY =
+        currentY - currentSpeed / mSafetyCriticalLaneChangeConfig.executionStepCount;
 
     try {
         // Use SUMO/libsumo's invalid-angle sentinel. A NaN angle produced
@@ -522,7 +517,7 @@ void McApplication::applyCvAccelerationControl()
     const std::string& vehicleId = mVehicleController->getVehicleId();
     const bool highPriorityLaneChange =
         mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
-        mEgoContext.routeId == scTargetLaneChangeRouteId;
+        mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.targetCvRouteId;
     const double targetSpeed = highPriorityLaneChange && mTargetSpeed > mEgoContext.speed ?
         mTargetSpeed : mMergingExecutionConfig.cvAccelerationTargetSpeed;
 
@@ -682,7 +677,9 @@ void McApplication::monitorCvExecutionControl()
         rvX = rvPoint.mX;
         rvY = rvPoint.mY;
         rvLane = rvSnapshot->hasLaneId ? static_cast<int>(rvSnapshot->laneId) : -1;
-        if (rvPoint.mY > scValidationMapLaneIndexCorrectionThresholdY && rvLane >= 0) {
+        if (rvPoint.mY >
+                mSafetyCriticalLaneChangeConfig.validationLaneIndexCorrectionThresholdY &&
+                rvLane >= 0) {
             ++rvLane;
             laneWorkaroundApplied = true;
         }

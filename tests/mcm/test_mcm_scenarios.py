@@ -255,6 +255,27 @@ class McScenarioTestCase(unittest.TestCase):
             cvAccelerationTargetSpeed="33.33",
         )
 
+    def require_lane_change_config(self, log: ParsedLog) -> None:
+        log.require(
+            "MCM-CONFIG",
+            type="lane-change-follower",
+            station="449",
+            followerRouteId="route_highway_1",
+            targetCvRouteId="route_highway_2",
+            plannedLateralShift="3",
+            validationLaneCorrectionThresholdY="452365",
+            executionStepCount="10",
+            executionShiftPerStep="0.32",
+            desiredMinimumTimeGap="1",
+            coordinationConflictTimeGap="1.5",
+            paperInitialTimeGap="1.22",
+            minFrontDistance="5",
+            minTimeGap="0.3",
+            minTtc="1",
+            fallbackSpeed="0.1",
+            fallbackDuration="1",
+        )
+
     def require_trajectory_semantics(
         self,
         log: ParsedLog,
@@ -435,6 +456,7 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
             log = run.parsed_log
 
             self.require_emergency_source_config(log, braking_only_baseline="0")
+            self.require_lane_change_config(log)
             log.forbid("MCM-CONFIG", type="merging")
             log.forbid("MCM-CONFIG", type="merging-execution")
 
@@ -535,6 +557,7 @@ class EmergencyBaselineTest(McScenarioTestCase):
             log = run.parsed_log
 
             self.require_emergency_source_config(log, braking_only_baseline="1")
+            self.require_lane_change_config(log)
             log.forbid("MCM-CONFIG", type="merging")
             log.forbid("MCM-CONFIG", type="merging-execution")
 

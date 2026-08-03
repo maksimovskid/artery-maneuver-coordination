@@ -994,6 +994,88 @@ void McService::initialize()
             << mergingExecutionConfig.cvAccelerationTargetSpeed
             << '\n';
     }
+    mcm::SafetyCriticalLaneChangeConfig laneChangeConfig;
+    laneChangeConfig.followerRouteId = par("laneChangeFollowerRouteId").stdstringValue();
+    laneChangeConfig.targetCvRouteId = par("laneChangeTargetCvRouteId").stdstringValue();
+    laneChangeConfig.plannedLateralShift =
+        par("laneChangePlannedLateralShift").doubleValue();
+    laneChangeConfig.validationLaneIndexCorrectionThresholdY =
+        par("laneChangeValidationLaneCorrectionThresholdY").doubleValue();
+    const int laneChangeExecutionStepCount = par("laneChangeExecutionStepCount").intValue();
+    laneChangeConfig.executionLateralShiftPerStep =
+        par("laneChangeExecutionLateralShiftPerStep").doubleValue();
+    laneChangeConfig.desiredMinimumTimeGap =
+        par("laneChangeDesiredMinimumTimeGap").doubleValue();
+    laneChangeConfig.coordinationConflictTimeGap =
+        par("laneChangeCoordinationConflictTimeGap").doubleValue();
+    laneChangeConfig.paperInitialTimeGap =
+        par("laneChangePaperInitialTimeGap").doubleValue();
+    laneChangeConfig.executionMinFrontDistance =
+        par("laneChangeExecutionMinFrontDistance").doubleValue();
+    laneChangeConfig.executionMinTimeGap =
+        par("laneChangeExecutionMinTimeGap").doubleValue();
+    laneChangeConfig.executionMinTtc = par("laneChangeExecutionMinTtc").doubleValue();
+    laneChangeConfig.fallbackSpeed = par("laneChangeFallbackSpeed").doubleValue();
+    laneChangeConfig.fallbackDecelerationTime = par("laneChangeFallbackDecelerationTime");
+    if (laneChangeConfig.followerRouteId.empty() || laneChangeConfig.targetCvRouteId.empty()) {
+        throw cRuntimeError("lane-change follower and target-CV route IDs must not be empty");
+    }
+    if (laneChangeConfig.followerRouteId == laneChangeConfig.targetCvRouteId) {
+        throw cRuntimeError("lane-change follower and target-CV route IDs must be different");
+    }
+    if (!std::isfinite(laneChangeConfig.plannedLateralShift) ||
+            !std::isfinite(laneChangeConfig.validationLaneIndexCorrectionThresholdY) ||
+            !std::isfinite(laneChangeConfig.executionLateralShiftPerStep) ||
+            !std::isfinite(laneChangeConfig.desiredMinimumTimeGap) ||
+            !std::isfinite(laneChangeConfig.coordinationConflictTimeGap) ||
+            !std::isfinite(laneChangeConfig.paperInitialTimeGap) ||
+            !std::isfinite(laneChangeConfig.executionMinFrontDistance) ||
+            !std::isfinite(laneChangeConfig.executionMinTimeGap) ||
+            !std::isfinite(laneChangeConfig.executionMinTtc) ||
+            !std::isfinite(laneChangeConfig.fallbackSpeed)) {
+        throw cRuntimeError("lane-change configuration numeric parameters must be finite");
+    }
+    if (laneChangeExecutionStepCount <= 0) {
+        throw cRuntimeError("laneChangeExecutionStepCount must be positive");
+    }
+    laneChangeConfig.executionStepCount =
+        static_cast<std::size_t>(laneChangeExecutionStepCount);
+    if (laneChangeConfig.plannedLateralShift < 0.0 ||
+            laneChangeConfig.executionLateralShiftPerStep <= 0.0 ||
+            laneChangeConfig.desiredMinimumTimeGap < 0.0 ||
+            laneChangeConfig.coordinationConflictTimeGap < 0.0 ||
+            laneChangeConfig.paperInitialTimeGap < 0.0 ||
+            laneChangeConfig.executionMinFrontDistance < 0.0 ||
+            laneChangeConfig.executionMinTimeGap < 0.0 ||
+            laneChangeConfig.executionMinTtc < 0.0 ||
+            laneChangeConfig.fallbackSpeed < 0.0 ||
+            laneChangeConfig.fallbackDecelerationTime <= SimTime::ZERO) {
+        throw cRuntimeError("lane-change distances, gaps, speeds, and fallback duration are invalid");
+    }
+    mApplication->setSafetyCriticalLaneChangeConfig(laneChangeConfig);
+    if (mVehicleController &&
+            mVehicleController->getRouteID() == laneChangeConfig.followerRouteId) {
+        EV_INFO << "[MCM-CONFIG]"
+            << " type=lane-change-follower"
+            << " station=" << mVehicleDataProvider->station_id()
+            << " followerRouteId=" << laneChangeConfig.followerRouteId
+            << " targetCvRouteId=" << laneChangeConfig.targetCvRouteId
+            << " plannedLateralShift=" << laneChangeConfig.plannedLateralShift
+            << " validationLaneCorrectionThresholdY="
+            << laneChangeConfig.validationLaneIndexCorrectionThresholdY
+            << " executionStepCount=" << laneChangeConfig.executionStepCount
+            << " executionShiftPerStep=" << laneChangeConfig.executionLateralShiftPerStep
+            << " desiredMinimumTimeGap=" << laneChangeConfig.desiredMinimumTimeGap
+            << " coordinationConflictTimeGap="
+            << laneChangeConfig.coordinationConflictTimeGap
+            << " paperInitialTimeGap=" << laneChangeConfig.paperInitialTimeGap
+            << " minFrontDistance=" << laneChangeConfig.executionMinFrontDistance
+            << " minTimeGap=" << laneChangeConfig.executionMinTimeGap
+            << " minTtc=" << laneChangeConfig.executionMinTtc
+            << " fallbackSpeed=" << laneChangeConfig.fallbackSpeed
+            << " fallbackDuration=" << laneChangeConfig.fallbackDecelerationTime.dbl()
+            << '\n';
+    }
     mApplication->setNegotiationRetryInterval(mNegotiationRetryInterval);
     mApplication->setNegotiationLimits(
         mNegotiationLimitMerging,

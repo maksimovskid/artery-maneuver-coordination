@@ -37,6 +37,22 @@ simple McService like ItsG5Service
         double mergingRvExecutionSpeed @unit(mps) = default(22.22mps);
         double mergingCvAccelerationTargetSpeed @unit(mps) = default(33.33mps);
 
+        // Current validation-map safety-critical follower lane change.
+        string laneChangeFollowerRouteId = default("route_highway_1");
+        string laneChangeTargetCvRouteId = default("route_highway_2");
+        double laneChangePlannedLateralShift @unit(m) = default(3.0m);
+        double laneChangeValidationLaneCorrectionThresholdY @unit(m) = default(452365m);
+        int laneChangeExecutionStepCount = default(10);
+        double laneChangeExecutionLateralShiftPerStep @unit(m) = default(0.32m);
+        double laneChangeDesiredMinimumTimeGap @unit(s) = default(1.0s);
+        double laneChangeCoordinationConflictTimeGap @unit(s) = default(1.5s);
+        double laneChangePaperInitialTimeGap @unit(s) = default(1.22s);
+        double laneChangeExecutionMinFrontDistance @unit(m) = default(5.0m);
+        double laneChangeExecutionMinTimeGap @unit(s) = default(0.3s);
+        double laneChangeExecutionMinTtc @unit(s) = default(1.0s);
+        double laneChangeFallbackSpeed @unit(mps) = default(0.1mps);
+        double laneChangeFallbackDecelerationTime @unit(s) = default(1.0s);
+
         // MCM generation-rule hooks for communication/QoS experiments.
         // The current default path still preserves the existing fixed-rate
         // behavior; the named policies will be implemented incrementally.

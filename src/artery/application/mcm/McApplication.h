@@ -217,6 +217,23 @@ struct MergingExecutionConfig {
     double cvAccelerationTargetSpeed = 0.0;
 };
 
+struct SafetyCriticalLaneChangeConfig {
+    std::string followerRouteId;
+    std::string targetCvRouteId;
+    double plannedLateralShift = 0.0;
+    double validationLaneIndexCorrectionThresholdY = 0.0;
+    std::size_t executionStepCount = 0;
+    double executionLateralShiftPerStep = 0.0;
+    double desiredMinimumTimeGap = 0.0;
+    double coordinationConflictTimeGap = 0.0;
+    double paperInitialTimeGap = 0.0;
+    double executionMinFrontDistance = 0.0;
+    double executionMinTimeGap = 0.0;
+    double executionMinTtc = 0.0;
+    double fallbackSpeed = 0.0;
+    omnetpp::SimTime fallbackDecelerationTime = omnetpp::SimTime::ZERO;
+};
+
 struct PendingMcmCommand {
     enum class Kind {
         Negotiation,
@@ -257,6 +274,7 @@ public:
     void setEmergencySourceConfig(const EmergencySourceConfig&);
     void setMergingCoordinationConfig(const MergingCoordinationConfig&);
     void setMergingExecutionConfig(const MergingExecutionConfig&);
+    void setSafetyCriticalLaneChangeConfig(const SafetyCriticalLaneChangeConfig&);
     void updateEgoContext(const McEgoContext&);
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
@@ -433,6 +451,7 @@ private:
     EmergencySourceConfig mEmergencySourceConfig;
     MergingCoordinationConfig mMergingCoordinationConfig;
     MergingExecutionConfig mMergingExecutionConfig;
+    SafetyCriticalLaneChangeConfig mSafetyCriticalLaneChangeConfig;
 
     // CV-side state for responding to a received Request.
     bool mCvResponseQueuedOrSent = false;

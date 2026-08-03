@@ -38,14 +38,14 @@ using scenario::scHighwayMergingRouteId;
 using scenario::scMergingTimeGap;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
-using scenario::scSafetyCriticalLaneChangeRouteId;
-using scenario::scTargetLaneChangeRouteId;
 
-bool isHighwayMergingCvRoute(const std::string& routeId)
+bool isHighwayMergingCvRoute(
+    const std::string& routeId,
+    const SafetyCriticalLaneChangeConfig& laneChangeConfig)
 {
     return routeId == scHighwayMergingRouteId ||
-        routeId == scSafetyCriticalLaneChangeRouteId ||
-        routeId == scTargetLaneChangeRouteId;
+        routeId == laneChangeConfig.followerRouteId ||
+        routeId == laneChangeConfig.targetCvRouteId;
 }
 
 struct MergeTargetCandidate {
@@ -131,7 +131,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         return;
     }
 
-    if (!isHighwayMergingCvRoute(mEgoContext.routeId)) {
+    if (!isHighwayMergingCvRoute(mEgoContext.routeId, mSafetyCriticalLaneChangeConfig)) {
         EV_DETAIL << "McApplication CV maneuver classification skipped for route "
             << mEgoContext.routeId << " because this milestone only handles highway CVs for route_merging_1\n";
         return;

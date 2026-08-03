@@ -34,17 +34,9 @@ namespace mcm
 
 namespace
 {
-using scenario::scEmergencyCoordinationTimeGap;
-using scenario::scInitialPaperTimeGap;
-using scenario::scLaneChangeShiftX;
-using scenario::scLaneChangeEmergencyFallbackDecelerationTime;
-using scenario::scLaneChangeEmergencyFallbackSpeed;
 using scenario::scMergingTimeGap;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
-using scenario::scSafetyCriticalLaneChangeRouteId;
-using scenario::scSafetyCriticalTimeGap;
-using scenario::scValidationMapLaneIndexCorrectionThresholdY;
 
 bool isSafetyCriticalLaneChangeScenarioVehicle(
     const std::string& vehicleId,
@@ -85,7 +77,7 @@ void McApplication::evaluateEmergencyBrakingTrigger(omnetpp::SimTime now)
         return;
     }
 
-    if (mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId &&
+    if (mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.followerRouteId &&
             mEgoContext.speed < mEmergencySourceConfig.normalSpeed - 0.5 &&
             now.dbl() < emergencyStartTime) {
         mVehicleController->setMaxSpeed(
@@ -402,7 +394,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
             mPendingMcmCommand || mLaneChangeRequestQueuedOrSent ||
             !mEmergencyReceived ||
-            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            mEgoContext.routeId != mSafetyCriticalLaneChangeConfig.followerRouteId ||
             mCoordinationProgressRV != coordinationProgressRV::CheckForCoordination ||
             mControlManeuver != controlManeuver::ChangeLane) {
         return;
@@ -413,7 +405,9 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
             mEgoContext.routeReferenceIndex >= 0) {
         auto shiftedX = mEgoContext.routeReferenceX;
         std::transform(shiftedX.begin(), shiftedX.end(), shiftedX.begin(),
-            [](float x) { return x + static_cast<float>(scLaneChangeShiftX); });
+            [this](float x) {
+                return x + static_cast<float>(mSafetyCriticalLaneChangeConfig.plannedLateralShift);
+            });
         laneChangeTrajectory = mTrajectoryPlanner.calculateRefTrajectory(
             scRequestTrajectorySteps,
             scRequestTrajectoryDt,
@@ -429,7 +423,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     if (laneChangeTrajectory.empty()) {
         laneChangeTrajectory = mEgoContext.plannedTrajectory;
         for (auto& point : laneChangeTrajectory) {
-            point.mX += scLaneChangeShiftX;
+            point.mX += mSafetyCriticalLaneChangeConfig.plannedLateralShift;
         }
     }
 
@@ -463,7 +457,8 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
         const auto& first = snapshot.plannedTrajectory.front();
         const int rawLaneReceived = static_cast<int>(snapshot.laneId);
         int laneReceived = rawLaneReceived;
-        const bool laneWorkaroundApplied = first.mY > scValidationMapLaneIndexCorrectionThresholdY;
+        const bool laneWorkaroundApplied =
+            first.mY > mSafetyCriticalLaneChangeConfig.validationLaneIndexCorrectionThresholdY;
         if (laneWorkaroundApplied) {
             laneReceived += 1;
         }
@@ -480,7 +475,8 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
             << " candidateCvStation=" << snapshot.stationId
             << " rawLaneReceived=" << rawLaneReceived
             << " firstTrajectoryY=" << first.mY
-            << " workaroundThresholdY=452365"
+            << " workaroundThresholdY="
+            << mSafetyCriticalLaneChangeConfig.validationLaneIndexCorrectionThresholdY
             << " workaroundApplied=" << laneWorkaroundApplied
             << " correctedLaneReceived=" << laneReceived
             << " targetLaneMatch=" << targetLaneMatch
@@ -647,7 +643,7 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
     }
 
     if (!mHasEgoContext || !mVehicleController || !mVehicleDataProvider ||
-            mEgoContext.routeId != scSafetyCriticalLaneChangeRouteId ||
+            mEgoContext.routeId != mSafetyCriticalLaneChangeConfig.followerRouteId ||
             mVehicleController->getVehicleId() == mEmergencySourceConfig.vehicleId) {
         return;
     }
@@ -691,7 +687,8 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
     const double relativeSpeed = emergencySpeed >= 0.0 ? mEgoContext.speed - emergencySpeed : -1.0;
     const double timeGap = mEgoContext.speed > 0.1 ? distanceGap / mEgoContext.speed : -1.0;
     const double ttc = relativeSpeed > 0.1 ? distanceGap / relativeSpeed : -1.0;
-    const double reactionWindow = timeGap >= 0.0 ? timeGap - scSafetyCriticalTimeGap : -1.0;
+    const double reactionWindow = timeGap >= 0.0 ?
+        timeGap - mSafetyCriticalLaneChangeConfig.desiredMinimumTimeGap : -1.0;
 
     // Same lane and ahead are the trigger gates for arming the emergency
     // lane-change search. Gap, TTC, and reaction window stay diagnostic here;
@@ -746,12 +743,12 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
     const bool conflictAtMinimumGap = mTrajectoryPlanner.check_traj_conflict(
         mEgoContext.plannedTrajectory,
         snapshot.plannedTrajectory,
-        scSafetyCriticalTimeGap,
+        mSafetyCriticalLaneChangeConfig.desiredMinimumTimeGap,
         eteDelay);
     const bool conflictAtCoordinationGap = mTrajectoryPlanner.check_traj_conflict(
         mEgoContext.plannedTrajectory,
         snapshot.plannedTrajectory,
-        scEmergencyCoordinationTimeGap,
+        mSafetyCriticalLaneChangeConfig.coordinationConflictTimeGap,
         eteDelay);
     EV_INFO << "[MCM-EMERGENCY]"
         << " simTime=" << mEgoContext.now
@@ -773,11 +770,11 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
         << " distanceGap=" << distanceGap
         << " timeGap=" << timeGap
         << " ttc=" << ttc
-        << " desiredMinimumTimeGap=" << scSafetyCriticalTimeGap
+        << " desiredMinimumTimeGap=" << mSafetyCriticalLaneChangeConfig.desiredMinimumTimeGap
         << " reactionWindow=" << reactionWindow
-        << " paperInitialTimeGap=" << scInitialPaperTimeGap
+        << " paperInitialTimeGap=" << mSafetyCriticalLaneChangeConfig.paperInitialTimeGap
         << " minimumGapConflict=" << conflictAtMinimumGap
-        << " coordinationGap=" << scEmergencyCoordinationTimeGap
+        << " coordinationGap=" << mSafetyCriticalLaneChangeConfig.coordinationConflictTimeGap
         << " coordinationConflict=" << conflictAtCoordinationGap
         << " safetyCritical=1"
         << " reason=armed-same-lane-emergency-ahead"
@@ -868,8 +865,9 @@ void McApplication::applyEmergencyFallbackBrake(
     EV_STATICCONTEXT;
 
     const double currentSpeed = mHasEgoContext ? mEgoContext.speed : 0.0;
-    const double targetSpeed = scLaneChangeEmergencyFallbackSpeed;
-    const double decelerationTime = scLaneChangeEmergencyFallbackDecelerationTime;
+    const double targetSpeed = mSafetyCriticalLaneChangeConfig.fallbackSpeed;
+    const double decelerationTime =
+        mSafetyCriticalLaneChangeConfig.fallbackDecelerationTime.dbl();
 
     // Reject, negotiation timeout, unsafe front vehicle, and moveToXY failure
     // all use the same RV safety fallback: brake and clear active coordination.

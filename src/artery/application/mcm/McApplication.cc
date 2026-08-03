@@ -36,17 +36,11 @@ namespace mcm
 
 namespace
 {
-using scenario::scEmergencyCoordinationTimeGap;
 using scenario::scHighwayMergingRouteId;
-using scenario::scInitialPaperTimeGap;
-using scenario::scLaneChangeShiftX;
 using scenario::scMaxReceivedMcmCache;
 using scenario::scNormalHighwaySpeed;
 using scenario::scRequestTrajectoryDt;
 using scenario::scRequestTrajectorySteps;
-using scenario::scSafetyCriticalLaneChangeRouteId;
-using scenario::scSafetyCriticalTimeGap;
-using scenario::scTargetLaneChangeRouteId;
 
 priorityMcmCategory priorityFromMcm(long priority)
 {
@@ -130,6 +124,12 @@ void McApplication::setMergingCoordinationConfig(const MergingCoordinationConfig
 void McApplication::setMergingExecutionConfig(const MergingExecutionConfig& config)
 {
     mMergingExecutionConfig = config;
+}
+
+void McApplication::setSafetyCriticalLaneChangeConfig(
+    const SafetyCriticalLaneChangeConfig& config)
+{
+    mSafetyCriticalLaneChangeConfig = config;
 }
 
 void McApplication::updateEgoContext(const McEgoContext& context)
@@ -256,7 +256,7 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
         mCoordinationProgressRV = coordinationProgressRV::RequestSent;
         if (mEgoContext.routeId == mMergingCoordinationConfig.requestingRouteId) {
             mMergingRequestQueuedOrSent = true;
-        } else if (mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId) {
+        } else if (mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.followerRouteId) {
             mLaneChangeRequestQueuedOrSent = true;
             EV_INFO << "[MCM-LC-STATE]"
                 << " simTime=" << mcm.sentAt
@@ -589,7 +589,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         !mSecondRequestSmokeRejectConsumed &&
         mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
         mHasEgoContext &&
-        mEgoContext.routeId == scTargetLaneChangeRouteId &&
+        mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.targetCvRouteId &&
         egoStationId == mSecondRequestSmokeRejectStationId;
 
     if (forceSmokeReject) {
@@ -626,7 +626,8 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         //     << " to RV " << mCvRvStationId
         //     << " at " << omnetpp::simTime() << " s" << std::endl;
     } else if (mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
-            mHasEgoContext && mEgoContext.routeId == scTargetLaneChangeRouteId) {
+            mHasEgoContext &&
+            mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.targetCvRouteId) {
         CvCooperationDecision decision = evaluateCvCooperationDecision(received);
         if (decision.feasible) {
             command.subtype = decision.responseSubtype;
@@ -1156,7 +1157,7 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     sampleMergingGapDiagnostics("execution-start");
 
     if (mPriorityMcmCategory == priorityMcmCategory::HighPriority &&
-            mEgoContext.routeId == scSafetyCriticalLaneChangeRouteId) {
+            mEgoContext.routeId == mSafetyCriticalLaneChangeConfig.followerRouteId) {
         EV_INFO << "[MCM-LC-3VEH]"
             << " simTime=" << mEgoContext.now
             << " role=safety-critical-lane-change-rv"
