@@ -45,7 +45,7 @@ void McApplication::queueRepeatedExecute()
     }
 
     PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
+    command.kind = PendingMcmCommand::Kind::Execution;
     command.subtype = mcmSubtype::Execute;
     command.priority = mPriorityMcmCategory;
     command.cooperationType = 0;
@@ -64,10 +64,11 @@ void McApplication::queueRepeatedExecute()
         << " direction=queued"
         << " station=" << mEgoContext.stationId
         << " subtype=Execute"
-        << " kind=Negotiation"
-        << " container=Negotiation"
+        << " kind=Execution"
+        << " container=Execution"
         << " origin=repeated-execute"
-        << " requestId=" << static_cast<int>(command.requestId)
+        << " requestId=-1"
+        << " cooperationId=" << static_cast<int>(command.requestId)
         << " target1=" << command.targetVehicle1
         << " target2=" << command.targetVehicle2
         << " hasTarget2=" << command.hasTargetVehicle2

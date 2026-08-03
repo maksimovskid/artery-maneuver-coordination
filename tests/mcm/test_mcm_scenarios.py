@@ -56,16 +56,16 @@ class McScenarioTestCase(unittest.TestCase):
         )
         log.require("MCM-WIRE", direction="sent", **initial_expected)
 
-        # Temporary mixed-state baseline: repeated Execute remains the next
-        # negotiation-container sender migration target.
         repeated_expected = {
             "station": station,
             "subtype": "Execute",
-            "kind": "Negotiation",
-            "container": "Negotiation",
-            "requestId": request_id,
+            "kind": "Execution",
+            "container": "Execution",
+            "requestId": "-1",
+            "cooperationId": request_id,
             "target1": target1,
             "target2": target2,
+            "priority": priority,
         }
         log.require(
             "MCM-WIRE",
@@ -73,7 +73,7 @@ class McScenarioTestCase(unittest.TestCase):
             origin="repeated-execute",
             **repeated_expected,
         )
-        log.require("MCM-WIRE", direction="sent", cooperationId="-1", **repeated_expected)
+        log.require("MCM-WIRE", direction="sent", **repeated_expected)
 
     def require_cv_execution_armed(
         self,
@@ -99,18 +99,23 @@ class McScenarioTestCase(unittest.TestCase):
             result="pass",
             reason="none",
         )
-        log.require(
-            "MCM-WIRE",
-            direction="received",
-            event="cv-execution-armed",
-            station=station,
-            sender=sender,
-            subtype="Execute",
-            container="Execution",
-            cooperationId=request_id,
-            target1=target1,
-            target2=target2,
-            mode="ManeuverExecutionMode",
+        armed_fields = {
+            "direction": "received",
+            "event": "cv-execution-armed",
+            "station": station,
+            "sender": sender,
+            "subtype": "Execute",
+            "container": "Execution",
+            "cooperationId": request_id,
+            "target1": target1,
+            "target2": target2,
+            "mode": "ManeuverExecutionMode",
+        }
+        log.require("MCM-WIRE", **armed_fields)
+        self.assertEqual(
+            log.count("MCM-WIRE", **armed_fields),
+            1,
+            "repeated Execute must not cause a second CV execution transition",
         )
         log.require(
             "MCM-WIRE",
@@ -119,8 +124,8 @@ class McScenarioTestCase(unittest.TestCase):
             station=station,
             sender=sender,
             subtype="Execute",
-            container="Negotiation",
-            requestId=request_id,
+            container="Execution",
+            cooperationId=request_id,
             result="reject",
             reason="invalid-cv-state",
         )
