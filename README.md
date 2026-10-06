@@ -20,27 +20,27 @@ The implementation is complete for its stated validation scope. It is not a prod
 
 ## Supported Scenarios and Animations
 
-The animations show matching baseline (left) and coordinated (right) runs with the same SUMO network, routes, traffic, simulation step, and random seed. The primary presentation close-ups use the same captured simulation data as the other variants and differ only in visualization/camera framing. These are deterministic replays, not statistical evaluations.
+The animations show matching baseline (left) and coordinated (right) runs with the same SUMO network, routes, traffic, simulation step, and random seed. The canonical presentation animations render the captured simulation data with detailed road surfaces and close-up camera framing. These are deterministic replays, not statistical evaluations.
 
 ### Medium-Priority Cooperative Merging
 
-![Presentation close-up of baseline and coordinated merging](docs/media/merging-comparison-presentation-closeup.gif)
+![Canonical presentation of baseline and coordinated merging](docs/media/merging-comparison-presentation-road-detail.gif)
 
 Coordination creates a usable gap and lets the merging vehicle enter without stopping in this run.
 
 The configured merging vehicle becomes the RV in the validation maneuver area and selects one or two highway-lane CVs using trajectory and gap information. Request, Offer, Confirm, and Accept establish agreement before execution-container Execute messages. Actuation and safe restoration use scenario-configured values.
 
-Configuration: `envmod-19CAVs-merging`. Alternative views: [interaction](docs/media/merging-comparison-interaction.gif) · [maneuver close-up](docs/media/merging-comparison-closeup.gif) · [overview](docs/media/merging-comparison.gif).
+Configuration: `envmod-19CAVs-merging`.
 
 ### High-Priority Safety-Critical Lane Change
 
-![Presentation close-up of baseline and coordinated emergency lane change](docs/media/lane-change-comparison-presentation-closeup.gif)
+![Canonical presentation of baseline and coordinated emergency lane change](docs/media/lane-change-comparison-presentation-road-detail.gif)
 
 The emergency vehicle brakes at the same time in both panels; coordination adds high-priority lane-change negotiation and target-lane cooperation.
 
 An emergency source sends an execution-container Abort with `EmergencyPriority`. A qualified follower plans and negotiates a lane change with one or two target-lane CVs and executes configured incremental lateral movement. Active lane-change safety and fallback thresholds remain separate from generic post-execution restoration safety.
 
-Configuration: `envmod-19CAVs-emergency-lane-change`. Alternative views: [interaction](docs/media/lane-change-comparison-interaction.gif) · [maneuver close-up](docs/media/lane-change-comparison-closeup.gif) · [overview](docs/media/lane-change-comparison.gif).
+Configuration: `envmod-19CAVs-emergency-lane-change`.
 
 ### Baselines and Second Request
 

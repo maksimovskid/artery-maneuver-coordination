@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
 import math
 import shutil
@@ -11,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
 from render_replay import (
     DEFAULT_VEHICLE_LENGTH_M,
@@ -38,6 +39,8 @@ from render_replay import (
     make_transform,
     parse_fcd,
     parse_lane_shapes,
+    parse_junction_shapes,
+    offset_polyline,
     parse_vehicle_dimensions,
     require_capture_outputs,
     role_file,
@@ -153,6 +156,17 @@ VIEW_PRESETS = {
     },
 }
 
+# Experimental surface rendering inherits the presentation camera and timeline.
+for scenario, presets in VIEW_PRESETS.items():
+    presets["presentation-road-detail"] = {
+        **presets["presentation-closeup"],
+        "gif": f"{scenario}-comparison-presentation-road-detail.gif",
+        "png": f"{scenario}-comparison-presentation-road-detail.png",
+    }
+VIEW_PRESETS["merging"]["presentation-road-detail"]["poster_time"] = 11.8
+VIEW_PRESETS["lane-change"]["presentation-road-detail"]["poster_time"] = 12.7
+
+
 ROLE_COLORS = {
     "RV": (31, 119, 180),
     "CV1": (44, 160, 44),
@@ -172,7 +186,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end", type=float)
     parser.add_argument(
         "--view",
-        choices=("overview", "closeup", "interaction", "presentation-closeup"),
+        choices=("overview", "closeup", "interaction", "presentation-closeup", "presentation-road-detail"),
         default="overview",
     )
     parser.add_argument("--output", type=Path, help="Optional output directory for final media.")
@@ -364,6 +378,91 @@ def draw_roads(
         draw.line(points, fill=(186, 194, 204), width=2)
 
 
+@lru_cache(maxsize=4)
+def road_surface_layer(size, box, viewport, lanes, junctions, complete_merging_junction=False,
+                       clip_box=None, occupied_lane_ids=()):
+    """Union width-offset lane ribbons and SUMO junctions at 3x resolution.
+
+    Extract the union perimeter so shared lane boundaries never become solid
+    road edges. Dashed markings are schematic, not surveyed paint geometry.
+    """
+    factor = 3
+    resolution = (size[0] * factor, size[1] * factor)
+    transform, scale = make_transform(viewport, tuple(v * factor for v in box))
+    mask = Image.new("L", resolution)
+    draw = ImageDraw.Draw(mask)
+
+    # The aspect-fit transform is unchanged. Cull against the actual drawing
+    # extent, not nominal world bounds: roads must cover the same pixels as cars.
+    clip_box = clip_box or box
+    screen_box = tuple(v * factor for v in clip_box)
+
+    def visible(points, padding=0):
+        projected = [transform(*p) for p in points]
+        margin = padding * scale
+        return (max(p[0] for p in projected) + margin >= screen_box[0]
+                and min(p[0] for p in projected) - margin <= screen_box[2]
+                and max(p[1] for p in projected) + margin >= screen_box[1]
+                and min(p[1] for p in projected) - margin <= screen_box[3])
+
+    visible_lanes = [lane for lane in lanes
+                     if visible(lane.points, lane.width) or lane.lane_id in occupied_lane_ids]
+    if complete_merging_junction:
+        # Keep the previous off-camera exit-stub cleanup. Never suppress an
+        # occupied lane: actual visible vehicle paths take precedence.
+        visible_lanes = [lane for lane in visible_lanes
+                         if lane.edge_id not in {":2363164794_0", "4058141"} or lane.lane_id in occupied_lane_ids]
+    for lane in visible_lanes:
+        left = offset_polyline(lane.points, lane.width / 2)
+        right = offset_polyline(lane.points, -lane.width / 2)
+        draw.polygon([transform(*p) for p in left + right[::-1]], fill=255)
+    for points in junctions:
+        if visible(points):
+            draw.polygon([transform(*p) for p in points], fill=255)
+
+    layer = Image.new("RGBA", resolution)
+    layer.paste((174, 181, 190, 255), mask=mask)
+    border = ImageChops.subtract(mask, mask.filter(ImageFilter.MinFilter(7)))
+    layer.paste((81, 91, 104, 255), mask=border)
+    markings = Image.new("RGBA", resolution)
+    paint = ImageDraw.Draw(markings)
+    for lane in visible_lanes:
+        if lane.index >= lane.lane_count - 1:
+            continue
+        # SUMO lane indices increase from right to left in travel direction.
+        points = offset_polyline(lane.points, lane.width / 2)
+        distance = 0.0
+        for a, b in zip(points, points[1:]):
+            length = math.dist(a, b)
+            cursor = 0.0
+            while cursor < length:
+                phase = (distance + cursor) % 6.0
+                step = min(length - cursor, (3.0 - phase) if phase < 3.0 else (6.0 - phase))
+                if phase < 3.0 and length > 0:
+                    start = tuple(a[i] + (b[i] - a[i]) * cursor / length for i in (0, 1))
+                    end = tuple(a[i] + (b[i] - a[i]) * (cursor + step) / length for i in (0, 1))
+                    paint.line([transform(*start), transform(*end)], fill=(247, 249, 252, 255),
+                               width=max(2, round(0.15 * scale)))
+                cursor += max(step, 1e-8)
+            distance += length
+    markings.putalpha(ImageChops.multiply(markings.getchannel("A"), mask))
+    layer = Image.alpha_composite(layer, markings)
+    # Clip only the road layer; camera transform and vehicle drawing stay identical.
+    clip = Image.new("L", resolution)
+    ImageDraw.Draw(clip).rectangle(screen_box, fill=255)
+    layer.putalpha(ImageChops.multiply(layer.getchannel("A"), clip))
+    return layer.resize(size, Image.LANCZOS)
+
+
+@lru_cache(maxsize=2)
+def network_junctions(merging_presentation=False):
+    # Minimal presentation-only rule: junction 2363164794 includes an apron
+    # toward an off-camera exit, leaving a pointed stub. Use its actual adjoining
+    # lane envelopes instead. The maneuver junction 7437618 remains untouched.
+    excluded = ("2363164794",) if merging_presentation else ()
+    return parse_junction_shapes(ROUTES_DIR / "new_map.net.xml", excluded)
+
+
 def draw_vehicle(
     draw: ImageDraw.ImageDraw,
     sample: VehicleSample,
@@ -447,8 +546,22 @@ def draw_panel(
     left, top, right, bottom = panel_box
     draw.rectangle(panel_box, fill=(247, 249, 252), outline=(216, 222, 230))
     transform, _ = make_transform(viewport, (left + 10, top + 58, right - 10, bottom - 70))
-    draw_roads(draw, lanes, transform, viewport)
+    if view == "presentation-road-detail":
+        layer = road_surface_layer(base.size, (left + 10, top + 58, right - 10, bottom - 70),
+                                   viewport, tuple(lanes), network_junctions(data.scenario == "merging"),
+                                   complete_merging_junction=data.scenario == "merging",
+                                   clip_box=(left, 0, right, base.height - 1),
+                                   occupied_lane_ids=data.road_lane_ids)
+        base.paste(layer, (0, 0), layer)
+    else:
+        draw_roads(draw, lanes, transform, viewport)
 
+    if view == "presentation-road-detail":
+        # Cars may continue to the actual image edge, but never spill from one
+        # comparison panel into its neighbor. This is the full panel boundary,
+        # not the former inset road rectangle that caused early road endings.
+        vehicle_layer = Image.new("RGBA", base.size)
+        draw = ImageDraw.Draw(vehicle_layer)
     primary_id = data.roles["vehicles"]["rv"] if data.scenario == "merging" else data.roles["vehicles"]["follower_rv"]
     primary_sample: VehicleSample | None = None
     primary_series = data.fcd[variant].get(primary_id)
@@ -472,7 +585,7 @@ def draw_panel(
         "CV2": (20, -24),
         "Emergency": (0, 10),
     }
-    if view == "presentation-closeup":
+    if view in ("presentation-closeup", "presentation-road-detail"):
         label_offsets = {
             "RV": (-12, -26),
             "CV1": (-28, 8),
@@ -502,6 +615,13 @@ def draw_panel(
             True,
             label_offsets.get(label, (0, -22)),
         )
+
+    if view == "presentation-road-detail":
+        panel_mask = Image.new("L", base.size)
+        ImageDraw.Draw(panel_mask).rectangle((left, 0, right, base.height - 1), fill=255)
+        vehicle_layer.putalpha(ImageChops.multiply(vehicle_layer.getchannel("A"), panel_mask))
+        base.paste(vehicle_layer, (0, 0), vehicle_layer)
+        draw = ImageDraw.Draw(base)
 
     heading = "Without coordination" if variant == "baseline" else "With coordination"
     draw.text((left + 14, top + 10), heading, fill=(20, 24, 28), font=fonts["title"])
@@ -535,7 +655,7 @@ def draw_panel(
         draw.text((legend_x + 23, y), label, fill=(42, 48, 56), font=fonts["small"])
         y += line_height
 
-    if final_hold and view != "presentation-closeup":
+    if final_hold and view not in ("presentation-closeup", "presentation-road-detail"):
         lines = final_summary_lines(data.scenario)
         box_w = 360
         box_x = int((left + right) / 2 - box_w / 2)
@@ -577,7 +697,32 @@ def render_frame(
     right_panel = (10 + panel_width + gap, panel_top, 10 + panel_width * 2 + gap, panel_bottom)
     draw_panel(image, left_panel, data, "baseline", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold, view)
     draw_panel(image, right_panel, data, "coordinated", time_s, viewport, lanes, dimensions_by_type, roles, fonts, final_hold, view)
+    if view == "presentation-road-detail":
+        # Extended roads are background; retain foreground title text unchanged.
+        draw = ImageDraw.Draw(image)
+        draw.text((18, 12), title, fill=(20, 24, 28), font=fonts["main_title"])
+        draw.text((width - 230, 16), "1 simulation second = 1 video second", fill=(76, 86, 98), font=fonts["small"])
     return image
+
+
+def occupied_visible_lanes(data, times, viewport, width, height, dimensions_by_type):
+    """Inspect every rendered vehicle footprint in both panels over the timeline."""
+    occupied = set()
+    panel_width = (width - 30) // 2
+    for variant, left in (("baseline", 10), ("coordinated", 20 + panel_width)):
+        right = left + panel_width
+        transform, _ = make_transform(viewport, (left + 10, 102, right - 10, height - 80))
+        for time_s in times:
+            for series in data.fcd[variant].values():
+                sample = series.at(time_s)
+                if sample is None:
+                    continue
+                dimensions = dimensions_by_type.get(sample.vehicle_type, VehicleDimensions())
+                points = [transform(*p) for p in vehicle_polygon(sample, dimensions)]
+                if (max(p[0] for p in points) >= left and min(p[0] for p in points) <= right
+                        and max(p[1] for p in points) >= 0 and min(p[1] for p in points) < height):
+                    occupied.add(sample.lane)
+    return tuple(sorted(occupied))
 
 
 def render_scenario(
@@ -619,6 +764,8 @@ def render_scenario(
     }
 
     times, hold_frames = timeline(start, end, fps)
+    if view == "presentation-road-detail":
+        data.road_lane_ids = occupied_visible_lanes(data, times, viewport, width, height, dimensions_by_type)
     frame_dir = TMP_FRAME_DIR / scenario
     if frame_dir.exists() and not keep_frames:
         shutil.rmtree(frame_dir)

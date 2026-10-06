@@ -76,6 +76,11 @@ class VehicleSeries:
 class LaneShape:
     lane_id: str
     points: tuple[tuple[float, float], ...]
+    width: float = 3.2
+    index: int = 0
+    edge_id: str = ""
+    lane_count: int = 1
+    internal: bool = False
 
 
 @dataclass(frozen=True)
@@ -154,17 +159,24 @@ def parse_vehicle_dimensions(path: Path) -> dict[str, VehicleDimensions]:
 def parse_lane_shapes(path: Path) -> list[LaneShape]:
     lanes: list[LaneShape] = []
     root = ET.parse(path).getroot()
-    for lane in root.iter("lane"):
-        lane_id = lane.get("id")
-        shape = lane.get("shape")
-        if not lane_id or not shape:
-            continue
-        points: list[tuple[float, float]] = []
-        for point in shape.split():
-            x_s, y_s = point.split(",", 1)
-            points.append((float(x_s), float(y_s)))
-        if len(points) >= 2:
-            lanes.append(LaneShape(lane_id, tuple(points)))
+    for edge in root.findall("edge"):
+        elements = edge.findall("lane")
+        for lane in elements:
+            lane_id = lane.get("id")
+            shape = lane.get("shape")
+            if not lane_id or not shape:
+                continue
+            points = tuple(tuple(map(float, point.split(",")[:2])) for point in shape.split())
+            if len(points) >= 2:
+                lanes.append(LaneShape(
+                    lane_id, points,
+                    # SUMO's net reader uses 3.2 m when width is omitted.
+                    width=parse_float(lane.get("width"), 3.2),
+                    index=int(lane.get("index", "0")),
+                    edge_id=edge.get("id", ""),
+                    lane_count=len(elements),
+                    internal=edge.get("function") == "internal",
+                ))
     return lanes
 
 
@@ -376,3 +388,35 @@ def save_gif(frames: list[Image.Image], path: Path, fps: int) -> None:
         optimize=True,
         disposal=2,
     )
+
+
+def parse_junction_shapes(path: Path, excluded_ids: tuple[str, ...] = ()) -> tuple:
+    """Read actual SUMO junction surface polygons, including merge connections."""
+    return tuple(
+        tuple(tuple(map(float, point.split(",")[:2])) for point in junction.get("shape", "").split())
+        for junction in ET.parse(path).getroot().findall("junction")
+        if junction.get("id") not in excluded_ids and len(junction.get("shape", "").split()) >= 3
+    )
+
+
+def offset_polyline(points, distance: float) -> list[tuple[float, float]]:
+    """Offset to the left in world coordinates, using capped miter joins."""
+    normals = []
+    for a, b in zip(points, points[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        normals.append((-dy / length, dx / length) if length else (0.0, 0.0))
+    result = []
+    for i, point in enumerate(points):
+        before = normals[max(0, i - 1)]
+        after = normals[min(i, len(normals) - 1)]
+        nx, ny = before[0] + after[0], before[1] + after[1]
+        length = math.hypot(nx, ny)
+        if length < 1e-9:
+            nx, ny = after
+        else:
+            nx, ny = nx / length, ny / length
+        projection = nx * after[0] + ny * after[1]
+        shift = distance / max(projection, 0.5)
+        result.append((point[0] + nx * shift, point[1] + ny * shift))
+    return result
