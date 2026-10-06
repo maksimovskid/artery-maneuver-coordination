@@ -62,9 +62,11 @@ Render final side-by-side GIF and PNG media from existing captured data:
 python3 tools/animation/render_comparison.py merging
 python3 tools/animation/render_comparison.py merging --view closeup
 python3 tools/animation/render_comparison.py merging --view interaction
+python3 tools/animation/render_comparison.py merging --view presentation-closeup
 python3 tools/animation/render_comparison.py lane-change
 python3 tools/animation/render_comparison.py lane-change --view closeup
 python3 tools/animation/render_comparison.py lane-change --view interaction
+python3 tools/animation/render_comparison.py lane-change --view presentation-closeup
 python3 tools/animation/render_comparison.py all
 ```
 
@@ -103,6 +105,7 @@ Useful optional renderer arguments:
 --view overview
 --view closeup
 --view interaction
+--view presentation-closeup
 --output
 --keep-frames
 ```
@@ -113,6 +116,8 @@ The view levels have different purposes:
 * `interaction` is the README-embedded vehicle-level view focused on relative
   motion, gap creation, braking response, and lateral maneuver execution.
 * `closeup` provides more road context while still emphasizing the maneuver.
+* `presentation-closeup` provides tighter, presentation-focused views generated
+  from the same captured simulation data, with matching PNG posters.
 
 The default output directory is:
 
@@ -129,12 +134,16 @@ docs/media/merging-comparison-closeup.gif
 docs/media/merging-comparison-closeup.png
 docs/media/merging-comparison-interaction.gif
 docs/media/merging-comparison-interaction.png
+docs/media/merging-comparison-presentation-closeup.gif
+docs/media/merging-comparison-presentation-closeup.png
 docs/media/lane-change-comparison.gif
 docs/media/lane-change-comparison.png
 docs/media/lane-change-comparison-closeup.gif
 docs/media/lane-change-comparison-closeup.png
 docs/media/lane-change-comparison-interaction.gif
 docs/media/lane-change-comparison-interaction.png
+docs/media/lane-change-comparison-presentation-closeup.gif
+docs/media/lane-change-comparison-presentation-closeup.png
 ```
 
 Temporary frames are written only below

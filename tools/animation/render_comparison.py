@@ -95,6 +95,19 @@ VIEW_PRESETS = {
                 max_y=452505.0,
             ),
         },
+        "presentation-closeup": {
+            "start": 8.5,
+            "end": 15.0,
+            "poster_time": 12.2,
+            "gif": "merging-comparison-presentation-closeup.gif",
+            "png": "merging-comparison-presentation-closeup.png",
+            "viewport": Viewport(
+                min_x=216570.0,
+                max_x=216615.0,
+                min_y=452330.0,
+                max_y=452470.0,
+            ),
+        },
     },
     "lane-change": {
         "overview": {},
@@ -124,6 +137,19 @@ VIEW_PRESETS = {
                 max_y=452345.0,
             ),
         },
+        "presentation-closeup": {
+            "start": 11.5,
+            "end": 18.0,
+            "poster_time": 13.5,
+            "gif": "lane-change-comparison-presentation-closeup.gif",
+            "png": "lane-change-comparison-presentation-closeup.png",
+            "viewport": Viewport(
+                min_x=216592.0,
+                max_x=216621.0,
+                min_y=452185.0,
+                max_y=452330.0,
+            ),
+        },
     },
 }
 
@@ -144,7 +170,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=540)
     parser.add_argument("--start", type=float)
     parser.add_argument("--end", type=float)
-    parser.add_argument("--view", choices=("overview", "closeup", "interaction"), default="overview")
+    parser.add_argument(
+        "--view",
+        choices=("overview", "closeup", "interaction", "presentation-closeup"),
+        default="overview",
+    )
     parser.add_argument("--output", type=Path, help="Optional output directory for final media.")
     parser.add_argument("--keep-frames", action="store_true")
     return parser.parse_args()
@@ -442,6 +472,13 @@ def draw_panel(
         "CV2": (20, -24),
         "Emergency": (0, 10),
     }
+    if view == "presentation-closeup":
+        label_offsets = {
+            "RV": (-12, -26),
+            "CV1": (-28, 8),
+            "CV2": (28, -24),
+            "Emergency": (-30, 10),
+        }
     for vehicle_id, (label, color) in roles.items():
         series = data.fcd[variant].get(vehicle_id)
         if series is None:
@@ -498,7 +535,7 @@ def draw_panel(
         draw.text((legend_x + 23, y), label, fill=(42, 48, 56), font=fonts["small"])
         y += line_height
 
-    if final_hold:
+    if final_hold and view != "presentation-closeup":
         lines = final_summary_lines(data.scenario)
         box_w = 360
         box_x = int((left + right) / 2 - box_w / 2)

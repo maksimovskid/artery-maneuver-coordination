@@ -50,7 +50,7 @@ The animations compare coordinated and matching baseline runs using the same SUM
 
 The baseline is shown on the left and the coordinated run on the right. In the illustrated run, coordination creates a usable gap and allows the merging vehicle to enter without stopping.
 
-[Maneuver close-up](docs/media/merging-comparison-closeup.gif) · [Scenario overview](docs/media/merging-comparison.gif)
+[Presentation close-up](docs/media/merging-comparison-presentation-closeup.gif) · [Maneuver close-up](docs/media/merging-comparison-closeup.gif) · [Scenario overview](docs/media/merging-comparison.gif)
 
 ### Safety-Critical Lane Change
 
@@ -58,7 +58,9 @@ The baseline is shown on the left and the coordinated run on the right. In the i
 
 The emergency vehicle brakes at the same time in both panels. The coordinated run adds high-priority lane-change negotiation and target-lane cooperation.
 
-[Maneuver close-up](docs/media/lane-change-comparison-closeup.gif) · [Scenario overview](docs/media/lane-change-comparison.gif)
+[Presentation close-up](docs/media/lane-change-comparison-presentation-closeup.gif) · [Maneuver close-up](docs/media/lane-change-comparison-closeup.gif) · [Scenario overview](docs/media/lane-change-comparison.gif)
+
+The presentation close-ups are tighter, presentation-focused views generated from the same captured simulation data.
 
 The capture and analysis workflow is documented in [tools/animation/README.md](tools/animation/README.md).
 
