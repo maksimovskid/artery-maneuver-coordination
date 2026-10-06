@@ -42,6 +42,7 @@ from render_replay import (
     parse_junction_shapes,
     offset_polyline,
     parse_vehicle_dimensions,
+    vehicle_dimensions,
     require_capture_outputs,
     role_file,
     save_gif,
@@ -163,14 +164,13 @@ for scenario, presets in VIEW_PRESETS.items():
         "gif": f"{scenario}-comparison-presentation-road-detail.gif",
         "png": f"{scenario}-comparison-presentation-road-detail.png",
     }
-VIEW_PRESETS["merging"]["presentation-road-detail"]["poster_time"] = 11.8
+VIEW_PRESETS["merging"]["presentation-road-detail"]["poster_time"] = 14.6
 VIEW_PRESETS["lane-change"]["presentation-road-detail"]["poster_time"] = 12.7
 
 
 ROLE_COLORS = {
     "RV": (31, 119, 180),
-    "CV1": (44, 160, 44),
-    "CV2": (22, 132, 22),
+    "CV": (44, 160, 44),
     "Emergency": (214, 39, 40),
     "Other": (142, 148, 156),
 }
@@ -191,47 +191,66 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, help="Optional output directory for final media.")
     parser.add_argument("--keep-frames", action="store_true")
+    parser.add_argument("--capture-root", type=Path,
+                        help="Separate capture pair containing baseline/, coordinated/, comparison.json.")
+    parser.add_argument("--output-stem", help="Override GIF/PNG filenames for experimental outputs.")
+    parser.add_argument("--poster-time", type=float, help="Simulation time for the experimental PNG preview.")
     return parser.parse_args()
 
 
 class ScenarioData:
-    def __init__(self, scenario: str) -> None:
-        require_capture_outputs(scenario)
+    def __init__(self, scenario: str, capture_root: Path | None = None) -> None:
+        if capture_root is None:
+            require_capture_outputs(scenario)
+        def output(variant):
+            return capture_root / variant if capture_root else scenario_output_dir(scenario, variant)
         self.scenario = scenario
         self.roles = load_json(role_file(scenario))
-        self.comparison = load_json(comparison_file(scenario))
+        self.comparison = load_json(capture_root / "comparison.json" if capture_root else comparison_file(scenario))
         self.metrics = {
-            variant: load_json(scenario_output_dir(scenario, variant) / "metrics.json")
+            variant: load_json(output(variant) / "metrics.json")
             for variant in ("baseline", "coordinated")
         }
         self.events = {
-            variant: load_json(scenario_output_dir(scenario, variant) / "events.json")
+            variant: load_json(output(variant) / "events.json")
             for variant in ("baseline", "coordinated")
         }
         self.fcd = {
-            variant: parse_fcd(scenario_output_dir(scenario, variant) / "fcd.xml")
+            variant: parse_fcd(output(variant) / "fcd.xml")
             for variant in ("baseline", "coordinated")
         }
+        if scenario in ("merging", "lane-change"):
+            participants = {"RV": [], "CV": []}
+            for event in self.events["coordinated"]:
+                role = event.get("role")
+                vehicle_id = event.get("localVehicleId")
+                if (event.get("action") == "SEND" and event.get("msg") == "Accept"
+                        and role == "CV" and vehicle_id not in participants["CV"]):
+                    participants["CV"].append(vehicle_id)
+                elif (event.get("action") == "SEND" and event.get("msg") == "Request"
+                        and role == "RV" and vehicle_id not in participants["RV"]):
+                    participants["RV"].append(vehicle_id)
+            # Departure/FCD order provides stable names, independent of Accept
+            # arrival order (CV4 can send its Accept before CV3).
+            for role, key in (("RV", "presentation_rvs"), ("CV", "presentation_cvs")):
+                self.roles["vehicles"][key] = sorted(participants[role],
+                    key=lambda vid: (self.fcd["coordinated"][vid].samples[0].time, vid))
 
 
 def role_map(scenario: str, roles: dict[str, Any]) -> dict[str, tuple[str, tuple[int, int, int]]]:
-    if scenario == "merging":
-        rv = roles["vehicles"]["rv"]
-        cv1, cv2 = roles["vehicles"]["candidate_cvs"][:2]
-        return {
-            rv: ("RV", ROLE_COLORS["RV"]),
-            cv1: ("CV1", ROLE_COLORS["CV1"]),
-            cv2: ("CV2", ROLE_COLORS["CV2"]),
-        }
-    emergency = roles["vehicles"]["emergency_vehicle"]
-    rv = roles["vehicles"]["follower_rv"]
-    cv1, cv2 = roles["vehicles"]["target_lane_cvs"][:2]
-    return {
-        emergency: ("Emergency", ROLE_COLORS["Emergency"]),
-        rv: ("RV", ROLE_COLORS["RV"]),
-        cv1: ("CV1", ROLE_COLORS["CV1"]),
-        cv2: ("CV2", ROLE_COLORS["CV2"]),
-    }
+    # Presentation labels follow verified Request/Accept participants. Names
+    # remain fixed in both panels; the baseline uses counterpart identities.
+    mapping = {}
+    if scenario == "lane-change":
+        emergency = roles["vehicles"]["emergency_vehicle"]
+        mapping[emergency] = ("Emergency", ROLE_COLORS["Emergency"])
+    default_rv = roles["vehicles"]["rv" if scenario == "merging" else "follower_rv"]
+    default_cvs = roles["vehicles"]["candidate_cvs" if scenario == "merging" else "target_lane_cvs"]
+    for i, vehicle_id in enumerate(roles["vehicles"].get("presentation_rvs", [default_rv]), 1):
+        mapping[vehicle_id] = (f"RV{i}", ROLE_COLORS["RV"])
+    for i, vehicle_id in enumerate(roles["vehicles"].get("presentation_cvs", default_cvs[:2]), 1):
+        mapping[vehicle_id] = (f"CV{i}", ROLE_COLORS["CV"])
+    return mapping
 
 
 def vehicle_ids_to_draw(data: ScenarioData) -> list[str]:
@@ -451,7 +470,13 @@ def road_surface_layer(size, box, viewport, lanes, junctions, complete_merging_j
     clip = Image.new("L", resolution)
     ImageDraw.Draw(clip).rectangle(screen_box, fill=255)
     layer.putalpha(ImageChops.multiply(layer.getchannel("A"), clip))
-    return layer.resize(size, Image.LANCZOS)
+    layer = layer.resize(size, Image.LANCZOS)
+    # Downsampling can spread alpha outside the panel by a pixel. Enforce the
+    # final frame boundary after antialiasing as well as before it.
+    final_clip = Image.new("L", size)
+    ImageDraw.Draw(final_clip).rectangle(clip_box, fill=255)
+    layer.putalpha(ImageChops.multiply(layer.getchannel("A"), final_clip))
+    return layer
 
 
 @lru_cache(maxsize=2)
@@ -574,9 +599,7 @@ def draw_panel(
             primary_sample = sample
         if vehicle_id in roles:
             continue
-        dimensions = dimensions_by_type.get(sample.vehicle_type)
-        if dimensions is None:
-            dimensions = VehicleDimensions(DEFAULT_VEHICLE_LENGTH_M, DEFAULT_VEHICLE_WIDTH_M)
+        dimensions = vehicle_dimensions(sample.vehicle_type, dimensions_by_type)
         draw_vehicle(draw, sample, dimensions, transform, None, ROLE_COLORS["Other"], fonts["small"], False)
 
     label_offsets = {
@@ -601,9 +624,7 @@ def draw_panel(
             continue
         if vehicle_id == primary_id:
             primary_sample = sample
-        dimensions = dimensions_by_type.get(sample.vehicle_type)
-        if dimensions is None:
-            dimensions = VehicleDimensions(DEFAULT_VEHICLE_LENGTH_M, DEFAULT_VEHICLE_WIDTH_M)
+        dimensions = vehicle_dimensions(sample.vehicle_type, dimensions_by_type)
         draw_vehicle(
             draw,
             sample,
@@ -613,7 +634,9 @@ def draw_panel(
             color,
             fonts["small_bold"],
             True,
-            label_offsets.get(label, (0, -22)),
+            label_offsets[label] if label in label_offsets else (
+                label_offsets["RV"] if label.startswith("RV") else
+                label_offsets["CV1" if int(label[2:]) % 2 else "CV2"]),
         )
 
     if view == "presentation-road-detail":
@@ -642,18 +665,27 @@ def draw_panel(
     legend_y = top + 12
     line_height = 14
     legend_width = 112
-    legend_height = 10 + line_height * len(roles)
+    legend_columns = 2 if len(roles) > 4 else 1
+    # Emergency gets a full-width row so its name cannot collide with column 2.
+    full_rows = [(label, color) for label, color in roles.values() if label == "Emergency"]
+    compact_rows = [(label, color) for label, color in roles.values() if label != "Emergency"]
+    legend_rows = math.ceil(len(compact_rows) / legend_columns)
+    legend_height = 10 + line_height * (legend_rows + len(full_rows))
     draw.rounded_rectangle(
         (legend_x, legend_y, legend_x + legend_width, legend_y + legend_height),
         radius=4,
         fill=(255, 255, 255),
         outline=(210, 216, 224),
     )
-    y = legend_y + 7
-    for label, color in roles.values():
-        draw.rectangle((legend_x + 7, y + 2, legend_x + 17, y + 12), fill=color, outline=(90, 96, 104))
-        draw.text((legend_x + 23, y), label, fill=(42, 48, 56), font=fonts["small"])
-        y += line_height
+    legend_items = [(label, color, legend_x, legend_y + 7 + i * line_height)
+                    for i, (label, color) in enumerate(full_rows)]
+    for index, (label, color) in enumerate(compact_rows):
+        x = legend_x + (index // legend_rows) * (legend_width // legend_columns)
+        y = legend_y + 7 + (len(full_rows) + index % legend_rows) * line_height
+        legend_items.append((label, color, x, y))
+    for label, color, x, y in legend_items:
+        draw.rectangle((x + 7, y + 2, x + 17, y + 12), fill=color, outline=(90, 96, 104))
+        draw.text((x + 23, y), label, fill=(42, 48, 56), font=fonts["small"])
 
     if final_hold and view not in ("presentation-closeup", "presentation-road-detail"):
         lines = final_summary_lines(data.scenario)
@@ -717,7 +749,7 @@ def occupied_visible_lanes(data, times, viewport, width, height, dimensions_by_t
                 sample = series.at(time_s)
                 if sample is None:
                     continue
-                dimensions = dimensions_by_type.get(sample.vehicle_type, VehicleDimensions())
+                dimensions = vehicle_dimensions(sample.vehicle_type, dimensions_by_type)
                 points = [transform(*p) for p in vehicle_polygon(sample, dimensions)]
                 if (max(p[0] for p in points) >= left and min(p[0] for p in points) <= right
                         and max(p[1] for p in points) >= 0 and min(p[1] for p in points) < height):
@@ -735,8 +767,11 @@ def render_scenario(
     end: float,
     output_dir: Path,
     keep_frames: bool,
+    capture_root: Path | None = None,
+    output_stem: str | None = None,
+    poster_time: float | None = None,
 ) -> dict[str, Any]:
-    data = ScenarioData(scenario)
+    data = ScenarioData(scenario, capture_root)
     output_dir.mkdir(parents=True, exist_ok=True)
     lanes = parse_lane_shapes(ROUTES_DIR / "new_map.net.xml")
     dimensions_by_type = parse_vehicle_dimensions(ROUTES_DIR / "vehicle_types.xml")
@@ -750,6 +785,10 @@ def render_scenario(
             if series is not None:
                 focus_series.append(series)
     view_settings = {**SCENARIO_DEFAULTS[scenario], **VIEW_PRESETS[scenario][view]}
+    if poster_time is not None:
+        view_settings["poster_time"] = poster_time
+    if output_stem:
+        view_settings.update(gif=f"{output_stem}.gif", png=f"{output_stem}.png")
     viewport = view_settings.get("viewport")
     if viewport is None:
         viewport = compute_viewport(focus_series, lanes, start, end)
@@ -802,7 +841,7 @@ def render_scenario(
     gif_path = output_dir / view_settings["gif"]
     png_path = output_dir / view_settings["png"]
     poster_frame.save(png_path)
-    save_gif(frames, gif_path, fps)
+    save_gif(frames, gif_path, fps, fixed_colors=tuple(ROLE_COLORS.values()))
 
     if not keep_frames and frame_dir.exists():
         shutil.rmtree(frame_dir)
@@ -852,6 +891,9 @@ def main() -> int:
             end=end,
             output_dir=output_dir,
             keep_frames=args.keep_frames,
+            capture_root=args.capture_root,
+            output_stem=args.output_stem,
+            poster_time=args.poster_time,
         )
         results.append(result)
         print(

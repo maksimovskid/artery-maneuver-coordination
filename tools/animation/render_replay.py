@@ -24,7 +24,7 @@ TMP_FRAME_DIR = RESULTS_DIR / "tmp_frames"
 STOPPED_SPEED_MPS = 0.1
 LOW_SPEED_MPS = 2.0
 DEFAULT_VEHICLE_LENGTH_M = 5.0
-DEFAULT_VEHICLE_WIDTH_M = 2.0
+DEFAULT_VEHICLE_WIDTH_M = 1.8
 
 
 @dataclass(frozen=True)
@@ -154,6 +154,13 @@ def parse_vehicle_dimensions(path: Path) -> dict[str, VehicleDimensions]:
             width=parse_float(elem.get("width"), DEFAULT_VEHICLE_WIDTH_M),
         )
     return dimensions
+
+
+def vehicle_dimensions(vehicle_type: str, dimensions_by_type) -> VehicleDimensions:
+    # TraCI creates per-vehicle types such as car_ml@car_ml1_2 when a maximum
+    # speed is changed; inherit the original SUMO vType dimensions.
+    return dimensions_by_type.get(vehicle_type,
+        dimensions_by_type.get(vehicle_type.split("@", 1)[0], VehicleDimensions()))
 
 
 def parse_lane_shapes(path: Path) -> list[LaneShape]:
@@ -299,6 +306,7 @@ def vehicle_polygon(
     sample: VehicleSample,
     dimensions: VehicleDimensions,
 ) -> list[tuple[float, float]]:
+    # FCD x/y is the center of the front bumper; the body extends behind it.
     # SUMO angle is measured clockwise from north. Convert to a world-space
     # direction vector with x east and y north.
     rad = math.radians(sample.angle)
@@ -306,13 +314,12 @@ def vehicle_polygon(
     dy = math.cos(rad)
     px = math.cos(rad)
     py = -math.sin(rad)
-    half_l = dimensions.length / 2.0
     half_w = dimensions.width / 2.0
     corners = [
-        (half_l, half_w),
-        (half_l, -half_w),
-        (-half_l, -half_w),
-        (-half_l, half_w),
+        (0.0, half_w),
+        (0.0, -half_w),
+        (-dimensions.length, -half_w),
+        (-dimensions.length, half_w),
     ]
     return [
         (
@@ -371,23 +378,28 @@ def format_acceleration(acceleration: float | None) -> str:
     return "n/a" if acceleration is None else f"{acceleration:.1f} m/s²"
 
 
-def save_gif(frames: list[Image.Image], path: Path, fps: int) -> None:
+def save_gif(frames: list[Image.Image], path: Path, fps: int, fixed_colors=()) -> None:
+    """Encode every frame with one palette and exact reserved role colors."""
     if not frames:
         raise ValueError("no frames to save")
     duration_ms = int(round(1000 / fps))
-    paletted = [
-        frame.convert("P", palette=Image.ADAPTIVE, colors=128)
-        for frame in frames
-    ]
-    paletted[0].save(
-        path,
-        save_all=True,
-        append_images=paletted[1:],
-        duration=duration_ms,
-        loop=0,
-        optimize=True,
-        disposal=2,
-    )
+    fixed_colors = tuple(dict.fromkeys(fixed_colors))
+    # Sample the sequence once for its neutral/UI colors, not independently per
+    # frame. Reserved entries keep role fills exact despite changing traffic.
+    samples = frames[::max(1, len(frames) // 12)][:12]
+    sample = Image.new("RGB", (240, 135 * len(samples)))
+    for i, frame in enumerate(samples):
+        sample.paste(frame.resize((240, 135), Image.NEAREST), (0, i * 135))
+    neutral_count = 128 - len(fixed_colors)
+    adaptive = sample.quantize(colors=neutral_count)
+    palette = Image.new("P", (1, 1))
+    values = [channel for color in fixed_colors for channel in color]
+    values += adaptive.getpalette()[:neutral_count * 3]
+    values += [0] * (768 - len(values))
+    palette.putpalette(values)
+    paletted = [frame.quantize(palette=palette, dither=Image.NONE) for frame in frames]
+    paletted[0].save(path, save_all=True, append_images=paletted[1:],
+                    duration=duration_ms, loop=0, optimize=False, disposal=2)
 
 
 def parse_junction_shapes(path: Path, excluded_ids: tuple[str, ...] = ()) -> tuple:

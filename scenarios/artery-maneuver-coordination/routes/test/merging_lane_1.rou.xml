@@ -9,7 +9,7 @@
 
    	
    	<vehicle id="car_ml1_1" type="car_ml" route="route_merging_1" depart="4.0" departLane="1" departSpeed="20.00" />  
-   	<vehicle id="car_ml1_2" type="car_ml" route="route_merging_1" depart="8.2" departLane="1" departSpeed="20.00" />  
+    <vehicle id="car_ml1_2" type="car_ml" route="route_merging_1" depart="8.4" departLane="1" departSpeed="20.00" />
      	<vehicle id="car_ml1_3" type="car_ml" route="route_merging_1" depart="12.2" departLane="1" departSpeed="20.00" />  
      	<!-- <vehicle id="car_ml1_4" type="car_ml" route="route_merging_1" depart="16.2" departLane="1" departSpeed="20.00" />   -->
      	<!-- <vehicle id="car_ml1_5" type="car_ml" route="route_merging_1" depart="20.2" departLane="1" departSpeed="20.00" />  -->
