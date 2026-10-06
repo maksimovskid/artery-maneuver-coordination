@@ -18,51 +18,37 @@ The implementation is complete for its stated validation scope. It is not a prod
 - SUMO/TraCI execution control for the supplied merging and lane-change scenarios.
 - Stable diagnostics and five full-simulation regression tests.
 
-## Supported Scenarios
+## Supported Scenarios and Animations
+
+The animations show matching baseline (left) and coordinated (right) runs with the same SUMO network, routes, traffic, simulation step, and random seed. The primary presentation close-ups use the same captured simulation data as the other variants and differ only in visualization/camera framing. These are deterministic replays, not statistical evaluations.
 
 ### Medium-Priority Cooperative Merging
 
-A configured merging vehicle becomes the RV in the validation maneuver area. It selects one or two highway-lane CVs from current trajectory and gap information, negotiates using Request, Offer, Confirm, and Accept, and then sends execution-container Execute messages. Physical actuation and safe restoration use scenario-configured values.
+![Presentation close-up of baseline and coordinated merging](docs/media/merging-comparison-presentation-closeup.gif)
 
-Primary configuration: `envmod-19CAVs-merging`.
+Coordination creates a usable gap and lets the merging vehicle enter without stopping in this run.
+
+The configured merging vehicle becomes the RV in the validation maneuver area and selects one or two highway-lane CVs using trajectory and gap information. Request, Offer, Confirm, and Accept establish agreement before execution-container Execute messages. Actuation and safe restoration use scenario-configured values.
+
+Configuration: `envmod-19CAVs-merging`. Alternative views: [interaction](docs/media/merging-comparison-interaction.gif) · [maneuver close-up](docs/media/merging-comparison-closeup.gif) · [overview](docs/media/merging-comparison.gif).
 
 ### High-Priority Safety-Critical Lane Change
 
-An emergency source sends an execution-container Abort with `EmergencyPriority`. A qualified follower plans and negotiates a lane change with one or two target-lane CVs. Execution applies the configured incremental lateral movement. Active lane-change safety and fallback thresholds are intentionally separate from generic post-execution restoration safety.
+![Presentation close-up of baseline and coordinated emergency lane change](docs/media/lane-change-comparison-presentation-closeup.gif)
 
-Primary configuration: `envmod-19CAVs-emergency-lane-change`.
+The emergency vehicle brakes at the same time in both panels; coordination adds high-priority lane-change negotiation and target-lane cooperation.
+
+An emergency source sends an execution-container Abort with `EmergencyPriority`. A qualified follower plans and negotiates a lane change with one or two target-lane CVs and executes configured incremental lateral movement. Active lane-change safety and fallback thresholds remain separate from generic post-execution restoration safety.
+
+Configuration: `envmod-19CAVs-emergency-lane-change`. Alternative views: [interaction](docs/media/lane-change-comparison-interaction.gif) · [maneuver close-up](docs/media/lane-change-comparison-closeup.gif) · [overview](docs/media/lane-change-comparison.gif).
 
 ### Baselines and Second Request
 
 - `envmod-19CAVs-merging-baseline`: equivalent traffic without maneuver coordination.
 - `envmod-19CAVs-emergency-lane-change-baseline`: emergency-source braking with coordination transmission suppressed.
-- `envmod-19CAVs-second-request-smoke`: forces the first high-priority Request to be rejected, verifies a replacement proposal with a new request ID, and confirms that the final cooperation and execution use that identity.
+- `envmod-19CAVs-second-request-smoke`: forces rejection of the first high-priority Request and verifies that the replacement proposal, final cooperation, and execution use a new request ID.
 
-Station IDs asserted by the tests are deterministic fixtures of the supplied routes, not general protocol assignments.
-
-## Scenario Animations
-
-The animations compare coordinated and matching baseline runs using the same SUMO network, routes, traffic, simulation step, and random seed. They are deterministic replays, not statistical evaluations.
-
-### Cooperative Merging
-
-![Vehicle-level coordinated and uncoordinated merging comparison](docs/media/merging-comparison-interaction.gif)
-
-The baseline is shown on the left and the coordinated run on the right. In the illustrated run, coordination creates a usable gap and allows the merging vehicle to enter without stopping.
-
-[Presentation close-up](docs/media/merging-comparison-presentation-closeup.gif) · [Maneuver close-up](docs/media/merging-comparison-closeup.gif) · [Scenario overview](docs/media/merging-comparison.gif)
-
-### Safety-Critical Lane Change
-
-![Vehicle-level coordinated and uncoordinated emergency lane-change comparison](docs/media/lane-change-comparison-interaction.gif)
-
-The emergency vehicle brakes at the same time in both panels. The coordinated run adds high-priority lane-change negotiation and target-lane cooperation.
-
-[Presentation close-up](docs/media/lane-change-comparison-presentation-closeup.gif) · [Maneuver close-up](docs/media/lane-change-comparison-closeup.gif) · [Scenario overview](docs/media/lane-change-comparison.gif)
-
-The presentation close-ups are tighter, presentation-focused views generated from the same captured simulation data.
-
-The capture and analysis workflow is documented in [tools/animation/README.md](tools/animation/README.md).
+Station IDs asserted by tests are deterministic route fixtures, not general protocol assignments. See the [animation workflow](tools/animation/README.md) for capture, analysis, and rendering instructions.
 
 ## Architecture Overview
 
