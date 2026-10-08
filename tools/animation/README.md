@@ -63,10 +63,12 @@ python3 tools/animation/render_comparison.py merging
 python3 tools/animation/render_comparison.py merging --view closeup
 python3 tools/animation/render_comparison.py merging --view interaction
 python3 tools/animation/render_comparison.py merging --view presentation-closeup
+python3 tools/animation/render_comparison.py merging --view presentation-road-detail
 python3 tools/animation/render_comparison.py lane-change
 python3 tools/animation/render_comparison.py lane-change --view closeup
 python3 tools/animation/render_comparison.py lane-change --view interaction
 python3 tools/animation/render_comparison.py lane-change --view presentation-closeup
+python3 tools/animation/render_comparison.py lane-change --view presentation-road-detail
 python3 tools/animation/render_comparison.py all
 ```
 
@@ -106,6 +108,7 @@ Useful optional renderer arguments:
 --view closeup
 --view interaction
 --view presentation-closeup
+--view presentation-road-detail
 --output
 --keep-frames
 ```
@@ -113,7 +116,7 @@ Useful optional renderer arguments:
 The view levels have different purposes:
 
 * `overview` shows the wider scenario context and delayed baseline outcomes.
-* `interaction` is the README-embedded vehicle-level view focused on relative
+* `interaction` is a vehicle-level view focused on relative
   motion, gap creation, braking response, and lateral maneuver execution.
 * `closeup` provides more road context while still emphasizing the maneuver.
 * `presentation-closeup` provides tighter, presentation-focused views generated
@@ -125,36 +128,27 @@ The default output directory is:
 docs/media/
 ```
 
-Generated media:
+Canonical media generated with `--view presentation-road-detail`:
+
+```bash
+python3 tools/animation/render_comparison.py all --view presentation-road-detail
+```
 
 ```text
-docs/media/merging-comparison.gif
-docs/media/merging-comparison.png
-docs/media/merging-comparison-closeup.gif
-docs/media/merging-comparison-closeup.png
-docs/media/merging-comparison-interaction.gif
-docs/media/merging-comparison-interaction.png
-docs/media/merging-comparison-presentation-closeup.gif
-docs/media/merging-comparison-presentation-closeup.png
-docs/media/lane-change-comparison.gif
-docs/media/lane-change-comparison.png
-docs/media/lane-change-comparison-closeup.gif
-docs/media/lane-change-comparison-closeup.png
-docs/media/lane-change-comparison-interaction.gif
-docs/media/lane-change-comparison-interaction.png
-docs/media/lane-change-comparison-presentation-closeup.gif
-docs/media/lane-change-comparison-presentation-closeup.png
+docs/media/merging-maneuver-comparison.gif
+docs/media/merging-maneuver-comparison.png
+docs/media/lane-change-maneuver-comparison.gif
+docs/media/lane-change-maneuver-comparison.png
 ```
+
+Use `--output` with a separate directory for experimental views and previews.
 
 Temporary frames are written only below
 `scenarios/artery-maneuver-coordination/results_animation/tmp_frames/` when
 `--keep-frames` is used. That generated tree is ignored by Git.
 
-The root README embeds the interaction GIFs because they make the selected
-vehicles and maneuver-level differences easiest to see. The close-up views are
-linked for additional road context, and the wider overviews remain linked
-repository assets for full-scenario context and delayed baseline behavior. All
-views use a fixed synchronized viewport shared by the baseline and coordinated
+The root README embeds the canonical road-detail GIFs with close-up framing.
+All views use a fixed synchronized viewport shared by the baseline and coordinated
 panels.
 
 ## Output Structure

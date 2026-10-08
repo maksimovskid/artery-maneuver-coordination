@@ -1,4 +1,7 @@
 #include "traci/BasicModuleMapper.h"
+#include "traci/NodeManager.h"
+#include "traci/API.h"
+#include <sstream>
 #include <omnetpp/ccomponenttype.h>
 #include <omnetpp/distrib.h>
 
@@ -11,6 +14,8 @@ Define_Module(BasicModuleMapper)
 
 void BasicModuleMapper::initialize()
 {
+    std::istringstream ids(par("unequippedVehicleIds").stringValue());
+    for (std::string id; ids >> id;) m_unequipped_vehicle_ids.insert(id);
     m_rng = getRNG(0);
     m_person_type = cModuleType::find(par("personType"));
     m_vehicle_type = cModuleType::get(par("vehicleType"));
@@ -33,6 +38,10 @@ cModuleType* BasicModuleMapper::person(NodeManager& manager, const std::string& 
 
 cModuleType* BasicModuleMapper::vehicle(NodeManager& manager, const std::string& id)
 {
+    if (m_unequipped_vehicle_ids.count(id)) {
+        manager.getAPI()->vehicle.setLaneChangeMode(id, par("unequippedLaneChangeMode").intValue());
+        return nullptr;
+    }
     return equipVehicle() ? m_vehicle_type : nullptr;
 }
 

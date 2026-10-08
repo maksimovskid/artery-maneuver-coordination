@@ -161,8 +161,8 @@ VIEW_PRESETS = {
 for scenario, presets in VIEW_PRESETS.items():
     presets["presentation-road-detail"] = {
         **presets["presentation-closeup"],
-        "gif": f"{scenario}-comparison-presentation-road-detail.gif",
-        "png": f"{scenario}-comparison-presentation-road-detail.png",
+        "gif": f"{scenario}-maneuver-comparison.gif",
+        "png": f"{scenario}-maneuver-comparison.png",
     }
 VIEW_PRESETS["merging"]["presentation-road-detail"]["poster_time"] = 14.6
 VIEW_PRESETS["lane-change"]["presentation-road-detail"]["poster_time"] = 12.7

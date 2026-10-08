@@ -22,9 +22,9 @@ The implementation is complete for its stated validation scope. It is not a prod
 
 The animations show matching baseline (left) and coordinated (right) runs with the same SUMO network, routes, traffic, simulation step, and random seed. The canonical presentation animations render the captured simulation data with detailed road surfaces and close-up camera framing. These are deterministic replays, not statistical evaluations.
 
-### Medium-Priority Cooperative Merging
+### Merging Maneuver Comparison
 
-![Canonical presentation of baseline and coordinated merging](docs/media/merging-comparison-presentation-road-detail.gif)
+![Canonical presentation of baseline and coordinated merging](docs/media/merging-maneuver-comparison.gif)
 
 Coordination creates a usable gap and lets the merging vehicle enter without stopping in this run.
 
@@ -32,9 +32,9 @@ The configured merging vehicle becomes the RV in the validation maneuver area an
 
 Configuration: `envmod-19CAVs-merging`.
 
-### High-Priority Safety-Critical Lane Change
+### Lane-Change Maneuver Comparison
 
-![Canonical presentation of baseline and coordinated emergency lane change](docs/media/lane-change-comparison-presentation-road-detail.gif)
+![Canonical presentation of baseline and coordinated emergency lane change](docs/media/lane-change-maneuver-comparison.gif)
 
 The emergency vehicle brakes at the same time in both panels; coordination adds high-priority lane-change negotiation and target-lane cooperation.
 

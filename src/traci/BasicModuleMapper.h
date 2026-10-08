@@ -4,6 +4,7 @@
 #include "traci/ModuleMapper.h"
 #include <omnetpp/csimplemodule.h>
 #include <omnetpp/crng.h>
+#include <set>
 
 namespace traci
 {
@@ -25,6 +26,7 @@ private:
     omnetpp::cRNG* m_rng;
     double m_person_penetration;
     double m_vehicle_penetration;
+    std::set<std::string> m_unequipped_vehicle_ids;
 };
 
 } // namespace traci

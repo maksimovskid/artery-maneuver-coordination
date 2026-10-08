@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shared baseline/coordinated SUMO-only traffic. car_hl equivalent;
+     zero speedDev preserves existing CV random speed-factor samples. -->
+<routes>
+    <vType id="car_hl_background" vClass="passenger" length="5" maxSpeed="27.77" speed="27.77" accel="3.0" decel="4.0" speedDev="0.0" speedFactor="1.2" minGap="2.0" lcKeepRight="0.8" color="142,148,156" collision.minigap-factor="0" carFollowModel="IDM" tau="0.5" politeness="0.5" lcCooperative="0.5" />
+    <route id="route_background_highway" edges="266507545 266507540 27392720 27392724 266507546 266507536" />
+    <vehicle id="background_hl2_6" type="car_hl_background" route="route_background_highway" depart="1.4" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl1_1" type="car_hl_background" route="route_background_highway" depart="4.2" departLane="1" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl2_1" type="car_hl_background" route="route_background_highway" depart="4.2" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl2_4" type="car_hl_background" route="route_background_highway" depart="6.2" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl1_2" type="car_hl_background" route="route_background_highway" depart="7.0" departLane="1" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl2_2" type="car_hl_background" route="route_background_highway" depart="8.2" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl1_3" type="car_hl_background" route="route_background_highway" depart="9.8" departLane="1" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl2_5" type="car_hl_background" route="route_background_highway" depart="10.2" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+    <vehicle id="background_hl2_3" type="car_hl_background" route="route_background_highway" depart="12.2" departLane="2" departSpeed="max" speedFactor="1.2" color="142,148,156" />
+</routes>

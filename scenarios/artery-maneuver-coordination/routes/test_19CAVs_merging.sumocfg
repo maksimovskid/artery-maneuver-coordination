@@ -5,7 +5,7 @@
         <additional value="vehicle_types.xml"/>
         <!-- add here additional route files  -->
 
-        <route-files value="test/merging_lane_1.rou.xml, test/highway_lane_0.rou.xml"/>
+        <route-files value="test/merging_lane_1.rou.xml, test/highway_lane_0.rou.xml, test/background_highway.rou.xml"/>
 
 
     </input>
