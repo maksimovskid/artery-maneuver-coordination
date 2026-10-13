@@ -22,23 +22,19 @@ The implementation is complete for its stated validation scope. It is not a prod
 
 The animations show matching baseline (left) and coordinated (right) runs with the same SUMO network, routes, traffic, simulation step, and random seed. The canonical presentation animations render the captured simulation data with detailed road surfaces and close-up camera framing. These are deterministic replays, not statistical evaluations.
 
-### Merging Maneuver Comparison
+### Highway Merging
 
 ![Canonical presentation of baseline and coordinated merging](docs/media/merging-maneuver-comparison.gif)
 
-Coordination creates a usable gap and lets the merging vehicle enter without stopping in this run.
-
-The configured merging vehicle becomes the RV in the validation maneuver area and selects one or two highway-lane CVs using trajectory and gap information. Request, Offer, Confirm, and Accept establish agreement before execution-container Execute messages. Actuation and safe restoration use scenario-configured values.
+At 2× playback, the animation compares a baseline without maneuver coordination with coordinated gap creation amid real SUMO background traffic. RV1's Request → Offers → Confirm → Accepts exchange introduces the mechanism, followed by RV2/RV3 cooperative merges.
 
 Configuration: `envmod-19CAVs-merging`.
 
-### Lane-Change Maneuver Comparison
+### Lane Change
 
-![Canonical presentation of baseline and coordinated emergency lane change](docs/media/lane-change-maneuver-comparison.gif)
+![Canonical presentation of baseline and coordinated lane change](docs/media/lane-change-maneuver-comparison.gif)
 
-The emergency vehicle brakes at the same time in both panels; coordination adds high-priority lane-change negotiation and target-lane cooperation.
-
-An emergency source sends an execution-container Abort with `EmergencyPriority`. A qualified follower plans and negotiates a lane change with one or two target-lane CVs and executes configured incremental lateral movement. Active lane-change safety and fallback thresholds remain separate from generic post-execution restoration safety.
+At 1.5× playback, the animation compares a baseline without coordination with coordinated lane-change negotiation in the context of the red Emergency vehicle. Two-line overlays show RV1/RV2's Request → Offers → Confirm → Accepts exchanges and the participating CVs' cooperative response.
 
 Configuration: `envmod-19CAVs-emergency-lane-change`.
 

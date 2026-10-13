@@ -56,83 +56,51 @@ python3 tools/animation/analyze_scenario.py all
 
 ## Rendering
 
-Render final side-by-side GIF and PNG media from existing captured data:
+Canonical media uses the centered titles **Highway Merging** and **Lane Change**
+and a fixed synchronized camera shared by baseline and coordinated panels.
+Rendering reads existing captures; it does not rerun or modify the simulation.
+
+| Scenario | Simulation interval | Playback | Frames | Frame rate | Total playback | Final hold |
+| --- | --- | --- | --- | --- | --- | --- |
+| Highway Merging | 3.7–21.4 s | 2× | 188 | 20 fps | 9.4 s | 0.5 s |
+| Lane Change | 11.5–18.0 s | 1.5× | 81 | 15 fps average | 5.4 s | 1.0 s |
+
+The centered captions are "2 simulation seconds = 1 video second" and
+"1.5 simulation seconds = 1 video second", respectively. Both retain 0.1 s
+simulation samples. Lane Change uses 60/70 ms GIF delays to preserve its
+average frame rate accurately.
+
+Highway Merging shows RV1's Request → Offers → Confirm → Accepts exchange
+with CV1/CV2, followed by "RV1 merging" and "RV1 merge completed".
+RV2/RV3 retain simple gap-cooperation and merge-completion statuses; their
+handshakes never interrupt RV1's physical merge.
+
+Lane Change shows RV1 with CV1/CV2 and RV2 with CV3/CV4. Two-line boxes
+show the RV's Request/Confirm alongside the CVs' Offers/Accepts. During
+execution, accepted participants remain as context beneath "Lane change";
+completion reads "Lane change done". Baseline captions imply no cooperation.
+
+Participant identities and first message sends come from captured MCM logs.
+Transitions use the enclosing OMNeT++ event timestamps because some diagnostic
+`simTime` fields cache an earlier tick. A reply is shown only after its logged
+send; partial replies name only CVs that have sent that message. Short phases
+are never stretched for readability. Lane-change execution/completion use
+`MCM-LC-EXEC` events. Merge completion uses whole-body highway establishment
+from FCD, preserving the validated completion timing. Overlay anchors stay in
+the existing road-free areas. Lane-change panel headings move 2 px left to
+clear a passing vehicle label; status-box anchors are unchanged.
+
+Render the canonical outputs from the validated captures:
 
 ```bash
-python3 tools/animation/render_comparison.py merging
-python3 tools/animation/render_comparison.py merging --view closeup
-python3 tools/animation/render_comparison.py merging --view interaction
-python3 tools/animation/render_comparison.py merging --view presentation-closeup
-python3 tools/animation/render_comparison.py merging --view presentation-road-detail
-python3 tools/animation/render_comparison.py lane-change
-python3 tools/animation/render_comparison.py lane-change --view closeup
-python3 tools/animation/render_comparison.py lane-change --view interaction
-python3 tools/animation/render_comparison.py lane-change --view presentation-closeup
-python3 tools/animation/render_comparison.py lane-change --view presentation-road-detail
-python3 tools/animation/render_comparison.py all
+python3 tools/animation/render_comparison.py merging --view presentation-road-detail \
+  --capture-root scenarios/artery-maneuver-coordination/results_animation/merging_final_spacing/earlier03-front-pos12 \
+  --start 3.7 --end 21.4 --fps 20 --playback-speed 2 --hold-seconds 0.5 --poster-time 9.3
+python3 tools/animation/render_comparison.py lane-change --view presentation-road-detail \
+  --start 11.5 --end 18.0 --fps 15 --playback-speed 1.5 --hold-seconds 1.0 --poster-time 12.7
 ```
 
-Equivalent Make targets are available and do not rerun simulations:
-
-```bash
-make animation_render_merging
-make animation_render_merging_closeup
-make animation_render_merging_interaction
-make animation_render_lane_change
-make animation_render_lane_change_closeup
-make animation_render_lane_change_interaction
-make animation_render_interaction_all
-make animation_render_all
-```
-
-The default timing is deterministic:
-
-```text
-Merging overview: 6.5 s to 26.5 s, 10 fps, 1x simulation time
-Merging close-up: 7.0 s to 16.5 s, 10 fps, 1x simulation time
-Merging interaction: 8.5 s to 15.0 s, 10 fps, 1x simulation time
-Lane overview:    11.5 s to 30.0 s, 10 fps, 1x simulation time
-Lane close-up:    11.5 s to 20.0 s, 10 fps, 1x simulation time
-Lane interaction: 11.5 s to 18.0 s, 10 fps, 1x simulation time
-```
-
-Useful optional renderer arguments:
-
-```text
---fps
---width
---height
---start
---end
---view overview
---view closeup
---view interaction
---view presentation-closeup
---view presentation-road-detail
---output
---keep-frames
-```
-
-The view levels have different purposes:
-
-* `overview` shows the wider scenario context and delayed baseline outcomes.
-* `interaction` is a vehicle-level view focused on relative
-  motion, gap creation, braking response, and lateral maneuver execution.
-* `closeup` provides more road context while still emphasizing the maneuver.
-* `presentation-closeup` provides tighter, presentation-focused views generated
-  from the same captured simulation data, with matching PNG posters.
-
-The default output directory is:
-
-```text
-docs/media/
-```
-
-Canonical media generated with `--view presentation-road-detail`:
-
-```bash
-python3 tools/animation/render_comparison.py all --view presentation-road-detail
-```
+Only these canonical files belong in `docs/media/`:
 
 ```text
 docs/media/merging-maneuver-comparison.gif
@@ -141,15 +109,14 @@ docs/media/lane-change-maneuver-comparison.gif
 docs/media/lane-change-maneuver-comparison.png
 ```
 
-Use `--output` with a separate directory for experimental views and previews.
+Use `--output` with a separate directory for experiments. Optional
+`--capture-root`, `--start`, `--end`, `--fps`, `--playback-speed`,
+`--hold-seconds`, `--poster-time`, `--width`, and `--height` control rendering.
+Use the exact commands above to reproduce the final media.
 
-Temporary frames are written only below
+Temporary frames are written below
 `scenarios/artery-maneuver-coordination/results_animation/tmp_frames/` when
 `--keep-frames` is used. That generated tree is ignored by Git.
-
-The root README embeds the canonical road-detail GIFs with close-up framing.
-All views use a fixed synchronized viewport shared by the baseline and coordinated
-panels.
 
 ## Output Structure
 
@@ -198,31 +165,25 @@ Merging metrics focus on `car_ml1_1` and derive merge-entry timing from FCD lane
 IDs and the configured merge point. Waiting time and time loss come from SUMO
 tripinfo when available.
 
-Emergency lane-change metrics focus on `car_hl0_Emergency` and the follower RV.
+Lane-change metrics focus on `car_hl0_Emergency` and the follower RV.
 The coordinated follower is verified from MCM logs when possible; otherwise the
 role map uses `car_hl1_1`. Proximity is reported as centre-to-centre distance,
 not physical bumper clearance.
 
 ## Role Highlighting
 
-Merging highlights:
+Presentation labels follow real Request/Accept participants in departure order
+and remain fixed in both panels:
 
-```text
-RV:  car_ml1_1
-CV1: car_hl0_1
-CV2: car_hl0_2
-```
+| Scenario | RV1 / CV1 + CV2 | RV2 / CV3 + CV4 | RV3 / CV5 + CV6 |
+| --- | --- | --- | --- |
+| Highway Merging | `car_ml1_1` / `car_hl0_1`, `car_hl0_2` | `car_ml1_2` / `car_hl0_3`, `car_hl0_4` | `car_ml1_3` / `car_hl0_5`, `car_hl0_6` |
+| Lane Change | `car_hl1_1` / `car_hl2_1`, `car_hl2_2` | `car_hl1_2` / `car_hl2_3`, `car_hl2_4` | `car_hl1_3` / `car_hl2_5`, `car_hl2_6` |
 
-Emergency lane-change highlights:
-
-```text
-Emergency: car_hl0_Emergency
-RV:        car_hl1_1
-CV1:       car_hl2_1
-CV2:       car_hl2_2
-```
-
-Other vehicles remain visible in a secondary style when present in FCD.
+Lane Change also highlights `car_hl0_Emergency` as **Emergency**.
+Other SUMO traffic remains visible in a secondary style. Detailed statuses are
+limited to merging RV1 and lane-change RV1/RV2, regardless of other highlighted
+vehicles.
 
 ## Limitations
 

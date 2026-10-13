@@ -9,6 +9,8 @@ import json
 import math
 import shutil
 import sys
+
+from participant_status import participant_status
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +60,7 @@ SCENARIO_DEFAULTS = {
         "poster_time": 12.2,
         "gif": "merging-comparison.gif",
         "png": "merging-comparison.png",
-        "title": "Highway merging",
+        "title": "Highway Merging",
     },
     "lane-change": {
         "start": 11.5,
@@ -66,7 +68,7 @@ SCENARIO_DEFAULTS = {
         "poster_time": 12.9,
         "gif": "lane-change-comparison.gif",
         "png": "lane-change-comparison.png",
-        "title": "Emergency lane change",
+        "title": "Lane Change",
     },
 }
 
@@ -180,6 +182,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render README-ready comparison media.")
     parser.add_argument("scenario", choices=("merging", "lane-change", "all"))
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--playback-speed", type=float, default=1.0,
+                        help="Simulation seconds per video second (2 at 20 fps retains 0.1 s samples).")
+    parser.add_argument("--hold-seconds", type=float, default=1.5,
+                        help="Final hold duration in video seconds.")
     parser.add_argument("--width", type=int, default=960)
     parser.add_argument("--height", type=int, default=540)
     parser.add_argument("--start", type=float)
@@ -195,7 +201,10 @@ def parse_args() -> argparse.Namespace:
                         help="Separate capture pair containing baseline/, coordinated/, comparison.json.")
     parser.add_argument("--output-stem", help="Override GIF/PNG filenames for experimental outputs.")
     parser.add_argument("--poster-time", type=float, help="Simulation time for the experimental PNG preview.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.fps <= 0 or args.playback_speed <= 0 or args.hold_seconds < 0:
+        parser.error("fps and playback speed must be positive; hold seconds must be nonnegative")
+    return args
 
 
 class ScenarioData:
@@ -204,6 +213,7 @@ class ScenarioData:
             require_capture_outputs(scenario)
         def output(variant):
             return capture_root / variant if capture_root else scenario_output_dir(scenario, variant)
+        self.capture_root = capture_root
         self.scenario = scenario
         self.roles = load_json(role_file(scenario))
         self.comparison = load_json(capture_root / "comparison.json" if capture_root else comparison_file(scenario))
@@ -261,9 +271,11 @@ def vehicle_ids_to_draw(data: ScenarioData) -> list[str]:
     return sorted(all_ids)
 
 
-def timeline(start: float, end: float, fps: int, hold_s: float = 1.5) -> tuple[list[float], int]:
-    step = 1.0 / fps
-    count = int(round((end - start) * fps)) + 1
+def timeline(start: float, end: float, fps: int, hold_s: float = 1.5,
+             playback_speed: float = 1.0) -> tuple[list[float], int]:
+    # Sample real simulation timestamps; only their playback rate changes.
+    step = playback_speed / fps
+    count = int(round((end - start) * fps / playback_speed)) + 1
     times = [round(start + index * step, 3) for index in range(count)]
     hold_frames = int(round(hold_s * fps))
     times.extend([round(end, 3)] * hold_frames)
@@ -279,6 +291,44 @@ def first_event_time(events: list[dict[str, Any]], **criteria: str) -> float | N
     return None
 
 
+MERGE_COMPLETION_NOTICE_S = 0.8
+
+
+@lru_cache(maxsize=4)
+def presentation_merge_states(data: ScenarioData) -> tuple:
+    """Read each RV's real Request and whole-body highway establishment."""
+    dimensions = parse_vehicle_dimensions(ROUTES_DIR / "vehicle_types.xml")
+    prefixes = tuple(data.roles["merge"]["highway_entry_edge_prefixes"])
+    states = []
+    for index, vehicle_id in enumerate(data.roles["vehicles"]["presentation_rvs"], 1):
+        samples = data.fcd["coordinated"][vehicle_id].samples
+        entry = next((s for s in samples if s.lane.rsplit("_", 1)[0].startswith(prefixes)), None)
+        established = next((s.time for s in samples if entry is not None
+                            and s.time >= entry.time and s.lane == entry.lane
+                            and s.pos >= vehicle_dimensions(s.vehicle_type, dimensions).length), None)
+        request = first_event_time(data.events["coordinated"], tag="MCM-NEGOTIATION",
+                                   action="SEND", msg="Request", localVehicleId=vehicle_id)
+        states.append((f"RV{index}", request, established))
+    return tuple(states)
+
+
+def presentation_merge_status(data: ScenarioData, variant: str, time_s: float) -> str:
+    # Maneuvers overlap. Follow the earliest unfinished RV, briefly acknowledge
+    # its real completion, then show the next RV's current (not reset) state.
+    states = presentation_merge_states(data)
+    label, request, established = next(
+        (state for state in states if state[2] is None
+         or time_s < state[2] + MERGE_COMPLETION_NOTICE_S - 1e-9), states[-1])
+    # Share comparison focus; never imply that the baseline has completed.
+    if variant == "baseline":
+        return f"{label}: no coordination"
+    if established is not None and time_s >= established:
+        return f"{label} merge completed"
+    if request is not None and time_s >= request:
+        return f"{label} gap cooperation"
+    return f"{label} approaching merge"
+
+
 def annotation_for(
     data: ScenarioData,
     variant: str,
@@ -290,6 +340,8 @@ def annotation_for(
     events = data.events[variant]
 
     if data.scenario == "merging":
+        if view == "presentation-road-detail":
+            return presentation_merge_status(data, variant, time_s)
         if view == "interaction":
             if variant == "baseline":
                 if sample and sample.speed < STOPPED_SPEED_MPS:
@@ -398,7 +450,7 @@ def draw_roads(
 
 
 @lru_cache(maxsize=4)
-def road_surface_layer(size, box, viewport, lanes, junctions, complete_merging_junction=False,
+def road_surface_layer(size, box, viewport, lanes, junctions,
                        clip_box=None, occupied_lane_ids=()):
     """Union width-offset lane ribbons and SUMO junctions at 3x resolution.
 
@@ -426,11 +478,9 @@ def road_surface_layer(size, box, viewport, lanes, junctions, complete_merging_j
 
     visible_lanes = [lane for lane in lanes
                      if visible(lane.points, lane.width) or lane.lane_id in occupied_lane_ids]
-    if complete_merging_junction:
-        # Keep the previous off-camera exit-stub cleanup. Never suppress an
-        # occupied lane: actual visible vehicle paths take precedence.
-        visible_lanes = [lane for lane in visible_lanes
-                         if lane.edge_id not in {":2363164794_0", "4058141"} or lane.lane_id in occupied_lane_ids]
+    # Presentation context includes every lane envelope intersecting the actual
+    # panel extent, including unoccupied exits and their internal connectors.
+    # Occupied lanes are an additional coverage guarantee, not a road whitelist.
     for lane in visible_lanes:
         left = offset_polyline(lane.points, lane.width / 2)
         right = offset_polyline(lane.points, -lane.width / 2)
@@ -480,12 +530,10 @@ def road_surface_layer(size, box, viewport, lanes, junctions, complete_merging_j
 
 
 @lru_cache(maxsize=2)
-def network_junctions(merging_presentation=False):
-    # Minimal presentation-only rule: junction 2363164794 includes an apron
-    # toward an off-camera exit, leaving a pointed stub. Use its actual adjoining
-    # lane envelopes instead. The maneuver junction 7437618 remains untouched.
-    excluded = ("2363164794",) if merging_presentation else ()
-    return parse_junction_shapes(ROUTES_DIR / "new_map.net.xml", excluded)
+def network_junctions():
+    # Keep SUMO aprons with their adjoining lane ribbons. Omitting a junction
+    # polygon disconnects nearby branches even when their lanes are visible.
+    return parse_junction_shapes(ROUTES_DIR / "new_map.net.xml")
 
 
 def draw_vehicle(
@@ -573,8 +621,7 @@ def draw_panel(
     transform, _ = make_transform(viewport, (left + 10, top + 58, right - 10, bottom - 70))
     if view == "presentation-road-detail":
         layer = road_surface_layer(base.size, (left + 10, top + 58, right - 10, bottom - 70),
-                                   viewport, tuple(lanes), network_junctions(data.scenario == "merging"),
-                                   complete_merging_junction=data.scenario == "merging",
+                                   viewport, tuple(lanes), network_junctions(),
                                    clip_box=(left, 0, right, base.height - 1),
                                    occupied_lane_ids=data.road_lane_ids)
         base.paste(layer, (0, 0), layer)
@@ -647,13 +694,38 @@ def draw_panel(
         draw = ImageDraw.Draw(base)
 
     heading = "Without coordination" if variant == "baseline" else "With coordination"
-    draw.text((left + 14, top + 10), heading, fill=(20, 24, 28), font=fonts["title"])
-    draw.text((left + 14, top + 34), f"Simulation time: {time_s:.1f} s", fill=(54, 62, 72), font=fonts["body"])
+    lower_heading = data.scenario == "merging" and view == "presentation-road-detail"
+    heading_xy = ((left + 20, bottom - 190) if lower_heading else
+                  (left + (12 if view == "presentation-road-detail" else 14), top + 10))
+    clock_xy = (left + 20, bottom - 170) if lower_heading else (left + 14, top + 34)
+    draw.text(heading_xy, heading, fill=(20, 24, 28), font=fonts["title"])
+    draw.text(clock_xy, f"Simulation time: {time_s:.1f} s", fill=(54, 62, 72), font=fonts["body"])
     annotation = annotation_for(data, variant, time_s, primary_sample, view)
+    if data.scenario == "lane-change" and view == "presentation-road-detail":
+        # Wording only: retain every original state and transition timestamp.
+        annotation = {
+            "Before emergency": ("RV1 before emergency" if variant == "baseline"
+                                 else "RV1 emergency approach"),
+            "Coordination disabled": "RV1: no coordination",
+            "Follower stopped": "RV1 stopped",
+            "Follower braking": "RV1 braking",
+            "Delayed lane change": "RV1 lane change done",
+            "Follower armed": "RV1 emergency approach",
+            "Lane-change request": "RV1 lane-change request",
+            "Emergency MCM": "RV1 emergency alert received",
+            "Emergency braking": "RV1 braking",
+            "Lane change": "RV1 lane change",
+            "Lane change completed": "RV1 lane change done",
+        }[annotation]
+    status_lines = [annotation]
+    if view == "presentation-road-detail" and variant == "coordinated":
+        status_lines = participant_status(data, time_s, sys.modules[__name__]) or status_lines
     draw_text_box(
         draw,
-        (left + 14, top + 62),
-        [annotation],
+        ((left + 14, bottom - 150)
+         if data.scenario == "merging" and view == "presentation-road-detail"
+         else (left + 14, top + 62)),
+        status_lines,
         fonts["body_bold"],
         background=(255, 255, 255),
     )
@@ -662,7 +734,7 @@ def draw_panel(
     draw_text_box(draw, (left + 14, bottom - 62), metric_lines, fonts["small"])
 
     legend_x = right - 126
-    legend_y = top + 12
+    legend_y = bottom - 170 if lower_heading else top + 12
     line_height = 14
     legend_width = 112
     legend_columns = 2 if len(roles) > 4 else 1
@@ -713,12 +785,22 @@ def render_frame(
     roles,
     fonts,
     view: str,
+    playback_speed: float = 1.0,
 ) -> Image.Image:
     image = Image.new("RGB", (width, height), (235, 239, 245))
     draw = ImageDraw.Draw(image)
     title = SCENARIO_DEFAULTS[data.scenario]["title"]
-    draw.text((18, 12), title, fill=(20, 24, 28), font=fonts["main_title"])
-    draw.text((width - 230, 16), "1 simulation second = 1 video second", fill=(76, 86, 98), font=fonts["small"])
+    title_xy = (18, 12)
+    if view == "presentation-road-detail":
+        title_xy = (width / 2, 12)
+    draw.text(title_xy, title, anchor="mt" if title_xy != (18, 12) else None, fill=(20, 24, 28), font=fonts["main_title"])
+    speed_caption = ("1 simulation second = 1 video second" if playback_speed == 1.0
+                     else f"{playback_speed:g} simulation seconds = 1 video second")
+    speed_xy = (width - 230, 16)
+    if view == "presentation-road-detail":
+        caption_box = draw.textbbox((0, 0), speed_caption, font=fonts["small"])
+        speed_xy = ((width - (caption_box[2] - caption_box[0])) / 2 - caption_box[0], 32)
+    draw.text(speed_xy, speed_caption, fill=(76, 86, 98), font=fonts["small"])
     del draw
 
     gap = 10
@@ -732,8 +814,8 @@ def render_frame(
     if view == "presentation-road-detail":
         # Extended roads are background; retain foreground title text unchanged.
         draw = ImageDraw.Draw(image)
-        draw.text((18, 12), title, fill=(20, 24, 28), font=fonts["main_title"])
-        draw.text((width - 230, 16), "1 simulation second = 1 video second", fill=(76, 86, 98), font=fonts["small"])
+        draw.text(title_xy, title, anchor="mt" if title_xy != (18, 12) else None, fill=(20, 24, 28), font=fonts["main_title"])
+        draw.text(speed_xy, speed_caption, fill=(76, 86, 98), font=fonts["small"])
     return image
 
 
@@ -770,6 +852,8 @@ def render_scenario(
     capture_root: Path | None = None,
     output_stem: str | None = None,
     poster_time: float | None = None,
+    playback_speed: float = 1.0,
+    hold_s: float = 1.5,
 ) -> dict[str, Any]:
     data = ScenarioData(scenario, capture_root)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -802,7 +886,7 @@ def render_scenario(
         "small_bold": load_font(10, True),
     }
 
-    times, hold_frames = timeline(start, end, fps)
+    times, hold_frames = timeline(start, end, fps, hold_s, playback_speed)
     if view == "presentation-road-detail":
         data.road_lane_ids = occupied_visible_lanes(data, times, viewport, width, height, dimensions_by_type)
     frame_dir = TMP_FRAME_DIR / scenario
@@ -828,6 +912,7 @@ def render_scenario(
             roles,
             fonts,
             view,
+            playback_speed,
         )
         frames.append(frame)
         if keep_frames:
@@ -852,6 +937,8 @@ def render_scenario(
         "png": png_path,
         "frame_count": len(frames),
         "fps": fps,
+        "playback_speed": playback_speed,
+        "hold_s": hold_s,
         "duration_s": len(frames) / fps,
         "width": width,
         "height": height,
@@ -894,6 +981,8 @@ def main() -> int:
             capture_root=args.capture_root,
             output_stem=args.output_stem,
             poster_time=args.poster_time,
+            playback_speed=args.playback_speed,
+            hold_s=args.hold_seconds,
         )
         results.append(result)
         print(

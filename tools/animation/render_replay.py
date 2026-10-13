@@ -382,7 +382,10 @@ def save_gif(frames: list[Image.Image], path: Path, fps: int, fixed_colors=()) -
     """Encode every frame with one palette and exact reserved role colors."""
     if not frames:
         raise ValueError("no frames to save")
-    duration_ms = int(round(1000 / fps))
+    # GIF delays have 10 ms resolution. Distribute rounding across frames so
+    # rates such as 15 fps retain their intended total playback duration.
+    duration_ms = [10 * (round((i + 1) * 100 / fps) - round(i * 100 / fps))
+                   for i in range(len(frames))]
     fixed_colors = tuple(dict.fromkeys(fixed_colors))
     # Sample the sequence once for its neutral/UI colors, not independently per
     # frame. Reserved entries keep role fills exact despite changing traffic.
