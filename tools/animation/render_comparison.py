@@ -312,13 +312,17 @@ def presentation_merge_states(data: ScenarioData) -> tuple:
     return tuple(states)
 
 
-def presentation_merge_status(data: ScenarioData, variant: str, time_s: float) -> str:
-    # Maneuvers overlap. Follow the earliest unfinished RV, briefly acknowledge
-    # its real completion, then show the next RV's current (not reset) state.
+def presentation_merge_focus(data: ScenarioData, time_s: float) -> tuple:
+    """Share the validated maneuver focus between statuses and telemetry."""
     states = presentation_merge_states(data)
-    label, request, established = next(
+    return next(
         (state for state in states if state[2] is None
          or time_s < state[2] + MERGE_COMPLETION_NOTICE_S - 1e-9), states[-1])
+
+
+def presentation_merge_status(data: ScenarioData, variant: str, time_s: float) -> str:
+    # Follow the earliest unfinished RV, including its completion notice.
+    label, request, established = presentation_merge_focus(data, time_s)
     # Share comparison focus; never imply that the baseline has completed.
     if variant == "baseline":
         return f"{label}: no coordination"
@@ -730,8 +734,20 @@ def draw_panel(
         background=(255, 255, 255),
     )
 
-    metric_lines = metric_panel_lines(data.scenario, variant, primary_sample, primary_series, time_s)
-    draw_text_box(draw, (left + 14, bottom - 62), metric_lines, fonts["small"])
+    telemetry_label = roles[primary_id][0]
+    telemetry_sample, telemetry_series = primary_sample, primary_series
+    if view == "presentation-road-detail" and data.scenario == "merging":
+        telemetry_label = presentation_merge_focus(data, time_s)[0]
+        telemetry_id = next(vid for vid, (label, _) in roles.items()
+                            if label == telemetry_label)
+        telemetry_series = data.fcd[variant][telemetry_id]
+        telemetry_sample = telemetry_series.at(time_s)
+    metric_lines = metric_panel_lines(data.scenario, variant, telemetry_sample, telemetry_series, time_s)
+    if view == "presentation-road-detail":
+        metric_lines.insert(0, f"{telemetry_label} telemetry")
+    draw_text_box(draw, (left + 14, bottom - 62), metric_lines, fonts["small"],
+                  padding=(4 if data.scenario == "merging" else 5)
+                  if view == "presentation-road-detail" else 6)
 
     legend_x = right - 126
     legend_y = bottom - 170 if lower_heading else top + 12
