@@ -1190,7 +1190,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 
 				newTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0);
 
-				indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex);
+				indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex, receivedEteDelay);
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0, indexToChangeLane);
 
@@ -1219,7 +1219,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 
 						newTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0);
 
-						indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex);
+						indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex, receivedEteDelay);
 
 						newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed + speedIncrease * current_speed, acceleration, 0.0, indexToChangeLane);
 
@@ -1243,7 +1243,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 			for (double timeGapReduction : timeGapReductionsHighPriority) {
 				if (trajectory_found) break;
 
-				indexToChangeLane = findIndexTrajsConflictFree(currentTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex);
+				indexToChangeLane = findIndexTrajsConflictFree(currentTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex, receivedEteDelay);
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, true, current_speed, 0.0, 0.0, indexToChangeLane);
 
@@ -1273,7 +1273,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 
 				newTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration);
 
-				indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex);
+				indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex, receivedEteDelay);
 
 				newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration, indexToChangeLane);
 
@@ -1301,7 +1301,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 
 						newTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration);
 
-						indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex);
+						indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapReduction, cx, cy, mIndex, receivedEteDelay);
 
 						newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed - speedReduction * current_speed, 0.0, deceleration, indexToChangeLane);
 
@@ -1362,7 +1362,7 @@ TrajectoryPlanner::SecondRequestPlanningResult TrajectoryPlanner::findSecondRequ
 
 		newTraj = calculateRefTrajectory(steps, dt, cx, cy, mIndex, false, current_speed - speedReductionFinal * current_speed, 0.0, decelerationFinal);
 
-		indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex);
+		indexToChangeLane = findIndexTrajsConflictFree(newTraj, estimatedOtherTraj, timeGapMerging, cx, cy, mIndex, receivedEteDelay);
 
 		newTraj = calculateSecondReqTraj(steps, dt, cx, cy, mIndex, false, current_speed - speedReductionFinal * current_speed, 0.0, decelerationFinal, indexToChangeLane);
 

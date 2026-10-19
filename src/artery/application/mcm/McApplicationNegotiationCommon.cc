@@ -99,13 +99,15 @@ PendingMcmCommand McApplication::makeRvFollowupCommand(
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = subtype;
     command.priority = mPriorityMcmCategory;
-    command.cooperationType = cooperationType;
+    command.cooperationType = subtype == mcmSubtype::Confirm && mRvRequestCommand ?
+        mRvRequestCommand->cooperationType : cooperationType;
     command.requestId = mRvRequestId;
     command.numberOfVehicles = mRvNumberOfVehicles;
     command.targetVehicle1 = mRvTargetVehicle1;
     command.hasTargetVehicle2 = mRvNumberOfVehicles > 1 && mRvTargetVehicle2 != 0;
     command.targetVehicle2 = mRvTargetVehicle2;
-    command.requestedTrajectory = mEgoContext.plannedTrajectory;
+    command.requestedTrajectory = subtype == mcmSubtype::Confirm ?
+        mRvRequestedTrajectory : mEgoContext.plannedTrajectory;
     return command;
 }
 
@@ -125,14 +127,16 @@ PendingMcmCommand McApplication::makeCvAcceptCommand(const McmSnapshot& snapshot
     command.targetVehicle1 = mCvRvStationId;
     command.hasTargetVehicle2 = false;
     command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasCvSelectedTrajectory ?
-        mCvSelectedTrajectory :
-        (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
+    command.requestedTrajectory = mCvActiveRequest->data.requestedTrajectory;
+    command.offeredTrajectory = mCvSelectedTrajectory;
+    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
     return command;
 }
 
 void McApplication::resetRvResponseTracking()
 {
+    mRvOfferedTrajectory1.clear();
+    mRvOfferedTrajectory2.clear();
     mRvOfferReceived1 = false;
     mRvOfferReceived2 = false;
     mRvConfirmQueuedOrSent = false;
@@ -153,6 +157,10 @@ void McApplication::resetRvRetryTracking()
 
 void McApplication::clearRvTrajectoryState()
 {
+    mRvProposalIssued = false;
+    mRvRequestCommand.reset();
+    mRvLiveRequestedTrajectory.clear();
+    mRvSecondRequestSource.reset();
     mRvRequestedTrajectory.clear();
     mHasRvRequestedTrajectory = false;
     mRvNegotiatedTrajectory.clear();
@@ -161,6 +169,11 @@ void McApplication::clearRvTrajectoryState()
 
 void McApplication::resetCvActiveNegotiationTracking()
 {
+    if (mCvActiveRequest) mRetiredRequestVersions[mCvActiveRequest->data.stationId].insert(
+        {static_cast<uint8_t>(mCvActiveRequest->data.requestId), mCvActiveRequest->generatedAt});
+    mCvProposalIssued = false;
+    mCvActiveRequest.reset();
+    mCvOfferCommand.reset();
     mCvResponseQueuedOrSent = false;
     mCvRvStationId = 0;
     mCvRequestId = 0;
@@ -189,6 +202,7 @@ void McApplication::resetCvExecutionControlState()
 
 void McApplication::clearCvTrajectoryState()
 {
+    mCvPlannedValues = {};
     mCvSelectedTrajectory.clear();
     mHasCvSelectedTrajectory = false;
     mCvNegotiatedTrajectory.clear();
@@ -312,7 +326,7 @@ bool McApplication::haveAllExpectedRvAccepts() const
  * and planner measurements together so the retry and Reject handlers can treat
  * the command as one atomic follow-up.
  */
-std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const ReceivedMcm& received)
+std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const ReceivedMcm& received, bool diagnostics)
 {
     EV_STATICCONTEXT;
 
@@ -323,10 +337,12 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
     }
 
     const uint32_t rejectingCv = received.data.stationId;
+    const ReceivedMcm* otherMessage = &received;
     TrajectoryPlanner::Trajectory otherTrajectory = received.data.plannedTrajectory;
     for (auto it = mReceivedMcmCache.rbegin(); it != mReceivedMcmCache.rend(); ++it) {
         if (it->data.stationId == rejectingCv && !it->data.plannedTrajectory.empty()) {
             otherTrajectory = it->data.plannedTrajectory;
+            otherMessage = &*it;
             break;
         }
     }
@@ -362,7 +378,7 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
     }
 
     const omnetpp::SimTime eteDelay =
-        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+        otherMessage->plannedAge(mEgoContext.now);
     auto result = mTrajectoryPlanner.findSecondRequestTrajRV(
         estimatedOtherTrajectory,
         priorityLevel(mPriorityMcmCategory),
@@ -400,6 +416,7 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
     command.hasTrajectoryCostRv = true;
     command.trajectoryCostRv = result.trajectoryCost;
 
+    if (diagnostics) {
     EV_INFO << "[MCM-LC-STATE]"
         << " simTime=" << mEgoContext.now
         << " role=safety-critical-lane-change-rv"
@@ -430,6 +447,7 @@ std::optional<PendingMcmCommand> McApplication::makeRvSecondRequestCommand(const
         << " target2=" << command.targetVehicle2
         << " trajectoryFound=" << foundTrajectory
         << std::endl;
+    }
 
     return command;
 }

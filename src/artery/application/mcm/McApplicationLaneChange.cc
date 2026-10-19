@@ -491,7 +491,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
 
         ++considered;
         const omnetpp::SimTime eteDelay =
-            std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
+            received.plannedAge(now);
         const bool conflict = mTrajectoryPlanner.check_traj_conflict(
             laneChangeTrajectory,
             snapshot.plannedTrajectory,
@@ -572,6 +572,7 @@ void McApplication::evaluateSafetyCriticalLaneChangeTrigger(omnetpp::SimTime now
     command.requestedTrajectory = laneChangeTrajectory;
 
     mPendingMcmCommand = command;
+    mRvRequestCommand = command;
     mLaneChangeRequestQueuedOrSent = true;
     mLaneChangeThreeVehiclePath = target2 != 0;
     mRvRequestId = command.requestId;
@@ -739,7 +740,7 @@ void McApplication::handleReceivedEmergencyAsFollower(const ReceivedMcm& receive
     // These conflict checks are logged as diagnostics, but they are not a hard
     // gate for arming the safety-critical RV.
     const omnetpp::SimTime eteDelay =
-        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+        received.plannedAge(mEgoContext.now);
     const bool conflictAtMinimumGap = mTrajectoryPlanner.check_traj_conflict(
         mEgoContext.plannedTrajectory,
         snapshot.plannedTrajectory,

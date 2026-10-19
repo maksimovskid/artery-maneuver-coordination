@@ -86,8 +86,9 @@ simple McService like ItsG5Service
         bool dccProfiles = default(false);
         bool dccOnlyMcm = default(false);
 
-        // Generation timestamp source hook. DataProvider preserves current
-        // behavior; CurrentTime is available for timestamp-sensitive MCMs.
+        // Legacy configuration accepted for existing experiments. MCM header
+        // timestamps identify generation. Live trajectories are rebuilt for
+        // that reference; this hook no longer selects a different timestamp.
         string timeGenMcm = default("DataProvider");
 
         // Adaptive generation-rule hooks for congested-scenario experiments.

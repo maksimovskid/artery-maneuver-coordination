@@ -1,5 +1,6 @@
 #include "artery/application/mcm/TrajectoryGeneration.h"
 #include "artery/application/mcm/TrajectoryPlanner.h"
+#include "artery/application/mcm/McmTiming.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/traci/VehicleController.h"
 
@@ -32,6 +33,7 @@ TrajPointMCM TrajectoryPlanner::getPoint(TrajPointMCM calculatedPoint) const
 	point.mY = calculatedPoint.mY;
 	point.mHeading = calculatedPoint.mHeading;
 	point.mTime = calculatedPoint.mTime;
+	point.mReferenceTime = calculatedPoint.mReferenceTime;
 
 	return point;
 }
@@ -125,8 +127,9 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateRefTrajectory(
             mVehicleDataProvider->heading() /
             boost::units::si::radians;
 
-        calculatedPoint.mTime =
-            simTime() + (i + 1) * dt;
+        calculatedPoint.mReferenceTime = generationReferenceTime(simTime());
+		calculatedPoint.mTime =
+            calculatedPoint.mReferenceTime + (i + 1) * dt;
 
         trajectory.push_back(getPoint(calculatedPoint));
     }
@@ -249,7 +252,8 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateExecuteTrajectory(
 		calculatedPoint.mX = cx[targetIndex];
 		calculatedPoint.mY = cy[targetIndex];
 		calculatedPoint.mHeading = mVehicleDataProvider->heading() / boost::units::si::radians;
-		calculatedPoint.mTime = simTime() + (i + 1) * dt;
+		calculatedPoint.mReferenceTime = generationReferenceTime(simTime());
+		calculatedPoint.mTime = calculatedPoint.mReferenceTime + (i + 1) * dt;
 
 		trajectory.push_back(getPoint(calculatedPoint));
 	}
@@ -372,7 +376,8 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::estimateOtherDecelerationTrajec
 		calculatedPoint.mX = cx_new[targetIndex];
 		calculatedPoint.mY = cy[targetIndex];
 		calculatedPoint.mHeading = mVehicleDataProvider->heading() / boost::units::si::radians;
-		calculatedPoint.mTime = simTime() + (i + 1) * dt;
+		calculatedPoint.mReferenceTime = traj_other.front().mReferenceTime;
+		calculatedPoint.mTime = calculatedPoint.mReferenceTime + (i + 1) * dt;
 
 		trajectory.push_back(getPoint(calculatedPoint));
 	}
@@ -465,8 +470,9 @@ TrajectoryPlanner::Trajectory TrajectoryPlanner::calculateSecondReqTraj(
 			mVehicleDataProvider->heading() /
 			boost::units::si::radians;
 
+		calculatedPoint.mReferenceTime = generationReferenceTime(simTime());
 		calculatedPoint.mTime =
-			simTime() + (i + 1) * dt;
+			calculatedPoint.mReferenceTime + (i + 1) * dt;
 
 		trajectory.push_back(getPoint(calculatedPoint));
 	}

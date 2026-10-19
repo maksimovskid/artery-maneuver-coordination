@@ -52,21 +52,29 @@ bool McApplication::shouldRetryAfter(
 }
 
 // RV-side Request retransmission. The Request keeps the original target set
-// and request ID; one-CV and two-CV behavior is decided by mRvNumberOfVehicles.
+// and request ID. McService repeats the entire original packet, including its
+// generationDeltaTime. Live candidates refresh separately; one/two-CV behavior
+// uses mRvNumberOfVehicles.
 PendingMcmCommand McApplication::makeRvRequestRetryCommand() const
 {
     EV_STATICCONTEXT;
 
     PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Request;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mRvRequestId;
-    command.numberOfVehicles = mRvNumberOfVehicles;
-    command.targetVehicle1 = mRvTargetVehicle1;
-    command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
-    command.targetVehicle2 = mRvTargetVehicle2;
+    if (mRvRequestCommand) {
+        // Preserve every issued field, including cooperationType (which is an
+        // ASN.1 protocol value, not the local coordinationManeuver enum).
+        command = *mRvRequestCommand;
+    } else {
+        command.kind = PendingMcmCommand::Kind::Negotiation;
+        command.subtype = mcmSubtype::Request;
+        command.priority = mPriorityMcmCategory;
+        command.requestId = mRvRequestId;
+        command.numberOfVehicles = mRvNumberOfVehicles;
+        command.targetVehicle1 = mRvTargetVehicle1;
+        command.hasTargetVehicle2 = mRvNumberOfVehicles >= 2 && mRvTargetVehicle2 != 0;
+        command.targetVehicle2 = mRvTargetVehicle2;
+    }
+    command.retransmission = mRvProposalIssued;
     command.requestedTrajectory = mRvRequestedTrajectory;
     EV_INFO << "[MCM-TRAJECTORY]"
         << " event=rv-request-retry"
@@ -85,7 +93,7 @@ PendingMcmCommand McApplication::makeRvConfirmRetryCommand() const
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = mcmSubtype::Confirm;
     command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.cooperationType = mRvRequestCommand ? mRvRequestCommand->cooperationType : 0;
     command.requestId = mRvRequestId;
     command.numberOfVehicles = mRvNumberOfVehicles;
     command.targetVehicle1 = mRvTargetVehicle1;
@@ -101,22 +109,9 @@ PendingMcmCommand McApplication::makeRvConfirmRetryCommand() const
 // still comes from the selected CV maneuver if one was computed.
 PendingMcmCommand McApplication::makeCvOfferRetryCommand() const
 {
-    PendingMcmCommand command;
-    command.kind = PendingMcmCommand::Kind::Negotiation;
-    command.subtype = mcmSubtype::Offer;
-    command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
-    command.requestId = mCvRequestId;
-    command.numberOfVehicles = 1;
-    command.targetVehicle1 = mCvRvStationId;
-    command.hasTargetVehicle2 = false;
-    command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasEgoContext ?
-        mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
-    command.offeredTrajectory = mHasCvSelectedTrajectory
-        ? mCvSelectedTrajectory
-        : (mHasEgoContext ? mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {});
-    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+    // Issued Offer is a retained proposal, including the original RV echo.
+    auto command = mCvOfferCommand.value();
+    command.retransmission = mCvProposalIssued;
     return command;
 }
 
@@ -128,14 +123,16 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
     command.kind = PendingMcmCommand::Kind::Negotiation;
     command.subtype = mcmSubtype::Accept;
     command.priority = mPriorityMcmCategory;
-    command.cooperationType = static_cast<long>(mCoordinationManeuver);
+    command.cooperationType = mCvActiveRequest && mCvActiveRequest->data.cooperationTypeMcm >= 0 ?
+        mCvActiveRequest->data.cooperationTypeMcm : 0;
     command.requestId = mCvRequestId;
     command.numberOfVehicles = mCvResponseNumberOfVehicles;
     command.targetVehicle1 = mCvRvStationId;
     command.hasTargetVehicle2 = false;
     command.targetVehicle2 = 0;
-    command.requestedTrajectory = mHasEgoContext ?
-        mEgoContext.plannedTrajectory : TrajectoryPlanner::Trajectory {};
+    command.requestedTrajectory = mCvActiveRequest->data.requestedTrajectory;
+    command.offeredTrajectory = mCvSelectedTrajectory;
+    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
     return command;
 }
 
@@ -144,6 +141,7 @@ PendingMcmCommand McApplication::makeCvAcceptRetryCommand() const
 // so this helper preserves the merging-only reset semantics.
 void McApplication::resetRvNegotiationAfterTimeout()
 {
+    mPendingMcmCommand.reset();
     mMergingRequestQueuedOrSent = false;
     resetRvResponseTracking();
     mRvNegotiationCompletionReported = false;

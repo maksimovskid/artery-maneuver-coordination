@@ -1,4 +1,5 @@
 #include "artery/application/mcm/TrajectoryConflict.h"
+#include "artery/application/mcm/McmTrajectory.h"
 #include "artery/application/VehicleDataProvider.h"
 
 #include <boost/units/systems/si/length.hpp>
@@ -38,51 +39,13 @@ bool TrajectoryPlanner::check_traj_conflict(
 
     const float distance_gap = time_gap * current_speed;
 
-    const bool compensate_delay =
-        receivedEteDelay > 0.05 &&
-        traj_other[traj_size - 1].mY <
-        traj_other[traj_size - 2].mY;
-
-    const double convertedDelay = receivedEteDelay.dbl();
-
     for (unsigned int i = 0; i < indices.size(); ++i) {
 
         const int idx = indices[i];
 
-        float other_y = traj_other[idx].mY;
-
-        if (compensate_delay) {
-
-            int prev_idx = idx - 1;
-
-            if (prev_idx < 0) {
-                prev_idx = 0;
-            }
-
-            const double dt =
-                (traj_other[idx].mTime -
-                 traj_other[prev_idx].mTime).dbl();
-
-            float received_speed = 0.0F;
-
-            if (dt > 0.0) {
-
-                const float dx_speed =
-                    traj_other[idx].mX -
-                    traj_other[prev_idx].mX;
-
-                const float dy_speed =
-                    traj_other[idx].mY -
-                    traj_other[prev_idx].mY;
-
-                received_speed =
-                    std::hypot(dx_speed, dy_speed) / dt;
-            }
-
-            other_y =
-                traj_other[idx].mY -
-                received_speed * convertedDelay;
-        }
+        const auto corrected = compensateTrajectoryPoint(traj_other, idx,
+            receivedEteDelay, CompensationDirection::NegativeY);
+        const float other_y = corrected.mY;
 
         const float dx =
             traj_ego[idx].mX - traj_other[idx].mX;
@@ -128,51 +91,13 @@ bool TrajectoryPlanner::check_traj_conflict_lane_change(
     const float distance_gap = time_gap * current_speed;
     const float lane_width_gap = 2.5F;
 
-    const bool compensate_delay =
-        receivedEteDelay > 0.05 &&
-        traj_other[traj_size - 1].mY <
-        traj_other[traj_size - 2].mY;
-
-    const double convertedDelay = receivedEteDelay.dbl();
-
     for (unsigned int i = 0; i < indices.size(); ++i) {
 
         const int idx = indices[i];
 
-        float other_y = traj_other[idx].mY;
-
-        if (compensate_delay) {
-
-            int prev_idx = idx - 1;
-
-            if (prev_idx < 0) {
-                prev_idx = 0;
-            }
-
-            const double dt =
-                (traj_other[idx].mTime -
-                 traj_other[prev_idx].mTime).dbl();
-
-            float received_speed = 0.0F;
-
-            if (dt > 0.0) {
-
-                const float dx_speed =
-                    traj_other[idx].mX -
-                    traj_other[prev_idx].mX;
-
-                const float dy_speed =
-                    traj_other[idx].mY -
-                    traj_other[prev_idx].mY;
-
-                received_speed =
-                    std::hypot(dx_speed, dy_speed) / dt;
-            }
-
-            other_y =
-                traj_other[idx].mY -
-                received_speed * convertedDelay;
-        }
+        const auto corrected = compensateTrajectoryPoint(traj_other, idx,
+            receivedEteDelay, CompensationDirection::NegativeY);
+        const float other_y = corrected.mY;
 
         const float dx =
             traj_ego[idx].mX -
@@ -208,57 +133,13 @@ bool TrajectoryPlanner::check_traj_conflict_merging(
     }
 
     const int t1 = traj_size - 1;
-    const int t2 = traj_size - 2;
-
     const float current_speed =
         mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
-
     const float distance_gap = time_gap * current_speed;
-
-    const float dx = traj_ego[t1].mX - traj_other[t1].mX;
-    const float dy = traj_ego[t1].mY - traj_other[t1].mY;
-    const float distance = std::hypot(dx, dy);
-
-    float received_speed = 0.0F;
-
-    const double dt =
-        (traj_other[t1].mTime - traj_other[t2].mTime).dbl();
-
-    if (dt > 0.0) {
-        const float dx_speed = traj_other[t1].mX - traj_other[t2].mX;
-        const float dy_speed = traj_other[t1].mY - traj_other[t2].mY;
-
-        received_speed = std::hypot(dx_speed, dy_speed) / dt;
-    }
-
-    if (receivedEteDelay > 0.05) {
-        const double convertedDelay = receivedEteDelay.dbl();
-
-        if (forRV && traj_other[t1].mY < traj_other[t2].mY) {
-            const float other_y =
-                traj_other[t1].mY - received_speed * convertedDelay;
-
-            const float dy_new = traj_ego[t1].mY - other_y;
-            const float distance_new = std::hypot(dx, dy_new);
-
-            if (distance_new < distance_gap) {
-                return true;
-            }
-        }
-        else if (!forRV && traj_other[t1].mX > traj_other[t2].mX) {
-            const float other_x =
-                traj_other[t1].mX + received_speed * convertedDelay;
-
-            const float dx_new = traj_ego[t1].mX - other_x;
-            const float distance_new = std::hypot(dx_new, dy);
-
-            if (distance_new < distance_gap) {
-                return true;
-            }
-        }
-    }
-
-    return distance < distance_gap;
+    const auto corrected = compensateTrajectoryPoint(traj_other, t1, receivedEteDelay,
+        forRV ? CompensationDirection::NegativeY : CompensationDirection::PositiveX);
+    return std::hypot(traj_ego[t1].mX - corrected.mX,
+        traj_ego[t1].mY - corrected.mY) < distance_gap;
 }
 
 bool TrajectoryPlanner::check_traj_collision(
@@ -280,49 +161,11 @@ bool TrajectoryPlanner::check_traj_collision(
     indices.push_back((3 * traj_size) / 4);
     indices.push_back(traj_size - 1);
 
-    const bool compensate_delay =
-        receivedEteDelay > 0.05 &&
-        traj_other[traj_size - 1].mY < traj_other[traj_size - 2].mY;
-
-    const double convertedDelay = receivedEteDelay.dbl();
-
     for (unsigned int i = 0; i < indices.size(); ++i) {
         const int idx = indices[i];
 
-        int prev_idx = idx - 1;
-
-        if (prev_idx < 0) {
-            prev_idx = 0;
-        }
-
-        if (idx == 0) {
-            prev_idx = 1;
-        }
-
-        const double ego_dt = std::abs((traj_ego[idx].mTime - traj_ego[prev_idx].mTime).dbl());
-
-		const double other_dt = std::abs((traj_other[idx].mTime - traj_other[prev_idx].mTime).dbl());
-
-        float ego_speed = 0.0F;
-        float other_speed = 0.0F;
-
-        if (ego_dt > 0.0F) {
-            const float ego_dx =
-                traj_ego[idx].mX - traj_ego[prev_idx].mX;
-            const float ego_dy =
-                traj_ego[idx].mY - traj_ego[prev_idx].mY;
-
-            ego_speed = std::hypot(ego_dx, ego_dy) / ego_dt;
-        }
-
-        if (other_dt > 0.0F) {
-            const float other_dx =
-                traj_other[idx].mX - traj_other[prev_idx].mX;
-            const float other_dy =
-                traj_other[idx].mY - traj_other[prev_idx].mY;
-
-            other_speed = std::hypot(other_dx, other_dy) / other_dt;
-        }
+        const float ego_speed = trajectorySegmentSpeed(traj_ego, idx);
+        const float other_speed = trajectorySegmentSpeed(traj_other, idx);
 
         const float relative_speed = ego_speed - other_speed;
 
@@ -330,11 +173,9 @@ bool TrajectoryPlanner::check_traj_collision(
             continue;
         }
 
-        float other_y = traj_other[idx].mY;
-
-        if (compensate_delay) {
-            other_y = traj_other[idx].mY - other_speed * convertedDelay;
-        }
+        const auto corrected = compensateTrajectoryPoint(traj_other, idx,
+            receivedEteDelay, CompensationDirection::NegativeY);
+        const float other_y = corrected.mY;
 
         const float dx = traj_ego[idx].mX - traj_other[idx].mX;
         const float dy = traj_ego[idx].mY - other_y;
@@ -356,7 +197,8 @@ int TrajectoryPlanner::findIndexTrajsConflictFree(
 	float time_gap,
 	const Vec_f& cx,
 	const Vec_f& cy,
-	int pind)
+	int pind,
+	omnetpp::SimTime informationAge)
 {
 	if (traj_ego.empty() || traj_other.empty() || cx.empty() || cy.empty()) {
 		return 0;
@@ -394,8 +236,10 @@ int TrajectoryPlanner::findIndexTrajsConflictFree(
 	};
 
 	for (int t = 0; t < trajSize; ++t) {
-		const float dx = traj_ego[t].mX - traj_other[t].mX;
-		const float dy = traj_ego[t].mY - traj_other[t].mY;
+        const auto corrected = compensateTrajectoryPoint(traj_other, t,
+            informationAge, CompensationDirection::NegativeY);
+		const float dx = traj_ego[t].mX - corrected.mX;
+		const float dy = traj_ego[t].mY - corrected.mY;
 		const float dist = std::hypot(dx, dy);
 
 		if (dist >= min_distance) {

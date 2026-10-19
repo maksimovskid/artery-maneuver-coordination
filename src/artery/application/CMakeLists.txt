@@ -51,6 +51,7 @@ target_sources(core PRIVATE
     mcm/TrajectoryPlanner.cc
     mcm/McScenarioConfig.cc
     mcm/McApplication.cc
+    mcm/McApplicationFreshness.cc
     mcm/McApplicationDiagnostics.cc
     mcm/McApplicationExecutionControl.cc
     mcm/McApplicationExecutionProgress.cc

@@ -110,7 +110,7 @@ public:
 
 	Trajectory estimateOtherDecelerationTrajectory(int steps, double dt, const Vec_f& cx, const Vec_f& cy, int target_ind, bool constantVelocity, float targetSpeed, float acceleration, float deceleration, Trajectory traj_other);
 	
-	int findIndexTrajsConflictFree(Trajectory traj_ego, Trajectory traj_other, float time_gap, const Vec_f& cx, const Vec_f& cy, int pind);
+	int findIndexTrajsConflictFree(Trajectory traj_ego, Trajectory traj_other, float time_gap, const Vec_f& cx, const Vec_f& cy, int pind, omnetpp::SimTime informationAge = omnetpp::SimTime::ZERO);
 
     SecondRequestPlanningResult findSecondRequestTrajRV(Trajectory estimatedOtherTraj, int requestPriority, int steps, double dt, const Vec_f& cx, const Vec_f& cy, int mIndex, double current_speed, omnetpp::SimTime receivedEteDelay, bool decelerationRequired, bool accelerationRequired);
 	

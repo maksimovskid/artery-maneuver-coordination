@@ -155,7 +155,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
     }
 
     const omnetpp::SimTime eteDelay =
-        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+        received.requestedAge(mEgoContext.now);
     const bool conflict = mTrajectoryPlanner.check_traj_conflict_merging(
         mEgoContext.plannedTrajectory,
         snapshot.requestedTrajectory,
@@ -244,6 +244,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         mControlManeuver = controlManeuver::DoNothing;
     }
 
+    mCvPlannedValues = plannedValues;
     mCvSelectedTrajectory = selectedTrajectory;
     mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
 
@@ -354,7 +355,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
 
         ++considered;
 
-        const omnetpp::SimTime age = std::max(omnetpp::SimTime::ZERO, now - received.receivedAt);
+        const omnetpp::SimTime age = received.plannedAge(now);
         if (age > mMergingCoordinationConfig.snapshotFreshness) {
             ++skippedStale;
             continue;
@@ -498,6 +499,7 @@ void McApplication::evaluateMergingRequestTrigger(omnetpp::SimTime now)
     command.requestedTrajectory = mEgoContext.plannedTrajectory;
 
     mPendingMcmCommand = command;
+    mRvRequestCommand = command;
     mMergingRequestQueuedOrSent = true;
     mRvLastRequestQueuedAt = now;
     mHasRvLastRequestQueuedAt = true;

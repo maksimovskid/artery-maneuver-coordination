@@ -139,3 +139,8 @@ if(VSCODE_LAUNCH_INTEGRATION)
         generate_vscode(TARGET artery FILE ${PROJECT_SOURCE_DIR}/.vscode/launch.json)
     endif()
 endif()
+
+# Focused deterministic coverage for MCM timing and retained-proposal semantics.
+add_executable(mcm_timing_tests EXCLUDE_FROM_ALL tests/mcm/mcm_timing_tests.cc)
+target_link_libraries(mcm_timing_tests PRIVATE core OmnetPP::sim)
+add_test(NAME mcm_timing COMMAND mcm_timing_tests)

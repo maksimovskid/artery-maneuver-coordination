@@ -28,6 +28,7 @@ namespace artery
 namespace mcm
 {
 class McApplication;
+class McmRetransmissionCache;
 enum class operationMode;
 enum class priorityMcmCategory;
 struct PendingMcmCommand;
@@ -260,6 +261,7 @@ private:
 
     // Application layer handoff
     std::unique_ptr<mcm::McApplication> mApplication;
+    std::unique_ptr<mcm::McmRetransmissionCache> mRetransmissionCache;
 };
 
 }  // namespace artery

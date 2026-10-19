@@ -3,6 +3,7 @@
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McScenarioConfig.h"
 #include "artery/application/mcm/McmEnumUtils.h"
+#include "artery/application/mcm/McmTrajectory.h"
 #include "artery/application/mcm/TrajectoryEnvironment.h"
 #include "artery/traci/VehicleController.h"
 
@@ -142,6 +143,7 @@ void McApplication::updateEgoContext(const McEgoContext& context)
 {
     mEgoContext = context;
     mHasEgoContext = true;
+    refreshExecutionPrediction();
 }
 
 /*
@@ -158,6 +160,7 @@ void McApplication::tick(omnetpp::SimTime now)
         return;
     }
     evaluateMergingRequestTrigger(now);
+    refreshLiveNegotiationCandidates();
     evaluateRvRequestRetry(now);
     evaluateRvConfirmRetry(now);
     evaluateCvOfferRetry(now);
@@ -185,6 +188,7 @@ void McApplication::prepareMcmGeneration(omnetpp::SimTime now)
         mEgoContext.now = now;
     }
 
+    refreshLiveNegotiationCandidates();
     if (mOperationMode == operationMode::ManeuverExecutionMode &&
             mCooperatingVehicleType == cooperatingVehicleType::RV &&
             mCoordinationProgressRV == coordinationProgressRV::SendExecute) {
@@ -207,6 +211,7 @@ void McApplication::handleReceivedMcm(const ReceivedMcm& mcm)
         mReceivedMcmCache.erase(mReceivedMcmCache.begin());
     }
 
+    if (!acceptRequestVersion(mcm)) return;
     evaluateCvRequestResponse(mcm);
     handleReceivedCancelAsCv(mcm);
     handleReceivedOfferAsRv(mcm);
@@ -254,6 +259,16 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
     mHasLastSentMcm = true;
 
     logNegotiationTrace("SEND", mcm.data, mcm.sentAt);
+    if (mcm.data.hasNegotiationContainer) {
+        if (mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Request) &&
+                mcm.data.requestId == mRvRequestId) {
+            if (!mRvProposalIssued) mIssuedRequestIds[mRvRequestId] = mcm.sentAt;
+            mRvProposalIssued = true;
+        }
+        if ((mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Offer) ||
+                mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Accept)) &&
+                mcm.data.requestId == mCvRequestId) mCvProposalIssued = true;
+    }
 
     if (mcm.data.hasNegotiationContainer &&
             mcm.data.mcmCategory == static_cast<long>(mcmSubtype::Request) &&
@@ -384,6 +399,8 @@ void McApplication::handleSentMcm(const SentMcm& mcm)
 std::optional<PendingMcmCommand> McApplication::consumePendingCommand()
 {
     auto command = mPendingMcmCommand;
+    if (command && command->subtype == mcmSubtype::Request && !command->retransmission)
+        mRvRequestCommand = *command;
     mPendingMcmCommand.reset();
     return command;
 }
@@ -566,6 +583,10 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
 
     logNegotiationTrace("RECV", snapshot, received.receivedAt);
 
+    mCvPlannedValues = {};
+    mCvSelectedTrajectory.clear();
+    mHasCvSelectedTrajectory = false;
+    mCvActiveRequest = received;
     mCvRvStationId = snapshot.stationId;
     mCvRequestId = incomingRequestId;
     mCooperatingVehicleType = cooperatingVehicleType::CV;
@@ -644,6 +665,7 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
             mCoordinationProgressCV = command.subtype == mcmSubtype::Offer ?
                 coordinationProgressCV::SendOffer : coordinationProgressCV::SendAccept;
 
+            mCvPlannedValues = decision.plannedValues;
             mControlManeuver = decision.selectedManeuver;
             mCvSelectedTrajectory = decision.selectedTrajectory;
             mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
@@ -727,8 +749,9 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
 
         command.subtype = mcmSubtype::Offer;
         command.requestedTrajectory = snapshot.requestedTrajectory;
-        command.offeredTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
-            mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
+        command.offeredTrajectory = mHasCvSelectedTrajectory ? mCvSelectedTrajectory :
+            (mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
+                mEgoContext.plannedTrajectory : snapshot.requestedTrajectory);
         command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
         mCoordinationProgressCV = coordinationProgressCV::SendOffer;
 
@@ -770,6 +793,24 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         //     << " at " << omnetpp::simTime() << " s" << std::endl;
     }
 
+    if (command.subtype == mcmSubtype::Accept || command.subtype == mcmSubtype::Reject) {
+        if (command.subtype == mcmSubtype::Accept && !mHasCvSelectedTrajectory) {
+            mCvSelectedTrajectory = mEgoContext.plannedTrajectory;
+            mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
+        }
+        command.requestedTrajectory = snapshot.requestedTrajectory;
+        command.offeredTrajectory = command.subtype == mcmSubtype::Accept ?
+            mCvSelectedTrajectory : mEgoContext.plannedTrajectory;
+        command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+    }
+    if (command.subtype == mcmSubtype::Offer) {
+        mCvOfferCommand = command;
+        mCvSelectedTrajectory = command.offeredTrajectory;
+        mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
+    } else if (command.subtype == mcmSubtype::Accept && !mHasCvSelectedTrajectory) {
+        mCvSelectedTrajectory = command.requestedTrajectory;
+        mHasCvSelectedTrajectory = !mCvSelectedTrajectory.empty();
+    }
     mMcmSubtype = command.subtype;
     mPendingMcmCommand = command;
     mCvResponseQueuedOrSent = true;
@@ -874,7 +915,8 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     }
 
     const auto& snapshot = received.data;
-    if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Offer, mRvRequestId)) {
+    if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Offer, mRvRequestId) ||
+            !sameMcmProposal(snapshot.requestedTrajectory, mRvRequestedTrajectory)) {
         return;
     }
 
@@ -886,6 +928,7 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
     }
 
     if (fromTarget1 && !mRvOfferReceived1) {
+        mRvOfferedTrajectory1 = snapshot.offeredTrajectory;
         mRvOfferReceived1 = true;
         if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
             EV_INFO << "[MCM-LC-STATE]"
@@ -902,6 +945,7 @@ void McApplication::handleReceivedOfferAsRv(const ReceivedMcm& received)
             << " for requestId=" << static_cast<int>(mRvRequestId)
             << " offeredTrajectoryPoints=" << snapshot.offeredTrajectoryPointCount << '\n';
     } else if (fromTarget2 && !mRvOfferReceived2) {
+        mRvOfferedTrajectory2 = snapshot.offeredTrajectory;
         mRvOfferReceived2 = true;
         if (mPriorityMcmCategory == priorityMcmCategory::HighPriority) {
             EV_INFO << "[MCM-LC-STATE]"
@@ -986,6 +1030,8 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
     const auto& snapshot = received.data;
     if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Confirm, mCvRequestId) ||
             snapshot.stationId != mCvRvStationId ||
+            !mCvActiveRequest ||
+            !sameMcmProposal(snapshot.requestedTrajectory, mCvActiveRequest->data.requestedTrajectory) ||
             !isSnapshotTargetingEgo(snapshot)) {
         return;
     }
@@ -996,6 +1042,7 @@ void McApplication::handleReceivedConfirmAsCv(const ReceivedMcm& received)
 
     PendingMcmCommand command = makeCvAcceptCommand(snapshot);
 
+    mCvResponseNumberOfVehicles = command.numberOfVehicles;
     mPendingMcmCommand = command;
     mMcmSubtype = mcmSubtype::Accept;
     mCoordinationProgressCV = coordinationProgressCV::SendAccept;
@@ -1047,7 +1094,8 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
 
     const auto& snapshot = received.data;
 
-    if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Accept, mRvRequestId)) {
+    if (!isNegotiationMessageForActiveRequest(snapshot, mcmSubtype::Accept, mRvRequestId) ||
+            !sameMcmProposal(snapshot.requestedTrajectory, mRvRequestedTrajectory)) {
         return;
     }
 
@@ -1066,6 +1114,10 @@ void McApplication::handleReceivedAcceptAsRv(const ReceivedMcm& received)
     if (!classifyExpectedRvResponseSender(senderStationId, fromTarget1, fromTarget2)) {
         return;
     }
+
+    if (mRvNumberOfVehicles > 1 &&
+            !sameMcmProposal(snapshot.offeredTrajectory,
+                fromTarget1 ? mRvOfferedTrajectory1 : mRvOfferedTrajectory2)) return;
 
     if (fromTarget1 && !mRvAcceptReceived1) {
         mRvAcceptReceived1 = true;
@@ -1309,7 +1361,8 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
     }
 
     if (snapshot.requestId < 0 ||
-            static_cast<uint8_t>(snapshot.requestId) != mRvRequestId) {
+            static_cast<uint8_t>(snapshot.requestId) != mRvRequestId ||
+            !sameMcmProposal(snapshot.requestedTrajectory, mRvRequestedTrajectory)) {
         return;
     }
 
@@ -1344,6 +1397,9 @@ void McApplication::handleReceivedRejectAsRv(const ReceivedMcm& received)
             const uint8_t previousRequestId = mRvRequestId;
 
             mPendingMcmCommand = *secondRequest;
+            mRvRequestCommand = *secondRequest;
+            mRvProposalIssued = false;
+            mRvSecondRequestSource = received;
             mRvSecondRequestAttempted = true;
             mRvSecondRequestCompletedMeasured = false;
             mRvSecondRequestRejectedMeasured = false;
@@ -1542,7 +1598,16 @@ void McApplication::handleReceivedExecuteAsCv(const ReceivedMcm& received)
 uint8_t McApplication::makeRequestId(omnetpp::SimTime now) const
 {
     const auto millis = static_cast<uint64_t>(now.inUnit(omnetpp::SIMTIME_MS));
-    return static_cast<uint8_t>((mEgoContext.stationId + millis + mReceivedMcmCount) % 256);
+    const auto preferred = static_cast<uint8_t>((mEgoContext.stationId + millis + mReceivedMcmCount) % 256);
+    for (unsigned offset = 0; offset < 256; ++offset) {
+        const auto id = static_cast<uint8_t>(preferred + offset);
+        const auto prior = mIssuedRequestIds.find(id);
+        // `now` can be a future seed for alternative-ID selection; holdoff
+        // must use the actual evaluation time, not that future seed.
+        const auto evaluationTime = mHasEgoContext ? mEgoContext.now : now;
+        if (prior == mIssuedRequestIds.end() || evaluationTime - prior->second >= omnetpp::SimTime(32.768)) return id;
+    }
+    throw omnetpp::cRuntimeError("MCM Request IDs exhausted within timestamp reconstruction window");
 }
 
 }  // namespace mcm

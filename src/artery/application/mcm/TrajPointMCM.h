@@ -13,7 +13,8 @@ public:
     double mX = 0.0;
     double mY = 0.0;
     double mHeading = 0.0;
-    omnetpp::SimTime mTime;
+    omnetpp::SimTime mTime; // absolute sample time in simulation seconds
+    omnetpp::SimTime mReferenceTime; // planning origin, preserved in retained proposals
 };
 
 } // namespace mcm

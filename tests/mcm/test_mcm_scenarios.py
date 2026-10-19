@@ -14,7 +14,76 @@ except ImportError:
 
 class McScenarioTestCase(unittest.TestCase):
     def run_checked_scenario(self, config: str) -> ScenarioRun:
-        return run_scenario(config)
+        run = run_scenario(config)
+        try:
+            self.check_trajectory_timing(run.parsed_log)
+        except Exception:
+            print(f"scenario log preserved at {run.log_path}", flush=True)
+            raise
+        return run
+
+    def check_trajectory_timing(self, log: ParsedLog) -> None:
+        # Fresh packets have a current generation reference. Exact Request/
+        # Offer retransmissions retain their ENTIRE original trajectory set.
+        log.forbid("MCM-TIMING")
+        log.forbid("MCM-PROPOSAL")
+        requests: dict[tuple[str, str], dict[str, str]] = {}
+        offers: dict[tuple[str, str, str], dict[str, str]] = {}
+        execution: dict[tuple[str, str], list[dict[str, str]]] = {}
+        for event in log.find("MCM-WIRE", direction="sent"):
+            f = event.fields
+            if "subtype" not in f:
+                continue
+            generated, sent = float(f["generatedAt"]), float(f["sentAt"])
+            self.assertLessEqual(generated, sent)
+            self.assertEqual(f["plannedReference"], f["generatedAt"])
+            self.assertLessEqual(float(f["sampledAt"]), sent)
+            retry = f["retransmission"] == "1"
+            if not retry:
+                self.assertLess(sent - generated, 0.001000001,
+                                "new live prediction does not reference current generation")
+            else:
+                self.assertIn(f["subtype"], ("Request", "Offer"))
+            if f["subtype"] == "Request":
+                key = (f["station"], f["requestId"])
+                if key in requests:
+                    self.assertTrue(retry, "issued Request was rebuilt under the same ID")
+                    for field in ("generatedAt", "plannedSnapshot", "requestedSnapshot", "offeredSnapshot", "target1", "target2"):
+                        self.assertEqual(requests[key][field], f[field], "Request retry changed issued packet")
+                else:
+                    self.assertFalse(retry, "Request retransmitted before issuance")
+                    requests[key] = f
+            elif f["subtype"] in ("Offer", "Accept"):
+                key = (f["target1"], f["requestId"])
+                self.assertEqual(requests[key]["requestedSnapshot"], f["requestedSnapshot"],
+                                 "CV did not echo the issued RV agreement")
+                self.assertEqual(requests[key]["cooperationType"], f["cooperationType"])
+                cv_key = (f["station"], f["target1"], f["requestId"])
+                if f["subtype"] == "Offer":
+                    if cv_key in offers:
+                        self.assertTrue(retry, "issued Offer was rebuilt under the same ID")
+                        for field in ("generatedAt", "plannedSnapshot", "requestedSnapshot", "offeredSnapshot"):
+                            self.assertEqual(offers[cv_key][field], f[field], "Offer retry changed issued packet")
+                    else:
+                        self.assertFalse(retry)
+                        offers[cv_key] = f
+                elif cv_key in offers:
+                    self.assertEqual(offers[cv_key]["offeredSnapshot"], f["offeredSnapshot"],
+                                     "Accept changed the CV agreement snapshot")
+            elif f["subtype"] == "Confirm":
+                key = (f["station"], f["requestId"])
+                self.assertEqual(requests[key]["requestedSnapshot"], f["requestedSnapshot"],
+                                 "Confirm changed issued Request snapshot")
+                self.assertEqual(requests[key]["cooperationType"], f["cooperationType"])
+            elif f["subtype"] == "Execute":
+                key = (f["station"], f["cooperationId"])
+                for field in ("target1", "target2"):
+                    self.assertEqual(requests[key][field], f[field], "execution changed agreement participants")
+                execution.setdefault(key, []).append(f)
+        for packets in execution.values():
+            if len(packets) > 1:
+                self.assertGreater(float(packets[-1]["generatedAt"]), float(packets[0]["generatedAt"]),
+                                   "remaining execution prediction was not regenerated")
 
     def report_run(self, scenario_run: ScenarioRun) -> None:
         print(
@@ -512,13 +581,13 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 event="safety-critical-trigger-armed",
                 vehicleId="car_hl1_1",
             )
-            log.require(
+            queued = log.require(
                 "MCM-LC-3VEH",
                 event="queued-request",
                 vehicleId="car_hl1_1",
-                targetCv1="309",
-                targetCv2="589",
             )
+            self.assertEqual({queued.fields["targetCv1"], queued.fields["targetCv2"]}, {"309", "589"})
+            target1, target2 = queued.fields["targetCv1"], queued.fields["targetCv2"]
 
             request = log.require(
                 "MCM-NEGOTIATION",
@@ -526,8 +595,8 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 msg="Request",
                 localVehicleId="car_hl1_1",
                 priority="HighPriority",
-                target1="309",
-                target2="589",
+                target1=target1,
+                target2=target2,
             )
             request_id = request.fields["requestId"]
             for subtype in ("Offer", "Confirm", "Accept"):
@@ -538,8 +607,8 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 log,
                 station="449",
                 request_id=request_id,
-                target1="309",
-                target2="589",
+                target1=target1,
+                target2=target2,
                 priority="HighPriority",
             )
             self.require_cv_execution_armed(
@@ -547,16 +616,16 @@ class CoordinatedEmergencyLaneChangeTest(McScenarioTestCase):
                 station="309",
                 sender="449",
                 request_id=request_id,
-                target1="309",
-                target2="589",
+                target1=target1,
+                target2=target2,
             )
             self.require_cv_execution_armed(
                 log,
                 station="589",
                 sender="449",
                 request_id=request_id,
-                target1="309",
-                target2="589",
+                target1=target1,
+                target2=target2,
             )
             log.require("MCM-LC-EXEC", event="lane-change-execution-complete", requestId=request_id)
             # Temporary baseline characterization: successful completion is

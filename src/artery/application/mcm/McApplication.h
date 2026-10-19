@@ -9,6 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <map>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -133,6 +136,7 @@ struct McmSnapshot {
     std::size_t requestedTrajectoryPointCount = 0;
     std::vector<mcm::TrajPointMCM> requestedTrajectory;
     std::size_t offeredTrajectoryPointCount = 0;
+    std::vector<mcm::TrajPointMCM> offeredTrajectory;
     bool hasAlternativeTrajectory = false;
     std::size_t alternativeTrajectoryPointCount = 0;
     long cooperationId = -1;
@@ -144,6 +148,16 @@ struct McmSnapshot {
 struct ReceivedMcm {
     McmSnapshot data;
     omnetpp::SimTime receivedAt;
+    omnetpp::SimTime generatedAt;
+
+    omnetpp::SimTime plannedAge(omnetpp::SimTime evaluationTime) const
+    { return evaluationTime - generatedAt; }
+    omnetpp::SimTime requestedAge(omnetpp::SimTime evaluationTime) const
+    {
+        if (!data.hasNegotiationContainer || data.mcmCategory != static_cast<long>(mcmSubtype::Request))
+            throw std::logic_error("agreement snapshots are not live requested predictions");
+        return evaluationTime - generatedAt;
+    }
 };
 
 struct SentMcm {
@@ -174,7 +188,8 @@ struct PlannerMeasurement {
 };
 
 struct McEgoContext {
-    omnetpp::SimTime now;
+    omnetpp::SimTime now; // current planning/evaluation time
+    omnetpp::SimTime sampledAt; // latest available vehicle state
     uint32_t stationId = 0;
     std::string routeId;
     int laneIndex = -1;
@@ -257,9 +272,13 @@ struct PendingMcmCommand {
     uint32_t targetVehicle2 = 0;
 
     TrajectoryPlanner::Trajectory requestedTrajectory;
+    // Resubmit the complete issued packet, including its original header time.
+    // Never rebuild an issued Request/Offer under a newer generation time.
+    bool retransmission = false;
 
-    // Used by Offer messages.
-    // For Request/Accept/Reject this can stay empty and McService can use a valid placeholder.
+    // RV proposal is echoed in requestedTrajectory throughout negotiation.
+    // Offer/Accept carry the retained CV contribution here. Reject can carry
+    // current CV intent here; Request/Confirm use a valid wire placeholder.
     TrajectoryPlanner::Trajectory offeredTrajectory;
     bool hasOfferedTrajectory = false;
 
@@ -283,6 +302,7 @@ public:
     void setSafetyCriticalLaneChangeConfig(const SafetyCriticalLaneChangeConfig&);
     void setExecutionRestorationSafetyConfig(const ExecutionRestorationSafetyConfig&);
     void updateEgoContext(const McEgoContext&);
+    const TrajectoryPlanner::Trajectory& plannedTrajectory() const { return mEgoContext.plannedTrajectory; }
     void tick(omnetpp::SimTime now);
     void prepareMcmGeneration(omnetpp::SimTime now);
     void handleReceivedMcm(const ReceivedMcm&);
@@ -336,6 +356,10 @@ private:
         std::string reason;
     };
 
+    friend struct McApplicationTimingTestAccess;
+    void refreshLiveNegotiationCandidates();
+    void refreshExecutionPrediction();
+    bool acceptRequestVersion(const ReceivedMcm&);
     void applyCommand();
     void evaluateMergingRequestTrigger(omnetpp::SimTime now);
     void evaluateRvRequestRetry(omnetpp::SimTime now);
@@ -354,7 +378,7 @@ private:
     PendingMcmCommand makeRvConfirmRetryCommand() const;
     PendingMcmCommand makeCvOfferRetryCommand() const;
     PendingMcmCommand makeCvAcceptRetryCommand() const;
-    std::optional<PendingMcmCommand> makeRvSecondRequestCommand(const ReceivedMcm&);
+    std::optional<PendingMcmCommand> makeRvSecondRequestCommand(const ReceivedMcm&, bool diagnostics = true);
     void resetRvNegotiationAfterTimeout();
     void resetCvNegotiationAfterTimeout();
     void evaluateEmergencyBrakingTrigger(omnetpp::SimTime now);
@@ -418,6 +442,9 @@ private:
     void sampleMergingGapDiagnostics(const char* phase);
     void logMergingGapSummary(omnetpp::SimTime completionTime) const;
     uint8_t makeRequestId(omnetpp::SimTime now) const;
+    // Existing 8-bit identity must not alias a delayed old Execute. No new
+    // wire field is needed: avoid reuse within the timestamp ambiguity window.
+    std::map<uint8_t, omnetpp::SimTime> mIssuedRequestIds;
 
     traci::VehicleController* mVehicleController = nullptr;
     const VehicleDataProvider* mVehicleDataProvider = nullptr;
@@ -477,6 +504,8 @@ private:
     uint8_t mRvNumberOfVehicles = 1;
     uint32_t mRvTargetVehicle1 = 0;
     uint32_t mRvTargetVehicle2 = 0;
+    TrajectoryPlanner::Trajectory mRvOfferedTrajectory1;
+    TrajectoryPlanner::Trajectory mRvOfferedTrajectory2;
     bool mRvOfferReceived1 = false;
     bool mRvOfferReceived2 = false;
     bool mRvConfirmQueuedOrSent = false;
@@ -499,6 +528,18 @@ private:
     bool mRvSecondRequestCompletedMeasured = false;
     bool mRvSecondRequestRejectedMeasured = false;
 
+    // Unissued commands can be replanned. Once sent, identities and trajectory
+    // origins are immutable through the complete negotiation, including retries.
+    bool mRvProposalIssued = false;
+    std::optional<PendingMcmCommand> mRvRequestCommand;
+    bool mCvProposalIssued = false;
+    TrajectoryPlanner::Trajectory mRvLiveRequestedTrajectory;
+    std::optional<ReceivedMcm> mRvSecondRequestSource;
+    std::optional<ReceivedMcm> mCvActiveRequest;
+    std::optional<PendingMcmCommand> mCvOfferCommand;
+    std::map<uint32_t, std::pair<uint8_t, omnetpp::SimTime>> mLatestRequestVersion;
+    std::map<uint32_t, std::set<std::pair<uint8_t, omnetpp::SimTime>>> mRetiredRequestVersions;
+
     // RV proposal carried by the active Request and its retries.
     TrajectoryPlanner::Trajectory mRvRequestedTrajectory;
     bool mHasRvRequestedTrajectory = false;
@@ -508,6 +549,7 @@ private:
     bool mHasRvNegotiatedTrajectory = false;
     TrajectoryPlanner::Trajectory mCvNegotiatedTrajectory;
     bool mHasCvNegotiatedTrajectory = false;
+    PlannedTrajValues mCvPlannedValues {};
     // CV proposal selected while responding to the active Request.
     TrajectoryPlanner::Trajectory mCvSelectedTrajectory;
     bool mHasCvSelectedTrajectory = false;

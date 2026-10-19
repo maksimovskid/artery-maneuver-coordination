@@ -128,7 +128,7 @@ McApplication::CvCooperationDecision McApplication::evaluateCvCooperationDecisio
         << '\n';
 
     const omnetpp::SimTime eteDelay =
-        std::max(omnetpp::SimTime::ZERO, mEgoContext.now - received.receivedAt);
+        received.requestedAge(mEgoContext.now);
     decision.conflictWithRequestedTrajectory = mTrajectoryPlanner.check_traj_conflict_lane_change(
         mEgoContext.plannedTrajectory,
         snapshot.requestedTrajectory,

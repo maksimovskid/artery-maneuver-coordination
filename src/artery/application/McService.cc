@@ -6,6 +6,9 @@
 #include "artery/application/MultiChannelPolicy.h"
 #include "artery/application/NetworkInterfaceTable.h"
 #include "artery/application/Timer.h"
+#include "artery/application/mcm/McmTiming.h"
+#include "artery/application/mcm/McmRetransmission.h"
+#include "artery/application/mcm/McmReception.h"
 #include "artery/application/VehicleDataProvider.h"
 #include "artery/application/mcm/McApplication.h"
 #include "artery/application/mcm/TrajectoryCsv.h"
@@ -435,7 +438,7 @@ mcm::TrajectoryPlanner::Trajectory extractTrajectory(const TrajectoryMCM_t& traj
         mcm::TrajPointMCM parsed;
         parsed.mX = point->deltaLongitudinalPosition;
         parsed.mY = point->deltaLateralPosition;
-        parsed.mHeading = point->deltaHeading;
+        parsed.mHeading = point->deltaHeading * M_PI / 1800.0;
         parsed.mTime = omnetpp::SimTime { static_cast<double>(point->deltaTime) / 100.0 };
         points.push_back(parsed);
     }
@@ -479,6 +482,10 @@ mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
             message.mcm.mcmParameters.maneuverNegotiationContainer->requestedTrajectory);
     }
     snapshot.offeredTrajectoryPointCount = metadata.offeredTrajectoryPointCount;
+    if (metadata.hasNegotiationContainer) {
+        snapshot.offeredTrajectory = extractTrajectory(
+            message.mcm.mcmParameters.maneuverNegotiationContainer->offeredTrajectory);
+    }
     snapshot.hasAlternativeTrajectory = metadata.hasAlternativeTrajectory;
     snapshot.alternativeTrajectoryPointCount = metadata.alternativeTrajectoryPointCount;
     snapshot.cooperationId = metadata.cooperationId;
@@ -493,12 +500,38 @@ mcm::SentMcm makeSentMcm(const MCM_t& message, omnetpp::SimTime sentAt)
     return { extractMcmSnapshot(message), sentAt };
 }
 
-mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime receivedAt)
+omnetpp::SimTime reconstructMcmTime(long raw, const Timer& timer, omnetpp::SimTime now)
+{
+    // The Timer uses exactly the same 65536 ms nearest-epoch reconstruction.
+    // Validate before narrowing, and avoid getTimeFor(tai), which clamps times
+    // before simulation zero. Such negative reference times are legitimate.
+    mcm::timestampOffsetMilliseconds(raw, countTaiMilliseconds(timer.getCurrentTime()));
+    const auto tai = timer.reconstructMilliseconds(static_cast<uint16_t>(raw));
+    const auto delta = std::chrono::duration_cast<std::chrono::microseconds>(
+        tai - timer.getCurrentTime()).count();
+    // Timer::getTimeFor(simtime) truncates to microseconds. Use that SAME
+    // simulation origin or reception's sub-microsecond remainder would leak
+    // into reconstructed times and make proposal epochs differ per receiver.
+    return omnetpp::SimTime(now.inUnit(omnetpp::SIMTIME_US), omnetpp::SIMTIME_US) +
+        omnetpp::SimTime(delta, omnetpp::SIMTIME_US);
+}
+
+mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime receivedAt, const Timer& timer)
 {
     auto snapshot = extractMcmSnapshot(message);
     EV_DETAIL << "McService received MCM snapshot for station " << snapshot.stationId
         << " with plannedTrajectory points=" << snapshot.plannedTrajectoryPointCount << '\n';
-    return { snapshot, receivedAt };
+    mcm::ReceivedMcm received;
+    received.data = std::move(snapshot);
+    received.receivedAt = receivedAt;
+    received.generatedAt = reconstructMcmTime(message.mcm.generationDeltaTime, timer, receivedAt);
+    // Only planned intent and a Request's requested trajectory are used as
+    // age-compensated predictions. Confirm/Accept/Offer echoes are snapshots.
+    for (auto& point : received.data.plannedTrajectory) point.mReferenceTime = received.generatedAt;
+    if (received.data.mcmCategory == McmCategory_request) {
+        for (auto& point : received.data.requestedTrajectory) point.mReferenceTime = received.generatedAt;
+    }
+    return received;
 }
 
 void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
@@ -529,7 +562,7 @@ void appendTrajectoryPoint(TrajectoryMCM_t& trajectory, const mcm::TrajPointMCM&
     TrajectoryPointMCM_t* trajectoryPoint = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
     trajectoryPoint->deltaLongitudinalPosition = static_cast<long>(std::round(point.mX));
     trajectoryPoint->deltaLateralPosition = static_cast<long>(std::round(point.mY));
-    trajectoryPoint->deltaHeading = normalizeTrajectoryHeading(heading);
+    trajectoryPoint->deltaHeading = normalizeTrajectoryHeading(std::lround(point.mHeading * 1800.0 / M_PI));
     trajectoryPoint->deltaTime = static_cast<long>(std::round(point.mTime.dbl() * 100.0));
     if (ASN_SEQUENCE_ADD(&trajectory, trajectoryPoint) != 0) {
         throw cRuntimeError("Failed to append MCM trajectory point");
@@ -552,6 +585,11 @@ SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 
 }  // namespace
 
+mcm::ReceivedMcm mcm::decodeReceivedMcm(const MCM_t& message, omnetpp::SimTime now, const Timer& timer)
+{
+    return makeReceivedMcm(message, now, timer);
+}
+
 Define_Module(McService)
 
 McService::McService() :
@@ -559,6 +597,7 @@ McService::McService() :
     mGenMcmMax { 1000, SIMTIME_MS },
     mGenMcm(mGenMcmMax)
 {
+    mRetransmissionCache = std::make_unique<mcm::McmRetransmissionCache>();
 }
 
 McService::~McService() = default;
@@ -771,12 +810,10 @@ void McService::emitReceivedMeasurements(
             break;
     }
 
-    const SimTime generatedAt = mTimer->getTimeFor(
-        mTimer->reconstructMilliseconds(message.mcm.generationDeltaTime));
+    const SimTime generatedAt = reconstructMcmTime(message.mcm.generationDeltaTime, *mTimer, now);
     const SimTime eteDelay = now - generatedAt;
     if (eteDelay < SIMTIME_ZERO) {
-        // TODO: Revisit generationDeltaTime reconstruction for cross-second
-        // wraparound edge cases before emitting negative E2E delay samples.
+        // Reception validation normally rejects future timestamps first.
         return;
     }
 
@@ -1477,6 +1514,9 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
 
 void McService::sendMcm(const SimTime& T_now)
 {
+    // Planning is repeated at the actual generation opportunity, after any
+    // facilities-DCC wait. The latest available state is sampled into the plan.
+    updateApplicationEgoContext(T_now);
     if (mApplication) {
         mApplication->prepareMcmGeneration(T_now);
     }
@@ -1485,20 +1525,20 @@ void McService::sendMcm(const SimTime& T_now)
     mcm::operationMode generatedMode = mcm::operationMode::IntentionSharingMode;
     mcm::priorityMcmCategory generatedPriority = mcm::priorityMcmCategory::NoPriority;
 
-    uint16_t generationDeltaTime = 0;
-    if (command || mCommunicationConfig.timeSource == McmTimeSource::CurrentTime) {
-        generationDeltaTime = countTaiMilliseconds(mTimer->getCurrentTime());
-    } else {
-        generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
-    }
+    const bool retransmission = command && command->retransmission;
+    const auto* retained = retransmission ? &mRetransmissionCache->replay(*command) : nullptr;
+    const auto generatedAt = retained ? retained->generatedAt : mcm::generationReferenceTime(T_now);
+    const uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(generatedAt));
 
-    auto mcmMessage = createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
+    auto mcmMessage = retained ? vanetza::asn1::Mcm {} :
+        createMinimalIntentionSharingMessage(*mVehicleDataProvider, generationDeltaTime);
     if (command && command->kind == mcm::PendingMcmCommand::Kind::Negotiation) {
         generatedMode = mcm::operationMode::ManeuverNegotiationMode;
         generatedPriority = command->priority;
-        addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider, *command);
+        if (!retransmission) addManeuverNegotiationContainer(mcmMessage, *mVehicleDataProvider, *command);
         std::string error;
-        if (!mcmMessage.validate(error)) {
+        const auto& validateMessage = retained ? *retained->message : mcmMessage;
+        if (!validateMessage.validate(error)) {
             throw cRuntimeError("Invalid MCM %s command: %s", mcmSubtypeName(command->subtype), error.c_str());
         }
         EV_INFO << "McService validated route_merging_1 " << mcmSubtypeName(command->subtype)
@@ -1533,6 +1573,14 @@ void McService::sendMcm(const SimTime& T_now)
             << (*mcmMessage).header.stationID << " at " << T_now << '\n';
     }
 
+    if (!retransmission) {
+        mcm::requireGenerationReference(mApplication->plannedTrajectory(), generatedAt);
+        if (command && command->subtype == mcm::mcmSubtype::Request)
+            mcm::requireGenerationReference(command->requestedTrajectory, generatedAt);
+        if (command && command->subtype == mcm::mcmSubtype::Offer)
+            mcm::requireGenerationReference(command->offeredTrajectory, generatedAt);
+    }
+
     using namespace vanetza;
     btp::DataRequestB request;
     request.destination_port = btp::ports::MCM;
@@ -1543,11 +1591,16 @@ void McService::sendMcm(const SimTime& T_now)
     request.gn.traffic_class.tc_id(static_cast<unsigned>(dccProfile));
     request.gn.communication_profile = geonet::CommunicationProfile::ITS_G5;
 
-    McObject obj(std::move(mcmMessage));
+    // Preserve the original immutable ASN.1 object, avoiding codec-based deep
+    // copies that could accidentally alter a retained proposal's wire content.
+    McObject obj = retained ? McObject(retained->message) : McObject(std::move(mcmMessage));
+    if (!retransmission && command && (command->subtype == mcm::mcmSubtype::Request || command->subtype == mcm::mcmSubtype::Offer))
+        mRetransmissionCache->remember(*command, obj.shared_ptr(), generatedAt);
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
     if (command) {
         const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
+        const auto wireSnapshot = extractMcmSnapshot(message);
         EV_INFO << "[MCM-WIRE]"
             << " direction=sent"
             << " station=" << message.header.stationID
@@ -1564,6 +1617,15 @@ void McService::sendMcm(const SimTime& T_now)
             << " hasTarget2=" << (metadata.hasNegotiationContainer ?
                     metadata.hasNegotiationVehicleId2 : metadata.hasCooperationVehicleId2)
             << " priority=" << asnPriorityName(metadata.priorityManeuver)
+            << " cooperationType=" << metadata.cooperationTypeMcm
+            << " generatedAt=" << generatedAt
+            << " sentAt=" << T_now
+            << " retransmission=" << retransmission
+            << " sampledAt=" << mVehicleDataProvider->updated()
+            << " plannedReference=" << generatedAt
+            << " plannedSnapshot=" << mcm::mcmProposalDigest(wireSnapshot.plannedTrajectory)
+            << " requestedSnapshot=" << mcm::mcmProposalDigest(wireSnapshot.requestedTrajectory)
+            << " offeredSnapshot=" << mcm::mcmProposalDigest(wireSnapshot.offeredTrajectory)
             << '\n';
     }
     const mcm::operationMode modeBeforeHandleSent = mApplication->currentOperationMode();
@@ -1592,6 +1654,7 @@ void McService::updateApplicationEgoContext(const SimTime& now)
 
     mcm::McEgoContext context;
     context.now = now;
+    context.sampledAt = mVehicleDataProvider->updated();
     context.stationId = mVehicleDataProvider->station_id();
     context.speed = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
     context.heading = mVehicleDataProvider->heading() / boost::units::si::radians;
@@ -1610,6 +1673,10 @@ void McService::updateApplicationEgoContext(const SimTime& now)
 
     if (mUsePrerecordedIntentTrajectory && mVehicleController &&
             !mPrerecordedCx.empty() && !mPrerecordedCy.empty()) {
+        artery::State state { static_cast<float>(context.x), static_cast<float>(context.y),
+            static_cast<float>(context.heading), static_cast<float>(context.speed) };
+        mPrerecordedTrajectoryIndex = mTrajectoryPlanner.calc_nearest_index(
+            state, mPrerecordedCx, mPrerecordedCy, mPrerecordedTrajectoryIndex);
         context.routeReferenceX = mPrerecordedCx;
         context.routeReferenceY = mPrerecordedCy;
         context.routeReferenceIndex = mPrerecordedTrajectoryIndex;
@@ -1708,16 +1775,7 @@ bool McService::appendPrerecordedIntentTrajectory(vanetza::asn1::Mcm& message) c
         return false;
     }
 
-    const auto trajectory = mTrajectoryPlanner.calculateRefTrajectory(
-        mPrerecordedTrajectorySteps,
-        mPrerecordedTrajectoryDt,
-        mPrerecordedCx,
-        mPrerecordedCy,
-        mPrerecordedTrajectoryIndex,
-        true,
-        0.0F,
-        0.0F,
-        0.0F);
+    const auto& trajectory = mApplication->plannedTrajectory();
 
     if (trajectory.empty()) {
         EV_WARN << "McService prerecorded plannedTrajectory generation returned no points; falling back to zero placeholder\n";
@@ -1729,17 +1787,6 @@ bool McService::appendPrerecordedIntentTrajectory(vanetza::asn1::Mcm& message) c
     for (const auto& point : trajectory) {
         appendTrajectoryPoint(intent.plannedTrajectory, point, heading);
     }
-
-    artery::State state;
-    state.x = mVehicleController->getPositionSumo().x / boost::units::si::meter;
-    state.y = mVehicleController->getPositionSumo().y / boost::units::si::meter;
-    state.yaw = mVehicleDataProvider->heading() / boost::units::si::radians;
-    state.v = mVehicleDataProvider->speed() / boost::units::si::meter_per_second;
-    mPrerecordedTrajectoryIndex = mTrajectoryPlanner.calc_nearest_index(
-        state,
-        mPrerecordedCx,
-        mPrerecordedCy,
-        mPrerecordedTrajectoryIndex);
 
     EV_INFO << "McService generated prerecorded plannedTrajectory with "
         << trajectory.size() << " points for station " << (*message).header.stationID;
@@ -1946,6 +1993,14 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             EV_DETAIL << "McService receive: decoded execution-container MCM, emitting McmReceived\n";
         }
 
+        mcm::ReceivedMcm received;
+        try {
+            received = mcm::decodeReceivedMcm(message, simTime(), *mTimer);
+        } catch (const std::invalid_argument& error) {
+            EV_WARN << "[MCM-TIMING] drop sender=" << message.header.stationID
+                << " reception=" << simTime() << " reason=" << error.what() << '\n';
+            return;
+        }
         McObject obj = visitor.shared_wrapper;
         emit(scSignalMcmReceived, &obj);
         emitReceivedMeasurements(message, *decodedMcm, simTime());
@@ -1958,8 +2013,10 @@ void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<va
             EV_WARN << "McService receive: LocalDynamicMapMCM unavailable; validated MCM awareness not stored\n";
         }
 
-        const mcm::ReceivedMcm received = makeReceivedMcm(message, simTime());
         const mcm::McmSnapshot& snapshot = received.data;
+        if (snapshot.hasNegotiationContainer || snapshot.hasExecutionContainer) {
+            updateApplicationEgoContext(simTime());
+        }
         if (snapshot.mcmCategory == McmCategory_execute) {
             EV_INFO << "[MCM-WIRE]"
                 << " direction=received"
