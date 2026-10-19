@@ -101,6 +101,8 @@ auto microdegree = vanetza::units::degree * boost::units::si::micro;
 auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
 
+/** Convert the application subtype to its ASN.1 category. Regular currently
+ * maps to Request for this serializer, matching its existing wire behavior. */
 long mcmSubtypeToAsnCategory(mcm::mcmSubtype subtype)
 {
     switch (subtype) {
@@ -135,6 +137,8 @@ long mcmSubtypeToAsnCategory(mcm::mcmSubtype subtype)
     return McmCategory_request;
 }
 
+/** Convert application priority to the ASN.1 enum; NoPriority/unknown falls
+ * back to low priority because the wire container requires a value. */
 long priorityToAsnPriority(mcm::priorityMcmCategory priority)
 {
     switch (priority) {
@@ -155,6 +159,8 @@ long priorityToAsnPriority(mcm::priorityMcmCategory priority)
 
 McService::IntentTriggeringCondition parseIntentTriggeringCondition(const std::string& value)
 {
+    // Keep string parsing permissive for existing INI files: unrecognized
+    // values select the established SameAsCAM policy.
     if (value == "SameAsCAMreduced2Hz") {
         return McService::IntentTriggeringCondition::SameAsCamReduced2Hz;
     }
@@ -184,6 +190,8 @@ McService::IntentTriggeringCondition parseIntentTriggeringCondition(const std::s
 
 McService::CoordinationTriggeringCondition parseCoordinationTriggeringCondition(const std::string& value)
 {
+    // Only the two fixed coordination modes are special; all other strings
+    // retain SameAsCAM behavior.
     if (value == "PeriodicFixed") {
         return McService::CoordinationTriggeringCondition::PeriodicFixed;
     }
@@ -195,6 +203,8 @@ McService::CoordinationTriggeringCondition parseCoordinationTriggeringCondition(
 
 McService::McmTimeSource parseMcmTimeSource(const std::string& value)
 {
+    // Compatibility-only setting. sendMcm currently uses the current
+    // generation opportunity for live trajectories and generationDeltaTime.
     if (value == "CurrentTime") {
         return McService::McmTimeSource::CurrentTime;
     }
@@ -217,6 +227,8 @@ const char* intentTriggeringConditionName(McService::IntentTriggeringCondition c
     return "SameAsCAM";
 }
 
+// Display helpers mirror the accepted policy spellings used in configuration
+// logs; they do not control parsing or policy behavior.
 const char* coordinationTriggeringConditionName(McService::CoordinationTriggeringCondition condition)
 {
     switch (condition) {
@@ -236,6 +248,8 @@ const char* mcmTimeSourceName(McService::McmTimeSource source)
     return "DataProvider";
 }
 
+// Diagnostic names for retained adaptive state and the protocol/application
+// subtype mappings; unknown enum values use conservative display/wire fallbacks.
 const char* frequencyReduceStateName(McService::McmFrequencyReduceState state)
 {
     switch (state) {
@@ -246,6 +260,7 @@ const char* frequencyReduceStateName(McService::McmFrequencyReduceState state)
     return "None";
 }
 
+/** Human-readable application subtype for service diagnostics. */
 const char* mcmSubtypeName(mcm::mcmSubtype subtype)
 {
     switch (subtype) {
@@ -270,6 +285,7 @@ const char* mcmSubtypeName(mcm::mcmSubtype subtype)
     }
 }
 
+/** Human-readable ASN.1 category; unsupported values display as Unknown. */
 const char* mcmCategoryName(long category)
 {
     switch (category) {
@@ -289,6 +305,7 @@ const char* mcmCategoryName(long category)
     }
 }
 
+/** Human-readable ASN.1 priority; unsupported values display as Unknown. */
 const char* asnPriorityName(long priority)
 {
     switch (priority) {
@@ -322,6 +339,8 @@ struct McmOperationMetadata {
     uint32_t cooperationVehicleId2 = 0;
 };
 
+// Measurement classification gives an execution container precedence if a
+// packet carries both optional containers, then negotiation, then intent.
 enum class McmMeasurementCategory {
     Intent,
     Negotiation,
@@ -329,6 +348,9 @@ enum class McmMeasurementCategory {
     EmergencyExecution
 };
 
+/** Extract only metadata needed by service accounting/AoI classification.
+ * Optional-container flags guard accesses; execution identity comes from its
+ * container, while request identity/cooperation type come from negotiation. */
 McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
 {
     McmOperationMetadata metadata;
@@ -372,6 +394,8 @@ McmOperationMetadata getMcmOperationMetadata(const McmParameters_t& parameters)
     return metadata;
 }
 
+/** Classify a packet for per-kind service counters; emergency is an execution
+ * container with emergency priority. */
 McmMeasurementCategory classifyMcmForMeasurement(const MCM_t& message)
 {
     const McmOperationMetadata metadata = getMcmOperationMetadata(message.mcm.mcmParameters);
@@ -387,6 +411,7 @@ McmMeasurementCategory classifyMcmForMeasurement(const MCM_t& message)
     return McmMeasurementCategory::Intent;
 }
 
+/** Return whether either negotiated/executing participant identifies ego. */
 bool isCooperativeAoiMessageForStation(const McmOperationMetadata& metadata, uint32_t egoStationId)
 {
     if (metadata.hasNegotiationContainer) {
@@ -402,6 +427,7 @@ bool isCooperativeAoiMessageForStation(const McmOperationMetadata& metadata, uin
     return false;
 }
 
+/** Stable numeric recorder encoding: intent=1, negotiation=2, execution=3. */
 double operatingModeMeasurementValue(mcm::operationMode mode)
 {
     switch (mode) {
@@ -413,6 +439,8 @@ double operatingModeMeasurementValue(mcm::operationMode mode)
     }
 }
 
+/** Use the protocol request ID as the service measurement deduplication key;
+ * return -1 when this container does not carry a request identity. */
 long messageRequestKey(const McmOperationMetadata& metadata)
 {
     if (metadata.hasExecutionContainer) {
@@ -424,6 +452,9 @@ long messageRequestKey(const McmOperationMetadata& metadata)
     return -1;
 }
 
+/** Convert wire trajectory points to planner coordinates. X/Y are absolute
+ * SUMO-frame metre coordinates, deltaHeading is 0.1-degree units converted
+ * to radians, and deltaTime is absolute simulation centiseconds. */
 mcm::TrajectoryPlanner::Trajectory extractTrajectory(const TrajectoryMCM_t& trajectory)
 {
     mcm::TrajectoryPlanner::Trajectory points;
@@ -446,6 +477,9 @@ mcm::TrajectoryPlanner::Trajectory extractTrajectory(const TrajectoryMCM_t& traj
     return points;
 }
 
+/** Extract the current vehicle state, intent, participants and negotiation
+ * snapshots; optional negotiation fields are read only when that container is
+ * present. Trajectory counts are retained separately from non-null points. */
 mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
 {
     const BasicContainerMCM_t& basic = message.mcm.mcmParameters.basicContainerMCM;
@@ -495,11 +529,17 @@ mcm::McmSnapshot extractMcmSnapshot(const MCM_t& message)
     return snapshot;
 }
 
+/** Pair a submitted packet's extracted semantic view with service submission
+ * time for McApplication's send-state transition. */
 mcm::SentMcm makeSentMcm(const MCM_t& message, omnetpp::SimTime sentAt)
 {
     return { extractMcmSnapshot(message), sentAt };
 }
 
+/** Reconstruct the nearest 16-bit millisecond epoch using Timer's TAI clock.
+ * Reject malformed, ambiguous and future values before narrowing. The returned
+ * simulation time preserves receiver precision to the Timer's microsecond
+ * epoch resolution; the detailed contract is shared with McmTiming.h. */
 omnetpp::SimTime reconstructMcmTime(long raw, const Timer& timer, omnetpp::SimTime now)
 {
     // The Timer uses exactly the same 65536 ms nearest-epoch reconstruction.
@@ -516,6 +556,9 @@ omnetpp::SimTime reconstructMcmTime(long raw, const Timer& timer, omnetpp::SimTi
         omnetpp::SimTime(delta, omnetpp::SIMTIME_US);
 }
 
+/** Build receiver metadata and stamp live planned intent plus Request content
+ * with the reconstructed message-generation reference. Confirm/Accept copies
+ * remain agreement snapshots and are not treated as new live proposals. */
 mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime receivedAt, const Timer& timer)
 {
     auto snapshot = extractMcmSnapshot(message);
@@ -534,6 +577,7 @@ mcm::ReceivedMcm makeReceivedMcm(const MCM_t& message, omnetpp::SimTime received
     return received;
 }
 
+/** Add the schema-valid zero placeholder used by minimal/smoke messages. */
 void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
 {
     TrajectoryPointMCM_t* point = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
@@ -546,6 +590,7 @@ void appendZeroTrajectoryPoint(TrajectoryMCM_t& trajectory)
     }
 }
 
+/** Normalize signed deci-degree heading to the ASN.1 interval [-1800,1800]. */
 long normalizeTrajectoryHeading(long heading)
 {
     while (heading > 1800) {
@@ -557,6 +602,10 @@ long normalizeTrajectoryHeading(long heading)
     return heading;
 }
 
+/** Encode one planner point: SUMO X/Y metres are rounded to integer metres,
+ * point heading radians to signed deci-degrees, and absolute sample time to
+ * centiseconds. The legacy heading argument is currently unused; mHeading is
+ * authoritative. */
 void appendTrajectoryPoint(TrajectoryMCM_t& trajectory, const mcm::TrajPointMCM& point, long heading)
 {
     TrajectoryPointMCM_t* trajectoryPoint = vanetza::asn1::allocate<TrajectoryPointMCM_t>();
@@ -569,6 +618,8 @@ void appendTrajectoryPoint(TrajectoryMCM_t& trajectory, const mcm::TrajPointMCM&
     }
 }
 
+/** Encode speed in centimetres/second; negative values are unavailable and
+ * values at/above 163.82 m/s saturate at the greatest available wire value. */
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 {
     static const vanetza::units::Velocity lower { 0.0 * boost::units::si::meter_per_second };
@@ -587,6 +638,8 @@ SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
 
 mcm::ReceivedMcm mcm::decodeReceivedMcm(const MCM_t& message, omnetpp::SimTime now, const Timer& timer)
 {
+    // Public extraction entry point shared by McService reception and focused
+    // protocol tests; timestamp policy remains in McmTiming/McmReception.
     return makeReceivedMcm(message, now, timer);
 }
 
@@ -657,6 +710,8 @@ void McService::logCommunicationConfig() const
 
 void McService::emitCurrentOperatingModeIfChanged()
 {
+    // Mode is sampled after application state transitions and emitted once
+    // per distinct numeric mode, rather than once per middleware update.
     if (!mApplication) {
         return;
     }
@@ -675,6 +730,8 @@ void McService::emitSentMeasurements(
     const MCM_t& message,
     mcm::operationMode modeBeforeHandleSent)
 {
+    // Despite the historical Sent names, these counters run at McService's
+    // serialization/submission point, before the lower stack's transmit result.
     emit(scSignalMcmSentCounter, 1L);
     emit(scSignalCoopCbr, mLocalCbr);
 
@@ -790,6 +847,8 @@ void McService::emitReceivedMeasurements(
     const vanetza::asn1::Mcm& decoded,
     const SimTime& now)
 {
+    // The delay signals are generation-to-reception age, reconstructed from
+    // generationDeltaTime. Reception time alone would omit network/queue age.
     emit(scSignalMcmReceivedCounter, 1L);
     emit(scSignalMessageSizeMcmReceived, static_cast<unsigned long>(decoded.size()));
 
@@ -834,6 +893,9 @@ void McService::emitReceivedMeasurements(
 
 void McService::initialize()
 {
+    // Called by OMNeT++ after module construction. Facilities are borrowed from
+    // the host; McApplication owns maneuver behavior and configuration is
+    // copied into its typed scenario settings below.
     ItsG5BaseService::initialize();
 
     mNetworkInterfaceTable = &getFacilities().get_const<NetworkInterfaceTable>();
@@ -1155,6 +1217,8 @@ void McService::initialize()
 
 void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)
 {
+    // RadioDriver channel-load callbacks provide a unitless busy ratio. A
+    // missing driver leaves the initialized value at zero.
     if (signal != RadioDriverBase::ChannelLoadSignal) {
         return;
     }
@@ -1165,6 +1229,9 @@ void McService::receiveSignal(cComponent*, simsignal_t signal, double value, cOb
 
 void McService::trigger()
 {
+    // Middleware calls this on its configured updateInterval. Application
+    // planning/negotiation progresses each update; policy checks below may
+    // defer generation, and the ITS stack may queue a submitted packet later.
     Enter_Method("trigger");
     updateApplicationEgoContext(simTime());
     mApplication->tick(simTime());
@@ -1175,6 +1242,9 @@ void McService::trigger()
 
 void McService::checkTriggeringConditions(const SimTime& T_now)
 {
+    // Coordination commands are checked first and consume the opportunity if
+    // eligible. DCC admission here is a facilities-generation gate; access-layer
+    // DCC remains in force after request() submits a packet.
     const SimTime dccInterval = mDccRestriction ? genMcmDcc() : mGenMcmMin;
     if (shouldGenerateCoordinationMcm(T_now, dccInterval)) {
         sendMcm(T_now);
@@ -1188,6 +1258,9 @@ void McService::checkTriggeringConditions(const SimTime& T_now)
 
 bool McService::shouldGenerateIntentMcm(const SimTime& now, SimTime dccInterval)
 {
+    // Elapsed time is measured from the last service submission. Fixed policy
+    // uses configured intervals; dynamics policy compares provider state against
+    // last submitted kinematics and applies low-dynamics backoff.
     updateAdaptiveIntentFrequency(now);
 
     const SimTime elapsed = now - mLastMcmTimestamp;
@@ -1246,6 +1319,9 @@ bool McService::adaptiveIntentRulesEnabled() const
 
 void McService::updateAdaptiveIntentFrequency(const SimTime& now)
 {
+    // MCO-specific adaptation works independently and takes precedence over
+    // the general master+intent flags. Both use strict CBR comparisons,
+    // randomized recovery waits and currently have no Important Intent exemption.
     // The MCO 1 Hz rule is intentionally enabled by its own flag. It takes
     // precedence over the general newGenMcmRules/newGenMcmRulesIntent rule so
     // both rules cannot update adaptive state in the same tick.
@@ -1338,6 +1414,8 @@ void McService::updateAdaptiveIntentFrequency(const SimTime& now)
 
 bool McService::shouldGenerateCoordinationMcm(const SimTime& now, SimTime dccInterval)
 {
+    // A command must already be pending. Fixed NoDCC uses minInterval instead
+    // of the facilities DCC interval here; it does not disable lower-layer DCC.
     if (!hasPendingCoordinationMcm()) {
         return false;
     }
@@ -1442,6 +1520,8 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
     mcm::operationMode mode,
     mcm::priorityMcmCategory priority) const
 {
+    // Profile selection supplies a Vanetza policy hint; the stack's DCC and
+    // channel-access components perform transmission scheduling.
     using vanetza::dcc::Profile;
 
     // Keep current behavior unless differentiated DCC profile mapping
@@ -1514,6 +1594,10 @@ vanetza::dcc::Profile McService::selectMcmDccProfile(
 
 void McService::sendMcm(const SimTime& T_now)
 {
+    // T_now is a generation opportunity, not a MAC transmission timestamp.
+    // Refresh provider/controller state after facilities waiting, then ensure
+    // newly generated live content matches its millisecond generation time.
+    // Issued Request/Offer retries reuse the complete original packet.
     // Planning is repeated at the actual generation opportunity, after any
     // facilities-DCC wait. The latest available state is sampled into the plan.
     updateApplicationEgoContext(T_now);
@@ -1527,6 +1611,9 @@ void McService::sendMcm(const SimTime& T_now)
 
     const bool retransmission = command && command->retransmission;
     const auto* retained = retransmission ? &mRetransmissionCache->replay(*command) : nullptr;
+    // generationDeltaTime is the 16-bit millisecond modulo timestamp. New live
+    // trajectories use the same millisecond-quantized reference; the legacy
+    // timeGenMcm setting is parsed/logged but does not select this origin.
     const auto generatedAt = retained ? retained->generatedAt : mcm::generationReferenceTime(T_now);
     const uint16_t generationDeltaTime = countTaiMilliseconds(mTimer->getTimeFor(generatedAt));
 
@@ -1593,9 +1680,13 @@ void McService::sendMcm(const SimTime& T_now)
 
     // Preserve the original immutable ASN.1 object, avoiding codec-based deep
     // copies that could accidentally alter a retained proposal's wire content.
+    // Cache only a newly issued Request/Offer after complete serialization. A
+    // retry reuses this immutable object and its original header timestamp.
     McObject obj = retained ? McObject(retained->message) : McObject(std::move(mcmMessage));
     if (!retransmission && command && (command->subtype == mcm::mcmSubtype::Request || command->subtype == mcm::mcmSubtype::Offer))
         mRetransmissionCache->remember(*command, obj.shared_ptr(), generatedAt);
+    // Signal/subsequent request mark service-stack submission, not successful
+    // radio transmission.
     emit(scSignalMcmSent, &obj);
     const MCM_t& message = *obj.asn1();
     if (command) {
@@ -1648,6 +1739,9 @@ void McService::sendMcm(const SimTime& T_now)
 
 void McService::updateApplicationEgoContext(const SimTime& now)
 {
+    // Combine evaluation time, provider sampling time, current provider
+    // kinematics and controller route/position/lane. McApplication may refresh
+    // its remaining execution prediction while retaining the accepted plan.
     if (!mApplication || !mVehicleDataProvider) {
         return;
     }
@@ -1706,6 +1800,8 @@ void McService::fillHeader(vanetza::asn1::Mcm& message, const VehicleDataProvide
 
 void McService::fillGenerationDeltaTime(vanetza::asn1::Mcm& message, uint16_t generationDeltaTime) const
 {
+    // ASN.1 represents the low 16 bits of milliseconds. Receivers reconstruct
+    // the nearest unambiguous epoch through Timer and reject malformed/future data.
     ManeuverCoordinationMessage_t& mcm = (*message).mcm;
     mcm.generationDeltaTime = generationDeltaTime * GenerationDeltaTime_oneMilliSec;
 }
@@ -1726,6 +1822,9 @@ void McService::fillBasicContainer(vanetza::asn1::Mcm& message, const VehicleDat
 
 void McService::fillIntentionSharingContainer(vanetza::asn1::Mcm& message, const VehicleDataProvider& vdp) const
 {
+    // Dynamic values are sampled from the provider. Vehicle dimensions remain
+    // schema-unavailable; route lane fields are optional and omitted if TraCI
+    // lookup fails. Without prerecorded route planning, intent is a zero point.
     IntentSharingContainer_t& intent = (*message).mcm.mcmParameters.intentionSharingContainer;
 
     intent.heading.headingValue = round(vdp.heading(), decidegree);
@@ -1765,6 +1864,9 @@ void McService::fillIntentionSharingContainer(vanetza::asn1::Mcm& message, const
 
 bool McService::appendPrerecordedIntentTrajectory(vanetza::asn1::Mcm& message) const
 {
+    // CSV columns supply route geometry. The current route index and prediction
+    // are refreshed from current state before serialization; CSV samples are
+    // not copied as stale points under a new generation timestamp.
     if (!mUsePrerecordedIntentTrajectory) {
         return false;
     }
@@ -1819,6 +1921,9 @@ void McService::addManeuverNegotiationContainer(
     const VehicleDataProvider&,
     const mcm::PendingMcmCommand& command) const
 {
+    // Real command trajectories are supplied by McApplication: live Request
+    // requested and fresh Offer offered content use the current generation
+    // reference; echoed Request/Offer copies in later messages remain snapshots.
     ManeuverNegotiationContainer_t*& negotiation = (*message).mcm.mcmParameters.maneuverNegotiationContainer;
 
     negotiation = vanetza::asn1::allocate<ManeuverNegotiationContainer_t>();
@@ -1879,6 +1984,8 @@ void McService::addManeuverExecutionContainer(
     const VehicleDataProvider&,
     const mcm::PendingMcmCommand& command) const
 {
+    // This container carries accepted cooperation identity/participants, not
+    // a replacement maneuver. The message's live intent prediction is separate.
     ManeuverExecutionContainer_t*& execution = (*message).mcm.mcmParameters.maneuverExecutionContainer;
 
     execution = vanetza::asn1::allocate<ManeuverExecutionContainer_t>();
@@ -1920,6 +2027,8 @@ vanetza::asn1::Mcm McService::createMinimalIntentionSharingMessage(const Vehicle
 
 vanetza::asn1::Mcm McService::createMinimalNegotiationTestMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
 {
+    // Smoke-only builder; it uses placeholder request/participant IDs and
+    // zero trajectories, not a real pending application proposal.
     vanetza::asn1::Mcm message = createMinimalIntentionSharingMessage(vdp, generationDeltaTime);
 
     addManeuverNegotiationContainer(message, vdp);
@@ -1934,6 +2043,8 @@ vanetza::asn1::Mcm McService::createMinimalNegotiationTestMessage(const VehicleD
 
 vanetza::asn1::Mcm McService::createMinimalExecutionTestMessage(const VehicleDataProvider& vdp, uint16_t generationDeltaTime) const
 {
+    // Smoke-only builder; its placeholder identity does not represent an
+    // accepted cooperation agreement.
     vanetza::asn1::Mcm message = createMinimalIntentionSharingMessage(vdp, generationDeltaTime);
 
     addManeuverExecutionContainer(message, vdp);
@@ -1948,6 +2059,9 @@ vanetza::asn1::Mcm McService::createMinimalExecutionTestMessage(const VehicleDat
 
 SimTime McService::genMcmDcc()
 {
+    // Query the primary-channel throttle with TransmissionLite(profile, 0):
+    // the length hint is zero, not the eventual encoded packet size. Clamp the
+    // returned interval to the configured facilities min/max.
     auto netifc = mNetworkInterfaceTable->select(mPrimaryChannel);
     vanetza::dcc::TransmitRateThrottle* trc = netifc ? netifc->getDccEntity().getTransmitRateThrottle() : nullptr;
     if (!trc) {
@@ -1966,6 +2080,9 @@ SimTime McService::genMcmDcc()
 
 void McService::indicate(const vanetza::btp::DataIndication&, std::unique_ptr<vanetza::UpPacket> packet)
 {
+    // Vanetza invokes this after lower-layer reception. Decode/validate the MCM,
+    // reconstruct its generation time, emit measurements/update awareness and
+    // forward the semantic snapshot to McApplication.
     Enter_Method("indicate");
 
     try {
