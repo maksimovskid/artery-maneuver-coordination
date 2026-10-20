@@ -25,6 +25,15 @@ class NetworkInterfaceTable;
 class Timer;
 class VehicleDataProvider;
 
+/**
+ * CAM facilities/application service: dynamics/fixed-rate triggering, optional
+ * facilities-DCC generation restriction, adaptive policy, packet construction
+ * and submission. MCM mode/awareness are read-only inputs to CAM adaptation.
+ *
+ * This service does not negotiate maneuvers, plan trajectories or select MCM
+ * priorities. Access DCC (LIMERIC/reactive), EDCA and MAC scheduling live below
+ * it; a generated/submitted CAM is not necessarily transmitted on air then.
+ */
 class CaService : public ItsG5BaseService
 {
 	public:
@@ -36,6 +45,8 @@ class CaService : public ItsG5BaseService
 
 	private:
 		void updateAdaptivePolicy();
+		// baseline is configured once; temporary reasons only change the effective
+		// period (Dynamics -> 1 Hz -> Dynamics; Fixed2Hz -> 1 Hz -> Fixed2Hz).
 		CamGenerationPolicy mPolicy;
 		mcm::operationMode mManeuverMode = mcm::operationMode::Unknown;
 		double mLocalCbr = 0.0;
@@ -46,7 +57,9 @@ class CaService : public ItsG5BaseService
 		bool checkHeadingDelta() const;
 		bool checkPositionDelta() const;
 		bool checkSpeedDelta() const;
+		// Immediate facilities generation/submission, not a MAC transmission callback.
 		void sendCam(const omnetpp::SimTime&);
+		// Existing DP2 throttle interval, converted to ms and clamped to min/max.
 		omnetpp::SimTime genCamDcc();
 
 		ChannelNumber mPrimaryChannel = channel::CCH;

@@ -1,5 +1,13 @@
 # Adaptive CAM generation: port and verification
 
+## CaService architecture and responsibility boundary
+
+CaService owns CAM facilities/application generation: standard dynamics, configured fixed-rate/periodic policies, facilities-DCC gating, adaptive reductions, construction and immediate submission to the protocol stack. An existing Middleware tick reads local maneuver mode/MCM awareness, updates the temporary policy, then applies the effective periodic gate or the unchanged dynamics/fixedRate path before `sendCam()`. The receive path validates a CAM, emits `CamReceived`, and updates CAM awareness.
+
+`CamGenerationPolicy` separates configuration and independent reduction states from input acquisition and sending. `CamMcmAwareness` provides read-only eligibility from the optional MCM map. `McmOperatingMode` adapts McService's existing measurement signal to the single current typed enum. None of these performs maneuver negotiation, trajectory planning or MCM priority selection. LOW/MEDIUM/HIGH belong to MCM cooperative planning; Emergency is safety notification, not a cooperative search or adaptive CAM policy tier.
+
+Access DCC (LIMERIC/reactive), EDCA/MAC priority and on-air scheduling belong to lower layers. Facilities generation/submission is not evidence of a successful radio transmission. The annotated CaService.h/.cc describe this boundary at the class, generation gate and signal emission sites.
+
 ## Baseline audited before the port
 
 `CaService::checkTriggeringConditions()` originally had no `triggeringCondition` parameter or adaptive flags. The baseline is immediate standard CAM generation, with `fixedRate=false`, `minInterval=.1 s`, `maxInterval=1 s`, heading delta 4°, position delta 4 m and speed delta .5 m/s. Dynamics trigger a CAM after the facilities gate, set the dynamics interval to min(elapsed,maxInterval), and reset the low-dynamics counter. After three low-dynamics generations the interval returns to maxInterval. `fixedRate=true` generates whenever the facilities gate allows, using minInterval when facilities restriction is disabled.
@@ -104,6 +112,35 @@ Added to CaService.ned:
 - newGenCamRulesIntent1Hz_MCO = false
 - logAdaptiveGeneration = false (optional cadence verification only)
 
+Every CaService parameter retains its original type, name and default. The table gives units, scope and interaction; the four adaptive flags are historical compatibility names with the dependencies/ranges described above.
+
+| Parameter | Units / default | Scope and interaction |
+|---|---|---|
+| withDccRestriction | bool, true | All generation modes; adds the existing facilities interval gate, never controls access DCC |
+| minInterval | seconds, .1 s | Existing minimum gate without facilities restriction and lower bound of its interval clamp; fixedRate uses this gate, periodic/adaptive policy adds its period |
+| maxInterval | seconds, 1 s | Existing dynamics/low-dynamics interval and upper bound of facilities interval clamp; does not override a periodic/adaptive period |
+| fixedRate | bool, false | Existing SameAsCAM option; bypasses dynamics, while explicit periodic/adaptive policy takes precedence |
+| triggeringCondition | string, SameAsCAM | Configured baseline; historical 1/2 Hz names also supported; recovery restores this policy |
+| newGenCamRulesMyNegotiation | bool, false | Ego typed negotiation mode, independent of master/CBR/awareness; no random hold |
+| newGenCamRules | bool, false | Observed eligible negotiation plus CBR; also the master prerequisite for Intent |
+| newGenCamRulesIntent | bool, false | Congestion-only; requires master, MCO off, SameAsCAM and no own/observed/background reason at entry |
+| newGenCamRulesIntent1Hz_MCO | bool, false | Independent congestion rule; supersedes Intent with the same background entry eligibility |
+| logAdaptiveGeneration | bool, false | Optional generation diagnostic in any mode; no statistic or policy effect |
+| headingDelta | degrees, 4 | Standard SameAsCAM dynamics; bypassed by fixedRate/periodic/adaptive generation |
+| positionDelta | metres, 4 m | Standard SameAsCAM displacement threshold; same bypass rules |
+| speedDelta | metres/second, .5 m/s | Standard SameAsCAM speed-change threshold; same bypass rules |
+| pathHistoryLength | point count, 23 | Existing volatile parameter, evaluated per low-frequency container in every mode; capped at 40. Encoded position deltas are unavailable, not a recorded trajectory; no generation-cadence effect |
+
+### Signals, statistics and logging
+
+`CamReceived` and `CamSent` carry `CaObject` instances, not numeric values with physical units. `CamReceived` fires for each successfully decoded/validated application-layer CAM before its awareness update. `CamSent` fires for each generated CAM immediately before BTP submission; its historical name does not imply MAC delivery or radio airtime.
+
+The unchanged `reception`/`transmission` statistics provide optional `vector(camStationId)` and `vector(camGenerationDeltaTime)` modes. Station ID is unitless. The packet's generationDeltaTime is milliseconds modulo 65536, based on the producer's sampled data time; it is neither packet age nor measured transmission time. The vector's simulation timestamp is the respective reception/generation event time. No statistics, filters or recording defaults were added or renamed.
+
+The existing `[CAM-ADAPT-CONFIG]` log accurately reports baseline, adaptive flags, primary channel and CBR source when adaptation is enabled. It does **not** print facilities-DCC status or CBR thresholds: consult `withDccRestriction` and the documented policy constants. This omission is documented rather than changing runtime-producing log code. `[CAM-ADAPT]` logs reason transitions only. Optional `[CAM-GENERATION]` output requires `logAdaptiveGeneration=true` and reports generation, not transmission. There is no default per-tick log spam and no factually stale log text to fix.
+
+### Actual INI examples
+
 The actual XML-created CAM module name is **CaService** (the service has no explicit XML name), unlike MCM's explicit **MC** name. Examples below are alternatives; no validated scenario INI was edited.
 
 ```ini
@@ -195,3 +232,18 @@ Final adaptive/baseline-policy integration suite: **3 tests pass** (including th
 - Fixed2Hz: `/tmp/mcm-regression-envmod-19CAVs-merging-9ud32vou/simulation.log`
 
 `git diff --check` and whitespace checks for every new file pass. Reference and validated scenario files have no diff. The work remains uncommitted for review.
+
+## Documentation-only maintainability cleanup
+
+The class, functions, support abstractions and all 14 NED parameters now document their responsibilities, units/defaults, scope and adaptive interactions. Historical "transmission"/"Sent" names are explicitly described as generation/submission, the Intent name is explained as congestion-only, and all threshold inclusivity is retained. Reference evidence confirms deliberate immediate sending, omission of the 25 ms legacy defer/obsolete statistics, safe optional ID/time-zero handling, baseline restoration and explicit overlapping reasons. The MCO precedence difference remains documented, not misrepresented as identical legacy combined-flag behavior.
+
+No runtime-producing log code was changed. Comment-stripped source/NED tokens are compared with the pre-cleanup snapshot, including all string literals and runtime expressions. NED parameter, signal and statistic declarations are compared separately. Other tracked code/config/test hashes are also checked; the evidence is `/tmp/cam-documentation-only-proof.json` and `/tmp/check_cam_documentation_only.py`. This documentation-only task does not require repeating the complete scenario suite.
+
+Documentation-cleanup validation passed:
+
+- Comment-stripped token equality for all six edited source/NED files; runtime expressions and string literals unchanged.
+- All 14 NED parameter declarations, 2 signals and 2 statistics identical.
+- Hashes unchanged for 789 other tracked source/config/test files, including McService and scenario settings.
+- `opp_nedtool -v -I src src/artery/application/CaService.ned`: validation passed.
+- `cmake --build build --target core -j 4`: build passed.
+- `git diff --check`: passed. No complete scenario rerun was needed for this comment/documentation-only change.

@@ -36,6 +36,8 @@ auto decidegree = vanetza::units::degree * boost::units::si::deci;
 auto degree_per_second = vanetza::units::degree / vanetza::units::si::second;
 auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units::si::centi;
 
+// CaObject-valued facilities events: validated reception, and generation just
+// before BTP submission. CamSent is not an acknowledgement of radio airtime.
 static const simsignal_t scSignalCamReceived = cComponent::registerSignal("CamReceived");
 static const simsignal_t scSignalCamSent = cComponent::registerSignal("CamSent");
 static const simsignal_t scManeuverMode = cComponent::registerSignal(mcm::operatingModeSignalName());
@@ -103,6 +105,9 @@ void CaService::initialize()
 	mPolicy.config.own = par("newGenCamRulesMyNegotiation");
 	mPolicy.config.intent = par("newGenCamRulesIntent");
 	mPolicy.config.mco = par("newGenCamRulesIntent1Hz_MCO");
+	// Disabled adaptation neither subscribes nor consumes RNG/awareness inputs.
+	// McService's shared signal decoder preserves the current typed mode mapping;
+	// before its first event the stored mode is Unknown, and CBR starts at zero.
 	if (mPolicy.enabled()) {
 		findHost()->subscribe(scManeuverMode, this);
 		// INET drivers expose a host-relative radioModule path. Subscribe only
@@ -122,6 +127,9 @@ void CaService::initialize()
 			driver->subscribe(RadioDriverBase::ChannelLoadSignal, this);
 			break;
 		}
+		// This opt-in log reports baseline/flags/channel/source, not DCC status or
+		// threshold values: withDccRestriction and the documented policy constants
+		// remain authoritative. Do not infer facilities/access-DCC state from it.
 		EV_INFO << "[CAM-ADAPT-CONFIG] station=" << mVehicleDataProvider->station_id()
 			<< " baseline=" << par("triggeringCondition").stringValue()
 			<< " observed=" << mPolicy.config.observed << " own=" << mPolicy.config.own
@@ -145,6 +153,9 @@ void CaService::receiveSignal(cComponent*, simsignal_t signal, double value, cOb
 	else if (signal == RadioDriverBase::ChannelLoadSignal && value >= 0.0 && value <= 1.0) mLocalCbr = value;
 }
 
+// Recompute reasons on the existing Middleware tick; this does not send MCMs
+// or mutate their mode/awareness. The optional map may be absent. Holds draw
+// from this module's OMNeT++ RNG only on entry, not on every awareness scan.
 void CaService::updateAdaptivePolicy()
 {
 	const auto* map = getFacilities().get_mutable_ptr<LocalDynamicMapMCM>();
@@ -183,11 +194,17 @@ void CaService::checkTriggeringConditions(const SimTime& T_now)
 	const SimTime T_GenCamDcc = mDccRestriction ? genCamDcc() : T_GenCamMin;
 	const SimTime T_elapsed = T_now - mLastCamTimestamp;
 
+	// Effective policy is temporary; the configured baseline is never rewritten.
+	// With facilities DCC, periodic generation must pass max(period, DCC gate).
+	// Without it, the existing minInterval gate still applies. Neither setting
+	// disables lower-layer access DCC/EDCA or guarantees a radio send at this time.
 	if (mPolicy.periodicInterval() > SimTime::ZERO) {
 		if (mPolicy.periodicDue(T_elapsed, T_GenCamDcc)) sendCam(T_now);
 		return;
 	}
 
+	// Zero effective period delegates to the unchanged standard dynamics/fixedRate
+	// path, including its low-dynamics counter. No legacy 25 ms defer is scheduled.
 	if (T_elapsed >= T_GenCamDcc) {
 		if (mFixedRate) {
 			sendCam(T_now);
@@ -226,6 +243,9 @@ void CaService::sendCam(const SimTime& T_now)
 			<< " time=" << T_now << " elapsed=" << (T_now - mLastCamTimestamp)
 			<< " reasons=" << mPolicy.reasons() << '\n';
 	}
+	// Wire time references the sampled vehicle data (modulo 65536 ms), while
+	// mLastCamTimestamp tracks this facilities generation time. Neither is a
+	// measured MAC transmission timestamp.
 	uint16_t genDeltaTimeMod = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
 	auto cam = createCooperativeAwarenessMessage(*mVehicleDataProvider, genDeltaTimeMod);
 
@@ -248,6 +268,8 @@ void CaService::sendCam(const SimTime& T_now)
 	request.gn.communication_profile = geonet::CommunicationProfile::ITS_G5;
 
 	CaObject obj(std::move(cam));
+	// Historical signal/statistic names say "Sent"/"transmission"; they record
+	// generated CAMs offered to the stack, not actual on-air transmission.
 	emit(scSignalCamSent, &obj);
 
 	using CamByteBuffer = convertible::byte_buffer_impl<asn1::Cam>;
