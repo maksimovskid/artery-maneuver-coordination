@@ -1,4 +1,5 @@
 #include "artery/application/McService.h"
+#include "artery/application/mcm/McmOperatingMode.h"
 
 #include "artery/application/Asn1PacketVisitor.h"
 #include "artery/application/LocalDynamicMapMCM.h"
@@ -86,7 +87,7 @@ static const simsignal_t scSignalCounterTrajectoryType2 = cComponent::registerSi
 static const simsignal_t scSignalCounterTrajectoryType4 = cComponent::registerSignal("CounterTrajectoryType4");
 static const simsignal_t scSignalCounterTrajectoryType5 = cComponent::registerSignal("CounterTrajectoryType5");
 static const simsignal_t scSignalCounterTrajectoryType6 = cComponent::registerSignal("CounterTrajectoryType6");
-static const simsignal_t scSignalCurrentMcsOperatingMode = cComponent::registerSignal("currentMCSoperatingMode");
+static const simsignal_t scSignalCurrentMcsOperatingMode = cComponent::registerSignal(mcm::operatingModeSignalName());
 
 namespace
 {
@@ -427,17 +428,7 @@ bool isCooperativeAoiMessageForStation(const McmOperationMetadata& metadata, uin
     return false;
 }
 
-/** Stable numeric recorder encoding: intent=1, negotiation=2, execution=3. */
-double operatingModeMeasurementValue(mcm::operationMode mode)
-{
-    switch (mode) {
-        case mcm::operationMode::IntentionSharingMode: return 1.0;
-        case mcm::operationMode::ManeuverNegotiationMode: return 2.0;
-        case mcm::operationMode::ManeuverExecutionMode: return 3.0;
-        case mcm::operationMode::Unknown:
-        default: return 0.0;
-    }
-}
+using mcm::operatingModeMeasurementValue;
 
 /** Use the protocol request ID as the service measurement deduplication key;
  * return -1 when this container does not carry a request identity. */

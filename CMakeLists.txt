@@ -144,3 +144,8 @@ endif()
 add_executable(mcm_timing_tests EXCLUDE_FROM_ALL tests/mcm/mcm_timing_tests.cc)
 target_link_libraries(mcm_timing_tests PRIVATE core OmnetPP::sim)
 add_test(NAME mcm_timing COMMAND mcm_timing_tests)
+
+# Deterministic adaptive CAM state, boundaries, awareness and DCC composition.
+add_executable(cam_policy_tests EXCLUDE_FROM_ALL tests/cam/cam_policy_tests.cc)
+target_link_libraries(cam_policy_tests PRIVATE core OmnetPP::sim)
+add_test(NAME cam_policy COMMAND cam_policy_tests)

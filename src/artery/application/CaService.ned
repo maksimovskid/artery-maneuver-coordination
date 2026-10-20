@@ -34,6 +34,15 @@ simple CaService like ItsG5Service
         // generate at fixed rate (using minInterval, optionally restricted by DCC)
         bool fixedRate = default(false);
 
+        // Baseline policy; temporary adaptive reductions never overwrite it.
+        string triggeringCondition = default("SameAsCAM"); // SameAsCAM, PeriodicFixed1Hz, PeriodicFixed2Hz
+        bool newGenCamRules = default(false); // observed negotiation + congestion
+        bool newGenCamRulesMyNegotiation = default(false); // ego negotiation -> 1 Hz
+        bool newGenCamRulesIntent = default(false); // congestion-only; requires newGenCamRules
+        bool newGenCamRulesIntent1Hz_MCO = default(false); // independent; supersedes Intent
+
+        bool logAdaptiveGeneration = default(false); // optional per-generation cadence diagnostics
+
         // change in orientation triggering CAM generation (in degree)
         double headingDelta = default(4.0);
 

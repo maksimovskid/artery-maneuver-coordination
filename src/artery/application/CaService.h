@@ -8,6 +8,8 @@
 #define ARTERY_CASERVICE_H_
 
 #include "artery/application/ItsG5BaseService.h"
+#include "artery/application/CamGenerationPolicy.h"
+#include "artery/application/mcm/McmOperatingMode.h"
 #include "artery/utility/Channel.h"
 #include "artery/utility/Geometry.h"
 #include <vanetza/asn1/cam.hpp>
@@ -30,8 +32,16 @@ class CaService : public ItsG5BaseService
 		void initialize() override;
 		void indicate(const vanetza::btp::DataIndication&, std::unique_ptr<vanetza::UpPacket>) override;
 		void trigger() override;
+		void receiveSignal(omnetpp::cComponent*, omnetpp::simsignal_t, double, omnetpp::cObject*) override;
 
 	private:
+		void updateAdaptivePolicy();
+		CamGenerationPolicy mPolicy;
+		mcm::operationMode mManeuverMode = mcm::operationMode::Unknown;
+		double mLocalCbr = 0.0;
+		bool mLogAdaptiveGeneration = false;
+		unsigned mLastReductionReasons = 0;
+		omnetpp::cModule* mCbrDriver = nullptr;
 		void checkTriggeringConditions(const omnetpp::SimTime&);
 		bool checkHeadingDelta() const;
 		bool checkPositionDelta() const;

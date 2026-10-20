@@ -5,6 +5,8 @@
 */
 
 #include "artery/application/CaService.h"
+#include "artery/application/CamMcmAwareness.h"
+#include "artery/nic/RadioDriverBase.h"
 
 #include "artery/application/Asn1PacketVisitor.h"
 #include "artery/application/CaObject.h"
@@ -36,6 +38,7 @@ auto centimeter_per_second = vanetza::units::si::meter_per_second * boost::units
 
 static const simsignal_t scSignalCamReceived = cComponent::registerSignal("CamReceived");
 static const simsignal_t scSignalCamSent = cComponent::registerSignal("CamSent");
+static const simsignal_t scManeuverMode = cComponent::registerSignal(mcm::operatingModeSignalName());
 static const auto scLowFrequencyContainerInterval = std::chrono::milliseconds(500);
 
 SpeedValue_t buildSpeedValue(const vanetza::units::Velocity& v)
@@ -93,12 +96,69 @@ void CaService::initialize()
 
 	// look up primary channel for CA
 	mPrimaryChannel = getFacilities().get_const<MultiChannelPolicy>().primaryChannel(vanetza::aid::CA);
+	try { mPolicy.baseline = parseCamBaselinePolicy(par("triggeringCondition").stdstringValue()); }
+	catch (const std::invalid_argument& e) { throw cRuntimeError("%s", e.what()); }
+	mLogAdaptiveGeneration = par("logAdaptiveGeneration");
+	mPolicy.config.observed = par("newGenCamRules");
+	mPolicy.config.own = par("newGenCamRulesMyNegotiation");
+	mPolicy.config.intent = par("newGenCamRulesIntent");
+	mPolicy.config.mco = par("newGenCamRulesIntent1Hz_MCO");
+	if (mPolicy.enabled()) {
+		findHost()->subscribe(scManeuverMode, this);
+		// INET drivers expose a host-relative radioModule path. Subscribe only
+		// to the radio serving CAM's primary channel, never aggregate channels.
+		auto* host = findHost();
+		for (cModule::SubmoduleIterator it(host); !it.end(); ++it) {
+			auto* driver = dynamic_cast<RadioDriverBase*>(*it);
+			if (!driver) continue;
+			if (driver->hasPar("radioModule")) {
+				auto* radio = host->getModuleByPath(driver->par("radioModule").stringValue());
+				if (!radio || !radio->hasPar("channelNumber") ||
+						radio->par("channelNumber").intValue() != mPrimaryChannel) continue;
+			} else if (driver->isVector() && driver->getVectorSize() > 1) {
+				continue; // do not guess the channel for an unidentified multi-radio backend
+			}
+			mCbrDriver = driver;
+			driver->subscribe(RadioDriverBase::ChannelLoadSignal, this);
+			break;
+		}
+		EV_INFO << "[CAM-ADAPT-CONFIG] station=" << mVehicleDataProvider->station_id()
+			<< " baseline=" << par("triggeringCondition").stringValue()
+			<< " observed=" << mPolicy.config.observed << " own=" << mPolicy.config.own
+			<< " intent=" << mPolicy.config.intent << " mco=" << mPolicy.config.mco
+			<< " channel=" << mPrimaryChannel << " cbrSource="
+			<< (mCbrDriver ? mCbrDriver->getFullPath() : "unavailable") << '\n';
+	}
+
 }
 
 void CaService::trigger()
 {
 	Enter_Method("trigger");
+	if (mPolicy.enabled()) updateAdaptivePolicy();
 	checkTriggeringConditions(simTime());
+}
+
+void CaService::receiveSignal(cComponent*, simsignal_t signal, double value, cObject*)
+{
+	if (signal == scManeuverMode) mManeuverMode = mcm::operatingModeFromMeasurement(value);
+	else if (signal == RadioDriverBase::ChannelLoadSignal && value >= 0.0 && value <= 1.0) mLocalCbr = value;
+}
+
+void CaService::updateAdaptivePolicy()
+{
+	const auto* map = getFacilities().get_mutable_ptr<LocalDynamicMapMCM>();
+	const bool observed = mPolicy.config.observed && camObservesNegotiation(
+		map ? &map->allEntries() : nullptr, mVehicleDataProvider->station_id(), simTime());
+	mPolicy.update(simTime(), mLocalCbr, mManeuverMode == mcm::operationMode::ManeuverNegotiationMode,
+		observed, [this](double low, double high) { return uniform(low, high); });
+	if (mPolicy.reasons() != mLastReductionReasons) {
+		EV_INFO << "[CAM-ADAPT] station=" << mVehicleDataProvider->station_id()
+			<< " time=" << simTime() << " reasons=" << mPolicy.reasons()
+			<< " cbr=" << mLocalCbr << " observedUntil=" << mPolicy.observed.until
+			<< " backgroundUntil=" << mPolicy.background.until << '\n';
+		mLastReductionReasons = mPolicy.reasons();
+	}
 }
 
 void CaService::indicate(const vanetza::btp::DataIndication& ind, std::unique_ptr<vanetza::UpPacket> packet)
@@ -122,6 +182,11 @@ void CaService::checkTriggeringConditions(const SimTime& T_now)
 	const SimTime& T_GenCamMax = mGenCamMax;
 	const SimTime T_GenCamDcc = mDccRestriction ? genCamDcc() : T_GenCamMin;
 	const SimTime T_elapsed = T_now - mLastCamTimestamp;
+
+	if (mPolicy.periodicInterval() > SimTime::ZERO) {
+		if (mPolicy.periodicDue(T_elapsed, T_GenCamDcc)) sendCam(T_now);
+		return;
+	}
 
 	if (T_elapsed >= T_GenCamDcc) {
 		if (mFixedRate) {
@@ -156,6 +221,11 @@ bool CaService::checkSpeedDelta() const
 
 void CaService::sendCam(const SimTime& T_now)
 {
+	if (mLogAdaptiveGeneration) {
+		EV_INFO << "[CAM-GENERATION] station=" << mVehicleDataProvider->station_id()
+			<< " time=" << T_now << " elapsed=" << (T_now - mLastCamTimestamp)
+			<< " reasons=" << mPolicy.reasons() << '\n';
+	}
 	uint16_t genDeltaTimeMod = countTaiMilliseconds(mTimer->getTimeFor(mVehicleDataProvider->updated()));
 	auto cam = createCooperativeAwarenessMessage(*mVehicleDataProvider, genDeltaTimeMod);
 

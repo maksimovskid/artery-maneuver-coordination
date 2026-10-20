@@ -1,4 +1,4 @@
-"""Stable log parsing helpers for maneuver-coordination regression tests."""
+"""Stable log parsing helpers for CAM and maneuver-coordination regression tests."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-TAG_RE = re.compile(r"\[(MCM-[^\]]+)\]")
+TAG_RE = re.compile(r"\[((?:MCM|CAM)-[^\]]+)\]")
 KEY_VALUE_RE = re.compile(r'([A-Za-z0-9_]+)=("[^"]*"|\S+)')
 
 

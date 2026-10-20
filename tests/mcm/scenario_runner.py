@@ -44,7 +44,8 @@ class ScenarioRun:
         shutil.rmtree(self.output_dir, ignore_errors=True)
 
 
-def run_scenario(config: str, run: str = "0", time_limit: str = "30s") -> ScenarioRun:
+def run_scenario(config: str, run: str = "0", time_limit: str = "30s",
+                 extra_args: tuple[str, ...] = ()) -> ScenarioRun:
     output_dir = Path(tempfile.mkdtemp(prefix=f"mcm-regression-{config}-"))
     log_path = output_dir / "simulation.log"
     result_dir = output_dir / "results"
@@ -77,6 +78,7 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s") -> Scenar
         f'--*.traci.launcher.extraOptions="{sumo_output_options}"',
     ]
 
+    cmd.extend(extra_args)
     started = time.perf_counter()
     with log_path.open("w", encoding="utf-8") as handle:
         process = subprocess.run(
