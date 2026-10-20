@@ -336,6 +336,29 @@ void compensation() {
 namespace artery { namespace mcm {
 struct McApplicationTimingTestAccess {
 static void run() {
+    // Regression: the planner's explicit found flag gates merging responses,
+    // even when fallback content and a nonempty failed-result trajectory exist.
+    McApplication merging;
+    McEgoContext mergeEgo; mergeEgo.plannedTrajectory=trajectory();
+    merging.updateEgoContext(mergeEgo);
+    merging.mCvSelectedTrajectory=trajectory(); merging.mHasCvSelectedTrajectory=true;
+    ReceivedMcm mergeRequest; mergeRequest.data.requestedTrajectory=trajectory();
+    mergeRequest.data.numberOfVehicles=2;
+    TrajectoryPlanner::CvTrajectoryDecisionResult candidate;
+    candidate.found=false; candidate.trajectory=trajectory();
+    PendingMcmCommand mergeResponse;
+    merging.buildCvMergingResponse(mergeResponse,mergeRequest,candidate.found);
+    require(mergeResponse.subtype==mcmSubtype::Reject,"infeasible merging must Reject, never fallback Offer");
+    require(!mergeResponse.hasOfferedTrajectory && mergeResponse.offeredTrajectory.empty(),"failed merging response has no fallback offer");
+    require(merging.mCoordinationProgressCV==coordinationProgressCV::SendReject,"merging uses existing Reject state");
+    candidate.found=true; candidate.trajectory=trajectory(10,50);
+    merging.mCvSelectedTrajectory=candidate.trajectory; merging.mHasCvSelectedTrajectory=true;
+    merging.buildCvMergingResponse(mergeResponse,mergeRequest,candidate.found);
+    require(mergeResponse.subtype==mcmSubtype::Offer,"feasible merging still Offers");
+    require(sameMcmProposal(mergeResponse.offeredTrajectory,candidate.trajectory),"Offer uses feasible planner candidate");
+    mergeRequest.data.numberOfVehicles=1;
+    merging.buildCvMergingResponse(mergeResponse,mergeRequest,false);
+    require(mergeResponse.subtype==mcmSubtype::Reject,"infeasible one-CV merging also Rejects");
     McApplication rv;
     McEgoContext ego; ego.now=SimTime(10); ego.sampledAt=SimTime(10); ego.stationId=1;
     ego.plannedTrajectory=trajectory(); rv.updateEgoContext(ego);

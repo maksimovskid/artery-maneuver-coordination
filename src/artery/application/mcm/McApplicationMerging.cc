@@ -112,7 +112,7 @@ MergeTargetSelection selectMergeGapTargets(std::vector<MergeTargetCandidate> can
  * cost evaluation, then stores the selected trajectory and control command for
  * later Offer/Accept construction and execution control.
  */
-void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
+bool McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received)
 {
     EV_STATICCONTEXT;
 
@@ -128,30 +128,30 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
 
     if (!mHasEgoContext || !mVehicleDataProvider) {
         EV_WARN << "McApplication CV maneuver classification skipped: missing ego context or vehicle data\n";
-        return;
+        return false;
     }
 
     if (!isHighwayMergingCvRoute(mEgoContext.routeId, mSafetyCriticalLaneChangeConfig)) {
         EV_DETAIL << "McApplication CV maneuver classification skipped for route "
             << mEgoContext.routeId << " because this milestone only handles highway CVs for route_merging_1\n";
-        return;
+        return false;
     }
 
     const auto& snapshot = received.data;
     if (snapshot.requestedTrajectory.empty()) {
         EV_WARN << "McApplication CV maneuver classification kept DoNothing: Request has no requestedTrajectory\n";
-        return;
+        return false;
     }
 
     if (mEgoContext.routeReferenceX.empty() || mEgoContext.routeReferenceY.empty() ||
             mEgoContext.routeReferenceIndex < 0) {
         EV_WARN << "McApplication CV maneuver classification kept DoNothing: route reference coordinates/index are unavailable\n";
-        return;
+        return false;
     }
 
     if (mEgoContext.plannedTrajectory.empty()) {
         EV_WARN << "McApplication CV maneuver classification kept DoNothing: ego plannedTrajectory is unavailable\n";
-        return;
+        return false;
     }
 
     const omnetpp::SimTime eteDelay =
@@ -164,10 +164,12 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         false);
 
     if (!conflict) {
+        mCvSelectedTrajectory = mEgoContext.plannedTrajectory;
+        mHasCvSelectedTrajectory = true;
         EV_INFO << "McApplication CV station " << mEgoContext.stationId
             << " classified merging control maneuver: DoNothing"
             << " because requestedTrajectory has no conflict with current plannedTrajectory\n";
-        return;
+        return true;
     }
 
     const auto& myLastPoint = mEgoContext.plannedTrajectory.back();
@@ -207,7 +209,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
             << " requestId=" << snapshot.requestId
             << " priority=" << priority
             << '\n';
-        return;
+        return false;
     }
 
     const auto& selectedTrajectory = result.trajectory;
@@ -266,6 +268,7 @@ void McApplication::classifyCvMergingControlManeuver(const ReceivedMcm& received
         << " egoLastY=" << myLastPoint.mY
         << " requestedLastY=" << requestedLastPoint.mY
         << '\n';
+    return true;
 }
 
 /*

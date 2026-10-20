@@ -744,53 +744,9 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
             << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size()
             << " offeredTrajectoryPoints=" << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
             << '\n';
-    } else if (snapshot.numberOfVehicles > 1) {
-        classifyCvMergingControlManeuver(received);
-
-        command.subtype = mcmSubtype::Offer;
-        command.requestedTrajectory = snapshot.requestedTrajectory;
-        command.offeredTrajectory = mHasCvSelectedTrajectory ? mCvSelectedTrajectory :
-            (mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
-                mEgoContext.plannedTrajectory : snapshot.requestedTrajectory);
-        command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
-        mCoordinationProgressCV = coordinationProgressCV::SendOffer;
-
-        EV_INFO << "McApplication CV station " << egoStationId
-            << " offering for targeted route_merging_1 Request "
-            << static_cast<int>(command.requestId)
-            << " from RV " << mCvRvStationId
-            << " because numberOfVehicles=" << snapshot.numberOfVehicles
-            << " matches two-CV Offer path"
-            << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size()
-            << " offeredTrajectoryPoints=" << command.offeredTrajectory.size() << '\n';
-
-        // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
-        // std::cout << "MCM_DEBUG CV station " << egoStationId
-        //     << " queued Offer for requestId " << static_cast<int>(command.requestId)
-        //     << " to RV " << mCvRvStationId
-        //     << " offeredTrajectoryPoints=" << command.offeredTrajectory.size()
-        //     << " at " << omnetpp::simTime() << " s" << std::endl;
     } else {
-        classifyCvMergingControlManeuver(received);
-
-        command.subtype = mcmSubtype::Accept;
-        command.requestedTrajectory = mHasEgoContext && !mEgoContext.plannedTrajectory.empty() ?
-            mEgoContext.plannedTrajectory : snapshot.requestedTrajectory;
-        mCoordinationProgressCV = coordinationProgressCV::SendAccept;
-
-        EV_INFO << "McApplication CV station " << egoStationId
-            << " accepted targeted route_merging_1 Request "
-            << static_cast<int>(command.requestId)
-            << " from RV " << mCvRvStationId
-            << " because numberOfVehicles=" << snapshot.numberOfVehicles
-            << " matches one-CV Accept path"
-            << " requestedTrajectoryPoints=" << snapshot.requestedTrajectory.size() << '\n';
-
-        // Temporary manual debug helper. Uncomment if EV_INFO is suppressed in Cmdenv.
-        // std::cout << "MCM_DEBUG CV station " << egoStationId
-        //     << " queued Accept for requestId " << static_cast<int>(command.requestId)
-        //     << " to RV " << mCvRvStationId
-        //     << " at " << omnetpp::simTime() << " s" << std::endl;
+        const bool feasible = classifyCvMergingControlManeuver(received);
+        buildCvMergingResponse(command, received, feasible);
     }
 
     if (command.subtype == mcmSubtype::Accept || command.subtype == mcmSubtype::Reject) {
@@ -837,6 +793,28 @@ void McApplication::evaluateCvRequestResponse(const ReceivedMcm& received)
         << " offeredTrajectoryPoints="
         << (command.hasOfferedTrajectory ? command.offeredTrajectory.size() : 0)
         << '\n';
+}
+
+// Feasibility is explicit: a failed planner must never become a fallback Offer.
+void McApplication::buildCvMergingResponse(
+    PendingMcmCommand& command, const ReceivedMcm& received, bool feasible)
+{
+    const auto& snapshot = received.data;
+    if (!feasible) {
+        command.subtype = mcmSubtype::Reject;
+        command.requestedTrajectory = snapshot.requestedTrajectory;
+        command.offeredTrajectory.clear();
+        command.hasOfferedTrajectory = false;
+        mCoordinationProgressCV = coordinationProgressCV::SendReject;
+        return;
+    }
+
+    command.subtype = snapshot.numberOfVehicles > 1 ? mcmSubtype::Offer : mcmSubtype::Accept;
+    command.requestedTrajectory = snapshot.requestedTrajectory;
+    command.offeredTrajectory = mCvSelectedTrajectory;
+    command.hasOfferedTrajectory = !command.offeredTrajectory.empty();
+    mCoordinationProgressCV = snapshot.numberOfVehicles > 1 ?
+        coordinationProgressCV::SendOffer : coordinationProgressCV::SendAccept;
 }
 
 /*

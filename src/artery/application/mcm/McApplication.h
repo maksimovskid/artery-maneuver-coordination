@@ -393,7 +393,8 @@ private:
     void restoreCvSpeedControl();
     bool canRestoreNormalSpeedFromLeader(double desiredSpeed);
     void restoreNormalSpeedIfSafe(const char* role, uint8_t requestId);
-    void classifyCvMergingControlManeuver(const ReceivedMcm&);
+    bool classifyCvMergingControlManeuver(const ReceivedMcm&);
+    void buildCvMergingResponse(PendingMcmCommand&, const ReceivedMcm&, bool feasible);
     void evaluateRvExecutionProgress();
     void evaluateCvExecutionProgress();
     void evaluateCvRequestResponse(const ReceivedMcm&);
