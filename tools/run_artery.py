@@ -5,9 +5,40 @@ import argparse
 import subprocess
 import configparser
 import pathlib
+import math
+import os
+import signal
 
 from pathlib import Path
 from typing import Optional, Iterable
+
+
+def positive_timeout(value: str) -> float:
+    """Parse a finite, positive wall-clock limit in seconds."""
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("wall-clock timeout must be a finite positive number")
+    return seconds
+
+
+def run_simulation(cmd, *, timeout=None, **kwargs):
+    """Run a simulation and reap its process group on timeout (Linux/POSIX)."""
+    if timeout is not None:
+        timeout = positive_timeout(str(timeout))
+    own_group = timeout is not None and os.name == 'posix'
+    with subprocess.Popen(cmd, start_new_session=own_group, **kwargs) as process:
+        try:
+            return process.wait(timeout=timeout)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt):
+            if own_group:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait()
+            raise
 
 
 def run_artery(
@@ -18,7 +49,8 @@ def run_artery(
     batchsize: Optional[int] = None,
     jobs: Optional[int] = None,
     verbose: bool = False,
-    capture_output: bool = False
+    capture_output: bool = False,
+    timeout: Optional[float] = None
 ) -> int:
     
     if opp_args is None:
@@ -66,8 +98,7 @@ def run_artery(
     stdout, stderr = sys.stdout, sys.stderr
     if capture_output:
         stdout = stderr = subprocess.DEVNULL
-    process = subprocess.run(cmd, cwd=scenario, stderr=stderr, stdout=stdout)
-    return process.returncode
+    return run_simulation(cmd, cwd=scenario, stderr=stderr, stdout=stdout, timeout=timeout)
 
 
 def main():
@@ -78,6 +109,8 @@ def main():
     parser.add_argument('-l', '--launch-conf', action='store', required=True, type=pathlib.Path)
     parser.add_argument('-s', '--scenario', default=pathlib.Path.cwd(), type=pathlib.Path)
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument("--wall-clock-timeout", type=positive_timeout,
+                        help="wall-clock limit in seconds; kills simulation descendants on timeout")
     args, opp_args = parser.parse_known_args()
 
     # remove '--' from opp_args when used to split run_artery args from opp_run args
@@ -91,12 +124,17 @@ def main():
         args.all,
         args.batch,
         args.jobs,
-        args.verbose
+        args.verbose,
+        timeout=args.wall_clock_timeout
     ))
 
 
 if __name__ == '__main__':
     try:
         main()
+    except subprocess.TimeoutExpired as error:
+        print(f"simulation exceeded wall-clock timeout of {error.timeout:g}s", file=sys.stderr)
+        sys.exit(124)
     except KeyboardInterrupt:
         print('exited by user')
+        sys.exit(130)

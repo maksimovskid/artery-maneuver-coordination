@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: >-
+  If you use this research software, cite this repository and record the exact
+  revision and scenario configuration. Related dissertation research is available
+  at https://doi.org/10.57825/repo_in-7161 (a dissertation DOI, not a software DOI).
+type: software
+title: Priority-Based Maneuver Coordination in Artery
+authors:
+  - family-names: Maksimovski
+    given-names: Daniel
+repository-code: https://github.com/maksimovskid/artery-maneuver-coordination
+url: https://github.com/maksimovskid/artery-maneuver-coordination
+abstract: >-
+  Research implementation of decentralized V2X maneuver coordination in Artery,
+  with cooperative merging and safety-critical lane-change validation scenarios.
+  Scope, assumptions, and limitations are documented in the repository README.

@@ -128,18 +128,24 @@ The supplied scenarios use prerecorded, road-aligned global SUMO Cartesian coord
 
 ## Prerequisites and Build
 
-General framework prerequisites follow the upstream [Artery documentation](http://artery.v2x-research.eu). From a configured checkout:
+Follow the [installation guide](docs/install.md) for dependencies, tested versions,
+OMNeT++ setup, and verification. From a Linux shell with OMNeT++ 5.6.2 activated
+and SUMO on `PATH`:
 
 ```bash
+git clone --recursive https://github.com/maksimovskid/artery-maneuver-coordination.git
+cd artery-maneuver-coordination
+git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build -j2
 ```
 
-The build-directory convenience target remains available:
-
-```bash
-cd build
-make run_artery_maneuver_coordination
-```
+The build requires CMake 3.20 and C++17. Root CMake requires Boost 1.69;
+the pinned Vanetza raises the effective minimum to 1.70. Local validation uses
+OMNeT++ 5.6.2. SUMO **1.21.0 is the configured CI baseline**; SUMO **1.26.0
+is locally validated**. Regression verification on 1.21.0 remains pending hosted/container
+CI; no supported SUMO version range is claimed. See the [installation guide](docs/install.md#sumo-version-reproducibility)
+for selecting and recording the simulator environment.
 
 ## Running Scenarios
 
@@ -173,6 +179,19 @@ make test_mcm
 
 The tests run complete Artery/SUMO simulations and inspect stable diagnostic events; they are not isolated C++ unit tests. They cover coordinated merging, emergency lane change, both baselines, and the second-Request path. Each run uses a unique temporary directory for logs and OMNeT++/SUMO outputs, so a successful suite leaves a clean checkout. See [tests/mcm/README.md](tests/mcm/README.md).
 
+Build and run the focused C++ tests explicitly (they are excluded from the default build):
+
+```bash
+cmake --build build --target mcm_timing_tests cam_policy_tests -j2
+ctest --test-dir build -R '^(mcm_timing|cam_policy)$' --output-on-failure
+python3 -m unittest discover -s tests/cam -p 'test_*.py'
+```
+
+Both Python scenario suites accept `ARTERY_BUILD_DIR` (default `build`, relative to
+the repository root) and `ARTERY_TEST_TIMEOUT` (default 300 wall-clock seconds per
+simulation). CI uses `ARTERY_BUILD_DIR=build/Release`. Failures preserve scenario
+logs; timed-out simulations and their descendants are stopped on Linux.
+
 ## Diagnostics and Evaluation Outputs
 
 Stable tags include `[MCM-WIRE]`, `[MCM-TRAJECTORY]`, `[MCM-FAILURE]`, `[MCM-STATE]`, `[MCM-CONFIG]`, `[MCM-NEGOTIATION]`, `[MCM-EMERGENCY]`, and scenario-specific target/execution tags.
@@ -188,7 +207,7 @@ OMNeT++ signals cover sent/received MCMs, container/subtype counts, delay, DCC w
 - [Trajectory Planning and Conflict Checking](docs/trajectory_planning_and_conflict_checking.md)
 - [Regression Tests](tests/mcm/README.md)
 - [Animation Workflow](tools/animation/README.md)
-- [Original Artery documentation index](docs/index.md)
+- [Project documentation and Artery background](docs/index.md)
 
 ## Research Context and Publications
 
@@ -219,6 +238,16 @@ Arbitrary-network support would require road-topology, route-relative geometry, 
 
 ## License, Citation, and Contributions
 
-This repository contains upstream components with their own licenses under `extern/`; consult those files and the upstream Artery project before redistribution. No repository-level citation file or contribution guide is currently provided. For research attribution, use the publications linked above and describe the exact repository revision and scenario configuration used.
+This software is distributed under the **GNU General Public License version 2**;
+see [COPYING](COPYING). It builds on [upstream Artery](https://github.com/riebl/artery).
+Existing upstream copyright and license notices remain in place. Bundled and
+submodule dependencies retain their own licenses; consult their respective files.
 
-Contributions should preserve the established service/application boundary, add regression evidence for behavior changes, and document any new scenario geometry or calibration assumptions.
+For software citation, see [CITATION.cff](CITATION.cff), and record the exact commit,
+scenario configuration, and run/seed used. Related dissertation research is
+available at [DOI 10.57825/repo_in-7161](https://doi.org/10.57825/repo_in-7161);
+this is a dissertation DOI, not a software DOI.
+
+This research fork is maintained by Daniel Maksimovski. Report problems in
+[this repository's issue tracker](https://github.com/maksimovskid/artery-maneuver-coordination/issues).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and contribution guidance.

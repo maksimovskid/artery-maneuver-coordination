@@ -11,7 +11,10 @@ import pandas as pd
 class SimRecordedData:
     """Python interface to Recorded scalar & vector data"""
 
-    class File(enum.StrEnum):
+    class File(str, enum.Enum):
+        # Keep string-enum behavior on Python 3.10 (StrEnum arrived in 3.11).
+        __str__ = str.__str__
+
         SCALAR = 'scalar'
         VECTOR = 'vector'
 

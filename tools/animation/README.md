@@ -195,3 +195,12 @@ provided by the vehicle type.
 
 The animations show one controlled run. They should not be described as a
 multi-seed statistical result.
+
+## Runner limits and build selection
+
+Capture uses `ARTERY_BUILD_DIR` (default `build`, relative to the repository root)
+and `ARTERY_TEST_TIMEOUT` (default 300 wall-clock seconds). Override these with
+`--build-dir` and `--wall-clock-timeout` on `capture_scenario.py`. On timeout, the
+Linux simulation process group is stopped, the existing log/output is preserved,
+and capture returns exit code 124 with the log path. These controls do not change
+simulation settings, capture data, rendering, or validated scenario semantics.

@@ -9,14 +9,14 @@ from tools.ci.artery_test_case import ArteryTestFactory
 from tools.ci.test_options_loader import ArteryTestConfigLoader
 
 
-def main():
+def main(argv=None):
     install_rich_traceback(show_locals=True)
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-l', dest='launch_conf', action='store', type=Path)
     parser.add_argument('-s', dest='scenario_base_dir', action='store', type=Path)
     parser.add_argument('--verbosity', action='store', type=int, default=2)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
@@ -35,7 +35,8 @@ def main():
     runner = unittest.TextTestRunner(verbosity=args.verbosity)
     result = runner.run(suite)
     result.printErrors()
+    return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

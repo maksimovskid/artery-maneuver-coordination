@@ -68,3 +68,22 @@ Successful tests remove their temporary directory, leaving a previously clean ch
 ## Coverage Boundaries
 
 The suite does not currently provide deterministic cases for ordinary timeout, final rejection, forced fallback, invalid NED configuration, pre-execution Cancel rollback, direct TraCI read/control failure, malformed messages, or arbitrary-map geometry. Those are documented coverage gaps, not claims about the behavior exercised by the five passing scenarios. Multi-seed statistical evaluation is also separate from this regression suite.
+
+## Build directory and wall-clock limit
+
+`ARTERY_BUILD_DIR` selects the configured build directory (default `build`, relative
+to the repository root; absolute paths work too). CI sets it to `build/Release`.
+The same settings apply to `tests/cam`, which shares this runner.
+
+Each simulation has a 300-second wall-clock timeout. Set `ARTERY_TEST_TIMEOUT`
+to a positive number of seconds for slower machines, for example:
+
+```bash
+ARTERY_BUILD_DIR=build/Release ARTERY_TEST_TIMEOUT=600 python3 -m unittest discover -s tests/mcm -p 'test_*.py'
+```
+
+Python callers can also pass `build_dir=` and `wall_clock_timeout=` to
+`run_scenario`; explicit values take precedence over the environment. On timeout,
+the Linux process group (including simulation/SUMO descendants) is killed and the
+failure identifies the preserved log and timeout override. Simulated time and
+successful-run output handling are unchanged.

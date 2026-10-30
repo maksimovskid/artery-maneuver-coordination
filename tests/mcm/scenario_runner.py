@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,10 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Also support direct invocation of test scripts from outside the repository root.
+sys.path.insert(0, str(REPO_ROOT))
+from tools.run_artery import positive_timeout, run_simulation
+
 SCENARIO_DIR = REPO_ROOT / "scenarios" / "artery-maneuver-coordination"
 RUN_ARTERY = REPO_ROOT / "tools" / "run_artery.py"
 
@@ -45,7 +50,16 @@ class ScenarioRun:
 
 
 def run_scenario(config: str, run: str = "0", time_limit: str = "30s",
-                 extra_args: tuple[str, ...] = ()) -> ScenarioRun:
+                 extra_args: tuple[str, ...] = (), *,
+                 build_dir: str | Path | None = None,
+                 wall_clock_timeout: float | None = None) -> ScenarioRun:
+    build_dir = Path(build_dir or os.environ.get("ARTERY_BUILD_DIR", "build"))
+    if not build_dir.is_absolute():
+        build_dir = REPO_ROOT / build_dir
+    wall_clock_timeout = positive_timeout(str(
+        wall_clock_timeout if wall_clock_timeout is not None
+        else os.environ.get("ARTERY_TEST_TIMEOUT", "300")
+    ))
     output_dir = Path(tempfile.mkdtemp(prefix=f"mcm-regression-{config}-"))
     log_path = output_dir / "simulation.log"
     result_dir = output_dir / "results"
@@ -61,7 +75,7 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s",
     cmd = [
         str(RUN_ARTERY),
         "-l",
-        "build",
+        str(build_dir),
         "-s",
         str(SCENARIO_DIR),
         "--",
@@ -81,13 +95,16 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s",
     cmd.extend(extra_args)
     started = time.perf_counter()
     with log_path.open("w", encoding="utf-8") as handle:
-        process = subprocess.run(
-            cmd,
-            cwd=REPO_ROOT,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+        try:
+            returncode = run_simulation(
+                cmd, cwd=REPO_ROOT, stdout=handle, stderr=subprocess.STDOUT,
+                timeout=wall_clock_timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise AssertionError(
+                f"scenario {config} exceeded wall-clock timeout of {wall_clock_timeout:g}s; "
+                f"log preserved at {log_path}; override ARTERY_TEST_TIMEOUT (seconds)"
+            ) from error
     duration_s = time.perf_counter() - started
 
     parsed_log = ParsedLog.from_path(log_path)
@@ -96,7 +113,7 @@ def run_scenario(config: str, run: str = "0", time_limit: str = "30s",
         output_dir=output_dir,
         log_path=log_path,
         parsed_log=parsed_log,
-        returncode=process.returncode,
+        returncode=returncode,
         duration_s=duration_s,
     )
 

@@ -1,3 +1,4 @@
+import os
 import inspect
 import importlib
 
@@ -5,7 +6,7 @@ from pathlib import Path
 from unittest import TestCase
 from typing import Type, cast, Callable, Optional
 
-from tools.run_artery import run_artery
+from tools.run_artery import positive_timeout, run_artery
 from tools.ci.sim_results import SimRecordedData, SimResultsReader
 from tools.ci.common import TestOptions, ArteryTest
 from tools.ci.test_options_loader import ArteryTestConfig
@@ -58,7 +59,10 @@ class ArteryTestCaseBase(TestCase):
             opp_args.append(f'--{option}={value}')
 
         opp_args.extend(('-u', 'Cmdenv', '-c', cls.config))
-        retval = run_artery(cls.launch_conf, opp_args, cls.scenario_path, capture_output=True)
+        retval = run_artery(
+            cls.launch_conf, opp_args, cls.scenario_path, capture_output=True,
+            timeout=positive_timeout(os.environ.get('ARTERY_TEST_TIMEOUT', '300')),
+        )
         if retval != 0:
             raise RuntimeError(f'call to run_artery returned non-zero exit code: {retval}')
 

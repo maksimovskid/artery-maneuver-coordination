@@ -1,3 +1,15 @@
+# Priority-Based Maneuver Coordination in Artery
+
+This documentation accompanies Daniel Maksimovski's
+[research repository](https://github.com/maksimovskid/artery-maneuver-coordination).
+Start with the [installation guide](install.md) and [MCM user/developer guide](mcm_user_and_developer_guide.md).
+The framework pages below retain upstream Artery background; this fork's MCM
+scope and validation are described in the project README and implementation audit.
+Report fork-specific problems in the
+[project issue tracker](https://github.com/maksimovskid/artery-maneuver-coordination/issues).
+
+## Upstream Artery framework
+
 ![Logo of Artery V2X Simulation Framework](assets/logo.png#only-light)
 ![Logo of Artery V2X Simulation Framework](assets/logo-dark.png#only-dark)
 
@@ -20,6 +32,6 @@ Please note that you can run Artery without Veins when you employ the radio mode
 
 ## License
 
-Artery is made available under the [GPL version 2](https://github.com/riebl/artery/blob/master/COPYING).
-This license allows private and commercial usage and frankly speaking, you do not need to disclose your modified source code as long as you do not distribute the compiled software.
-However, we kindly ask you to contribute your changes back to Artery's upstream repository.
+Artery is made available under GPL version 2; see this repository's [COPYING](https://github.com/maksimovskid/artery-maneuver-coordination/blob/master/COPYING).
+Bundled and submodule dependencies retain their own licenses and upstream notices.
+Upstream framework contributions can also be proposed to [Artery](https://github.com/riebl/artery).

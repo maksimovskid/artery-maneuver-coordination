@@ -1,165 +1,173 @@
-# Install Instructions
+# Install and verify this research repository
 
-We guide you through the process of preparing, building and running Artery with the following steps.
-First of all, you will need to [clone the Artery](#cloning-the-artery-repository) repository on your machine.
-Afterwards, you can either [manually build](#building-artery-from-sources) Artery for your Linux machine or create a Linux-based [virtual machine](#automated-creation-of-a-virtual-machine) using
-[Vagrant](https://vagrantup.com).
+These instructions are for
+[Priority-Based Maneuver Coordination in Artery](https://github.com/maksimovskid/artery-maneuver-coordination),
+maintained by Daniel Maksimovski. It extends the upstream
+[Artery framework](https://github.com/riebl/artery). Use this checkout and its pinned
+dependencies; an upstream Artery checkout does not contain these MCM extensions.
+Run commands below in Bash on Linux, from the repository root unless stated otherwise.
 
-## Cloning the Artery repository
+## Clone with dependencies
 
-All source code of Artery is stored in a [git](https://git-scm.com) repository on [GitHub](https://github.com/riebl/artery).
-This repository contains compatible versions of INET, SimuLTE, Veins, Vanetza and some other third-party dependencies as
-[git submodules](https://git-scm.com/docs/git-submodule).
-You can find those submodules in the *extern* subdirectory.
-
-Please make sure to fetch these submodules when cloning the Artery repository.
-The command below will clone Artery's _master_ branch along with matching versions of its submodules onto your machine's
-file system.
-Your local clone of the repository will be in the *artery* directory at the location you have invoked the clone command.
-We refer to the location of your local clone as **$ARTERY_PATH** in the following.
-
-```shell
-git clone --recurse-submodule https://github.com/riebl/artery.git
-```
-
-Alternatively, you can also initialise and fetch these submodules after cloning.
-This command needs to be invoked from **$ARTERY_PATH**.
-
-```shell
+```bash
+git clone --recursive https://github.com/maksimovskid/artery-maneuver-coordination.git
+cd artery-maneuver-coordination
 git submodule update --init --recursive
-```
-!!! tip
-    Check if the directories in *$ARTERY_PATH/extern* are empty.
-    If they are empty, e.g. no *extern/inet/Makefile* exists, then your working copy is incomplete.
-    Fix your working copy first because the build process will fail otherwise.
-
-
-## Building Artery from sources
-
-Following instructions show you how to build Artery from its sources on a Linux machine step by step.
-While it is probably not impossible to build Artery on a non-Linux system, this is neither supported nor tested at all.
-Instead, consider to set up a virtual machine for Artery if you do not have a Linux system at your fingertips.
-The [alternative build instructions](#automated-creation-of-a-virtual-machine) at the end of this page show you how to build a virtual machine with Artery installed inside automatically.
-But let us now continue with the requirements for the manual build process.
-
-### Requirements
-
-Artery builds upon the discrete event simulator [OMNeT++](https://omnetpp.org), which you need to obtain and install beforehand.
-Instead of *opp_makemake* usually employed by OMNeT++ models, Artery's build process relies on [CMake](https://cmake.org).
-This enables us to handle external dependencies beyond OMNeT++ conveniently.
-Hence, make sure the following requirements are fulfilled:
-
-- C++ compiler with C++11 support (GNU GCC 4.9 or later or Clang)
-- [Boost](https://www.boost.org) (1.65.1 or later is recommended)
-- [CMake](http://www.cmake.org) 3.1 or later
-- [OMNeT++](https://omnetpp.org) 5.5.1 or later
-- [Python](https://www.python.org) 3
-
-We have tested Artery with OMNeT++ 5.5.1, GNU GCC 7.3 and Boost 1.65.1 successfully.
-Please note that these versions are just minimum requirements.
-You may benefit from bugfixes when using more recent versions.
-For example, OMNeT++ 5.6 is working great as well.
-
-!!! danger
-    OMNeT++ 6.0 (available as Preview 7 at the time of writing) breaks compatibility of models written for 5.x versions.
-    We recommend to stick with a 5.6 release of OMNeT++ when using Artery for now.
-    An upgrade to 6.x will be possible as soon as all dependencies have been ported.
-
-Vanetza is an integral part of Artery because it provides the ITS-G5 network stack.
-On top of the dependencies listed above, Vanetza requires
-
-- [GeographicLib](https://geographiclib.sourceforge.io) 1.37 or later
-- [Crypto++](https://www.cryptopp.com) 5.6 or later
-
-You may install the packages `libgeographic-dev` and `libcrypto++-dev` on a Debian system for these.
-The packages `libboost-dev`, `libboost-date-time-dev`, and `libboost-system-dev` provide the required Boost heades and libraries.
-
-Though not required for compiling Artery, you will also need to install [SUMO](https://sumo.dlr.de).
-Ideally, the *sumo* executable is located in your **$PATH**.
-Then, Artery can launch a *sumo* instance for you when starting a simulation.
-You will need version 1.0 or later of SUMO because its TraCI protocol of earlier versions is not compatible.
-
-
-### Build 'extern' components
-
-Bundled third-party dependencies in *extern* subdirectories are built along with Artery.
-Artery's build process integrates those dependencies seamlessly without manual intervention.
-
-!!! note
-    Previously, users needed to build these dependencies before building Artery.
-    A *Makefile* located in Artery's root directory aided this step.
-    Since July 2020, CMake handles the whole build process alone.
-
-
-### Create build directory
-Are you still with us? Congratulations, you are almost done!
-Invoke following commands from **$ARTERY_PATH** to create a *build* directory for Artery, configure the build directory with CMake and finally build Artery there.
-
-```shell
-mkdir build                 # Create directory "build"
-cmake -B build              # Generate the project's build system in directory "build"
-cmake --build build -j X    # Build the project in directory "build"
-```
-where `-j X` is an optional flag and `X` denotes the number of threads the build process shall use.
-Omitting the flag may use only a single thread with a then unnecessarily time consuming build process.
-
-!!! note
-    It is not a strict requirement that Artery's build directory is located at *$ARTERY_PATH/build*.
-    You can name it in any way you like and also have multiple build directories, e.g. one for release and one for debug builds.
-    A build directory does not need to be a subdirectory of *$ARTERY_PATH* either, i.e. out-of-source builds are supported as well.
-
-
-### Automated creation of a virtual machine
-
-You can build a virtual machine containing Artery from scratch assisted by Vagrant and our Ansible deployment scripts.
-For this procedure, you have to install [Vagrant](https://www.vagrantup.com) and [VirtualBox](https://www.virtualbox.org) on your host machine.
-Your host system may use any operating system supported by Vagrant and VirtualBox, including MacOSX and Windows.
-
-Your working copy of Artery at **$ARTERY_PATH** contains a *Vagrantfile*.
-This file tells Vagrant to download a Debian machine image and deploy Artery in this virtual machine according to the
-Ansible playbook located at *ansible/vagrant.yml*.
-Just run `vagrant up` from Artery's root directory, be patient, and in the end you are rewarded with a ready-to-go
-environment to work with Artery.
-Login credentials for this virtual machine, as by convention for any Vagrant box, are "vagrant" with password "vagrant".
-Of course, you are free to change the password at your discretion.
-
-During the initial provisioning of this virtual machine, when the Ansible deployment is running, an Internet connection is required.
-Without an Internet connection, it is impossible to download all the dependencies such as OMNeT++, SUMO, and several system tools and libraries.
-In case of an interrupted deployment, you may restart the provisioning with `vagrant up --provision`.
-Also keep in mind that this initial deployment can take quite some time.
-Afterwards, the virtual machine can be booted much faster.
-
-You can run the example from the *artery-build* directory located in the box's home directory at */home/vagrant/* by
-invoking `make run_example`.
-Please note that the *artery* directory mirrors the cloned repository on your host machine.
-
-![Starting Artery in virtual machine supplied by Vagrant](assets/vagrant.webm){:autoplay loop}
-
-
-## Running Artery for the first time
-
-When you have finished building Artery, you can give the shipped example a try to see if everything runs smoothly.
-With current Artery versions, there is no need to start Veins' *sumo-launchd* script any more.
-Instead, Artery will start a SUMO instance on its own with appropriate parameters.
-You can start the example scenario of Artery (located in *scenarios/artery*) simply by invoking the **run_example** target from Artery's root directory:
-
-```shell
-cmake --build build --target run_example
-```
-!!! note
-    Substitute *build* with the name of your build directory.
-    If CMake has generated Makefiles in your build directory (it does so by default), you can also invoke `make run_example` from there.
-
-Please make sure that *sumo* can be launched in your environment because this is the SUMO executable Artery uses by default.
-You can, however, specify which SUMO executable shall be used explicitly.
-If you want Artery to start SUMO with a graphical user interface, you can put the following line in *omnetpp.ini*:
-
-```
-*.traci.launcher.sumo = "sumo-gui"
+git submodule status --recursive
 ```
 
+The last command should show initialized submodules at their recorded revisions
+(no `-` or `+` prefix). Do not use `git submodule update --remote` for reproduction.
+Vanetza comes from the project's `vanetza-maneuver-coordination` fork and provides
+its MCM ASN.1 support. INET and Veins supply network/radio integration. The default
+build also uses pybind11 for Storyboard; SimuLTE and sim0mqpp serve optional features.
+The `scenarios/mt-its2017` submodule supplies an upstream example. Recursive cloning
+fetches all of these and any nested submodules. No source files need to be copied
+from another checkout. `.gitmodules` records their URLs and Git records their pins.
 
-## Next: Create your own simulation
+## Toolchain and dependencies
 
-You are now ready to create your first own simulation scenario.
-Have a look at [our how-to guide](custom-simulation.md) for details.
+| Component | Requirement / evidence |
+| --- | --- |
+| CMake | Minimum **3.20**, enforced by root `CMakeLists.txt`; tested locally with **3.22.1**. |
+| C++ compiler | **C++17**, required by root CMake; tested locally with **GCC 11.4.0**. A C compiler and Make or Ninja are also needed. |
+| Boost | Root CMake requires **1.69**; the pinned Vanetza requires **1.70**, making **1.70** the effective minimum. Include `date_time`; tested locally with **1.71**. |
+| OMNeT++ | Root CMake enforces minimum **5.5.1**. **5.6.2** is used by the local validation setup and specified by `Dockerfile`. Other versions are not validated here. |
+| SUMO | **Configured CI baseline: 1.21.0; locally validated: 1.26.0.** Regression verification on 1.21.0 remains pending hosted/container CI. No supported version range is claimed; root CMake enforces no SUMO version minimum. |
+| Python | Use **3.10 or later** for the scenario test harness (including its `X \| None` annotations); tested locally with **3.10.12**. Python development headers are needed for Storyboard/pybind11. |
+| Vanetza libraries | GeographicLib (optional probe at **1.37**), Crypto++ (**5.6.1**), and OpenSSL (**1.1.1**) are detected by pinned Vanetza CMake. The commands below install GeographicLib and Crypto++; security backends depend on installed libraries/CMake options. |
+
+For a Debian/Ubuntu host, install the development packages below. Package names
+can differ between distributions; check the version requirements above.
+OMNeT++ and SUMO must be installed separately.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build git pkg-config \
+  python3-dev python3-venv libboost-all-dev libgeographiclib-dev libcrypto++-dev
+```
+
+Install/build **OMNeT++ 5.6.2** using the [OMNeT++ distribution instructions](https://omnetpp.org), including the
+release libraries and `opp_run`/`opp_msgc`. Activate that installation's `setenv`
+in the current shell before configuring this repository. This is an external
+simulator installation, not an Artery source dependency. Alternatively pass its
+installation root as `-DOMNETPP_ROOT=/path/to/omnetpp-5.6.2` to CMake.
+Install SUMO using its [installation guide](https://sumo.dlr.de/docs/Installing/index.html)
+and ensure `sumo` is on `PATH`; headless tests do not need `sumo-gui`.
+Check the active tools:
+
+```bash
+command -v opp_run
+sumo --version
+cmake --version
+c++ --version
+python3 --version
+```
+
+`Dockerfile` and the Debian [devcontainer](devcontainers.md) provide an alternative
+dependency environment with OMNeT++ 5.6.2 and SUMO 1.21.0. The Arch devcontainer
+specifies SUMO 1.23.1. These are configuration pins, not additional tested-version
+claims. CI consumes `ghcr.io/maksimovskid/artery-gh-runner:latest`; its maintainer
+builds/rebuilds it using the manually triggered **Prepare GitHub container** workflow
+before running CI. The image contains tools, not this project's compiled software.
+No container image is built or published by following the local instructions.
+
+## SUMO version reproducibility
+
+**Configured CI baseline: SUMO 1.21.0; locally validated: SUMO 1.26.0.**
+Regression verification on 1.21.0 remains pending hosted/container CI. The Dockerfile
+and Debian devcontainer explicitly pin 1.21.0; this does not establish a supported
+version range or prove that the mutable GHCR `latest` image contains that version.
+Confirm the actual executable version inside the CI/container environment before
+attributing its regression results to 1.21.0.
+For archival reproduction, also record the container image digest and compiler,
+library, and Python dependency versions. The base-image tag, OS packages, and
+Python requirements are not fully version-locked, so the setup is not a guarantee
+of a byte-identical environment on a later date.
+
+The launcher defaults to the `sumo` executable resolved through `PATH`. Select the
+intended installation before running tests, check `command -v sumo` and
+`sumo --version`, and record the complete version/build output with your repository
+revision, scenario configuration, and run/seed. If `SUMO_HOME` is set, it must refer
+to that same installation's SUMO data/tools directory; do not retain it from a
+different version. A packaged installation need not require setting it manually.
+`ARTERY_BUILD_DIR` selects Artery's compiled libraries, not the SUMO executable.
+
+The checked-in validation network has SUMO network-format version 1.16 and a
+Netedit 1.19.0 provenance comment; route/type files also contain older generator
+comments. Absolute paths inside those XML comments are historical provenance,
+not inputs to the simulator. Use the checked-in network, routes, vehicle types,
+and trajectory CSV directly: no Netedit regeneration or manually prepared files
+are needed for the supplied scenarios.
+
+Static inspection found no explicit requirement for a post-1.21 SUMO feature in
+the regression inputs or launcher options. This is not evidence of identical
+regression outcomes across versions. Upstream's
+[2025 release notes](https://sumo.dlr.de/docs/ChangeLog/Changes_in_2025_releases.html)
+document changes to simulation and TraCI behavior after 1.21. Only running the
+regressions on the selected version establishes the validation result; the
+1.26.0 results must not be described as 1.21.0 CI results.
+
+## Configure and build
+
+Keep the default INET, Veins, environment-model, Storyboard and scenario options
+for the supplied validation scenarios. CMake builds their dependencies together;
+no manual external-framework builds are needed.
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j2
+```
+
+## Run coordinated merging
+
+```bash
+tools/run_artery.py -l build -s scenarios/artery-maneuver-coordination --wall-clock-timeout 300 -- omnetpp.ini -u Cmdenv -c envmod-19CAVs-merging -r 0 --sim-time-limit=30s --cmdenv-express-mode=false
+```
+
+`-s` selects the scenario working directory, so the tracked routes, SUMO network,
+and `coordinates_new_map.csv` resolve without machine-specific paths. The
+30-second limit is simulated time; the optional 300-second limit is wall-clock time.
+Other configurations and scope limitations are described in the [project README](https://github.com/maksimovskid/artery-maneuver-coordination#supported-scenarios-and-animations).
+
+## Verify
+
+Activate a Python virtual environment for release tooling and inherited integration
+test dependencies. MCM/CAM simulation assertions themselves use the standard library.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r tools/ci/requirements.txt
+cmake --build build --target mcm_timing_tests cam_policy_tests -j2
+ctest --test-dir build -R '^(mcm_timing|cam_policy)$' --output-on-failure
+python3 -m unittest discover -s tests/release -v
+python3 -m unittest discover -s tests/mcm -p 'test_*.py' -v
+python3 -m unittest discover -s tests/cam -p 'test_*.py' -v
+```
+
+The focused C++ targets are deliberately excluded from the default build; build
+them explicitly before CTest. MCM runs five scenario regressions. CAM runs three
+tests (including three periodic-policy subcases). Successful scenario tests remove
+temporary output; failures preserve their log path in the assertion message.
+
+Python scenario tests default to `build` relative to the repository root. To use
+CI's layout or another configured build, set `ARTERY_BUILD_DIR` (absolute paths also
+work). Each simulation defaults to a generous **300-second wall-clock timeout**;
+override it for slower hosts. Timeout cleanup kills the simulation process group,
+including SUMO descendants on Linux. These limits do not change simulated timing.
+
+```bash
+ARTERY_BUILD_DIR=build/Release ARTERY_TEST_TIMEOUT=600 python3 -m unittest discover -s tests/mcm -p 'test_*.py' -v
+```
+
+That example requires configuring and building `build/Release` first (substitute
+that path in the configure/build commands above). The inherited integration suite
+can be run separately; it writes results into ignored scenario result directories:
+
+```bash
+PYTHONPATH="$PWD" python3 tools/ci/run.py -l build/run-artery.ini -s scenarios
+```
+
+For documentation builds, see [MkDocs instructions](mkdocs.md). For reporting
+problems and contributing, see [CONTRIBUTING.md](https://github.com/maksimovskid/artery-maneuver-coordination/blob/master/CONTRIBUTING.md).

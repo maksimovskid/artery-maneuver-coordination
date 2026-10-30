@@ -1,7 +1,10 @@
-# Build our Website using mkdocs
-The website is hosted at [artery.v2x-research.eu](http://artery.v2x-research.eu).
-The latest version is always included in our main [git repository](https://github.com/riebl/artery).
-Raphael updates the website from time to time, i.e. when changes have been committed.
+# Build this project's documentation using MkDocs
+
+The checked-in `mkdocs.yml` builds documentation for this
+[research repository](https://github.com/maksimovskid/artery-maneuver-coordination).
+The upstream framework website at [artery.v2x-research.eu](http://artery.v2x-research.eu)
+provides background on Artery; it is not the documentation deployment of this fork.
+Building locally does not publish a website.
 
 ## Installing Dependencies
 [PEP 668](https://peps.python.org/pep-0668/) recommends to install Python dependencies in a virtual environment.

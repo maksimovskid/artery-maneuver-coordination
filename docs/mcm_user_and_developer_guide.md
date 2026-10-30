@@ -1,6 +1,6 @@
 # MCM User and Developer Guide
 
-This guide describes the functioning maneuver-coordination research implementation, its validation scenarios, extension points, diagnostics, and current scope. It should be read together with the [trajectory guide](trajectory_planning_and_conflict_checking.md) and [regression-test guide](../tests/mcm/README.md).
+This guide describes the functioning maneuver-coordination research implementation, its validation scenarios, extension points, diagnostics, and current scope. It should be read together with the [trajectory guide](trajectory_planning_and_conflict_checking.md) and [regression-test guide](https://github.com/maksimovskid/artery-maneuver-coordination/blob/master/tests/mcm/README.md).
 
 ## 1. Research Scope
 
