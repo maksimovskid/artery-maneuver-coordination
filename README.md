@@ -142,9 +142,9 @@ cmake --build build -j2
 
 The build requires CMake 3.20 and C++17. Root CMake requires Boost 1.69;
 the pinned Vanetza raises the effective minimum to 1.70. Local validation uses
-OMNeT++ 5.6.2. SUMO **1.21.0 is the configured CI baseline**; SUMO **1.26.0
-is locally validated**. Regression verification on 1.21.0 remains pending hosted/container
-CI; no supported SUMO version range is claimed. See the [installation guide](docs/install.md#sumo-version-reproducibility)
+OMNeT++ 5.6.2. SUMO **1.21.0 is the verified hosted CI baseline**. Local
+validation currently uses **SUMO 1.28.0 on Ubuntu 22.04 (Jammy)**. No supported
+SUMO version range is claimed. See the [installation guide](docs/install.md#sumo-version-reproducibility)
 for selecting and recording the simulator environment.
 
 ## Running Scenarios

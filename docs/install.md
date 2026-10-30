@@ -33,7 +33,7 @@ from another checkout. `.gitmodules` records their URLs and Git records their pi
 | C++ compiler | **C++17**, required by root CMake; tested locally with **GCC 11.4.0**. A C compiler and Make or Ninja are also needed. |
 | Boost | Root CMake requires **1.69**; the pinned Vanetza requires **1.70**, making **1.70** the effective minimum. Include `date_time`; tested locally with **1.71**. |
 | OMNeT++ | Root CMake enforces minimum **5.5.1**. **5.6.2** is used by the local validation setup and specified by `Dockerfile`. Other versions are not validated here. |
-| SUMO | **Configured CI baseline: 1.21.0; locally validated: 1.26.0.** Regression verification on 1.21.0 remains pending hosted/container CI. No supported version range is claimed; root CMake enforces no SUMO version minimum. |
+| SUMO | **Verified hosted CI baseline: 1.21.0. Locally validated: 1.28.0 on Ubuntu 22.04 (Jammy)**, using package `1.28.0-1~jammy` from the official SUMO stable PPA. No supported version range is claimed; root CMake enforces no SUMO version minimum. |
 | Python | Use **3.10 or later** for the scenario test harness (including its `X \| None` annotations); tested locally with **3.10.12**. Python development headers are needed for Storyboard/pybind11. |
 | Vanetza libraries | GeographicLib (optional probe at **1.37**), Crypto++ (**5.6.1**), and OpenSSL (**1.1.1**) are detected by pinned Vanetza CMake. The commands below install GeographicLib and Crypto++; security backends depend on installed libraries/CMake options. |
 
@@ -64,24 +64,35 @@ c++ --version
 python3 --version
 ```
 
-`Dockerfile` and the Debian [devcontainer](devcontainers.md) provide an alternative
-dependency environment with OMNeT++ 5.6.2 and SUMO 1.21.0. The Arch devcontainer
-specifies SUMO 1.23.1. These are configuration pins, not additional tested-version
-claims. CI consumes `ghcr.io/maksimovskid/artery-gh-runner:latest`; its maintainer
+`Dockerfile` and the Debian [devcontainer](devcontainers.md) select OMNeT++ 5.6.2
+and SUMO 1.21.0, matching the verified hosted CI baseline. The Arch devcontainer
+specifies SUMO 1.23.1; that pin is not an additional validated-version claim.
+CI consumes `ghcr.io/maksimovskid/artery-gh-runner:latest`; its maintainer
 builds/rebuilds it using the manually triggered **Prepare GitHub container** workflow
 before running CI. The image contains tools, not this project's compiled software.
 No container image is built or published by following the local instructions.
 
 ## SUMO version reproducibility
 
-**Configured CI baseline: SUMO 1.21.0; locally validated: SUMO 1.26.0.**
-Regression verification on 1.21.0 remains pending hosted/container CI. The Dockerfile
-and Debian devcontainer explicitly pin 1.21.0; this does not establish a supported
-version range or prove that the mutable GHCR `latest` image contains that version.
-Confirm the actual executable version inside the CI/container environment before
-attributing its regression results to 1.21.0.
-For archival reproduction, also record the container image digest and compiler,
-library, and Python dependency versions. The base-image tag, OS packages, and
+**SUMO 1.21.0 is the verified hosted CI baseline. Local validation currently
+uses SUMO 1.28.0 on Ubuntu 22.04 (Jammy).** Hosted GitHub Actions passes the focused
+MCM/CAM C++ tests, both MCM/CAM scenario suites, and the inherited integration tests
+with the project CI image's SUMO 1.21.0 baseline.
+
+The locally installed package is `1.28.0-1~jammy` from the official SUMO stable PPA.
+Both executable version checks, headless coordinated merging, both focused C++
+tests, and all five MCM and three CAM regressions pass. GUI merging completes its
+normal 30-second run with Artery exit code 0, no segmentation fault, and no new
+`sumo-gui` coredump.
+
+Prefer a SUMO package built for your own distribution: packages built for another
+Ubuntu release can cause GUI/library compatibility issues. On Ubuntu 22.04, the
+local validation above uses the Jammy-native SUMO 1.28.0 package.
+
+These are two verified environments, not a general supported version range. The
+Dockerfile and Debian devcontainer pin 1.21.0; for future runs, confirm the actual
+executable version and record the container image digest, compiler, library, and
+Python dependency versions. The GHCR `latest` tag, base-image tag, OS packages, and
 Python requirements are not fully version-locked, so the setup is not a guarantee
 of a byte-identical environment on a later date.
 
@@ -100,13 +111,12 @@ not inputs to the simulator. Use the checked-in network, routes, vehicle types,
 and trajectory CSV directly: no Netedit regeneration or manually prepared files
 are needed for the supplied scenarios.
 
-Static inspection found no explicit requirement for a post-1.21 SUMO feature in
-the regression inputs or launcher options. This is not evidence of identical
-regression outcomes across versions. Upstream's
+Passing regression checks on both versions does not establish identical
+simulation outputs across versions. Upstream's
 [2025 release notes](https://sumo.dlr.de/docs/ChangeLog/Changes_in_2025_releases.html)
-document changes to simulation and TraCI behavior after 1.21. Only running the
-regressions on the selected version establishes the validation result; the
-1.26.0 results must not be described as 1.21.0 CI results.
+document changes to simulation and TraCI behavior after 1.21. Record results for
+the selected version: local 1.28.0 validation and hosted 1.21.0 CI validation
+remain distinct.
 
 ## Configure and build
 
