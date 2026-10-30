@@ -21,6 +21,11 @@ import tools.ci.artery_test_case
 import tools.ci.test_options_loader
 
 class Fixture(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if BEHAVIOR == "setup_error":
+            raise RuntimeError("intentional simulation setup error")
+
     def test_fixture(self):
         print("fixture output preserved", flush=True)
         if BEHAVIOR == "failure":
@@ -64,3 +69,32 @@ with patch("tools.ci.test_options_loader.ArteryTestConfigLoader") as loader, \\
         result = self.run_case('exception')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('unexpected loader exception', result.stderr)
+
+    def test_simulation_setup_error_exits_nonzero(self):
+        result = self.run_case('setup_error')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('intentional simulation setup error', result.stderr)
+        self.assertIn('FAILED', result.stderr)
+
+    def test_inherited_integration_runner_selects_headless_sumo(self):
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from tools.ci.artery_test_case import ArteryTestCaseBase
+
+        class Fixture(ArteryTestCaseBase):
+            launch_conf = Path('build/Release/run-artery.ini')
+            scenario_path = Path('scenarios/artery')
+            config = 'veins'
+            test_config = SimpleNamespace(test_runner=SimpleNamespace(
+                sim_time_limit=30, results_dir=Path('results')))
+            run_options = dict(ArteryTestCaseBase.run_options)
+
+        with patch('tools.ci.artery_test_case.run_artery', return_value=0) as run, \
+             patch('tools.ci.artery_test_case.SimResultsReader'):
+            Fixture.setUpClass()
+
+        self.assertEqual(run.call_args.args[0], Fixture.launch_conf)
+        self.assertEqual(run.call_args.args[2], Fixture.scenario_path)
+        self.assertIn('--*.traci.launcher.sumo="sumo"', run.call_args.args[1])
+        self.assertIn('Cmdenv', run.call_args.args[1])

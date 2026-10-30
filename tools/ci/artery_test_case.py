@@ -23,6 +23,8 @@ class ArteryTestCaseBase(TestCase):
 
     # default options for opp_run, used to retrieve required data
     run_options = {
+        # Batch checks must not inherit a scenario's interactive SUMO GUI launcher.
+        '*.traci.launcher.sumo': r'"sumo"',
         # switches for data recording
         '**.scalar-recording': 'true',
         '**.vector-recording': 'true',
